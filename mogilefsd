@@ -166,6 +166,8 @@ my %streamcache;    # host -> IO::Socket::INET to mogstored
 my $lastspawntime = 0; # time we last ran spawn_children sub
 our $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid dies.
 our $starttime = time; # time we got going
+our %domaincache; # { domainname => { domainrow } }
+our $domaincachetime = 0;
 
 # [ what we want to be at, what we are at ]
 $jobs{'queryworker'} = [ $query_jobs, 0 ];
@@ -894,7 +896,7 @@ sub get_device_summary {
 
 sub check_host_cache {
     my $now = time;
-    return if $cache_host_time > $now - 2;
+    return if $cache_host_time > $now - 5;
 
     %cache_host = ();
     my $dbh = get_dbh();
@@ -1005,14 +1007,24 @@ sub class_id {
 }
 
 sub domain_id {
-    my $domain = shift;
-    # FIXME: cache this
+    # check the cache for this item
+    my $now = time();
+    if ($domaincachetime + 5 < $now) {
+        %domaincache = ();
 
-    my $dbh = Mgd::get_dbh;
-    # lookup domain
-    my $dmid = $dbh->selectrow_array("SELECT dmid FROM domain WHERE namespace=?",
-                                     undef, $domain);
-    return $dmid;
+        # now get updated list
+        my $dbh = Mgd::get_dbh;
+        my $domains = $dbh->selectall_arrayref('SELECT dmid, namespace FROM domain');
+        foreach my $row (@{$domains || []}) {
+            # namespace -> dmid
+            $domaincache{$row->[1]} = $row->[0];
+        }
+
+        $domaincachetime = $now;
+    }
+
+    # just use cached version
+    return $domaincache{$_[0]};
 }
 
 sub class_name {
