@@ -709,6 +709,12 @@ sub cmd_create_open {
     # FIXME: verify the path is good, and try alt device otherwise
     my $path = Mgd::make_path($devid, $fid);
 
+    # make a note that this file will be going here, so if it's
+    # partially written and aborted, or closed, the cleanup
+    # process will know what to cleanup
+    $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
+             undef, $fid, $devid);
+
     return $self->ok_line({
         fid => $fid,
         devid => $devid,
@@ -723,7 +729,6 @@ sub cmd_create_close {
     # validate parameters
     my $dmid = $self->check_domain($args) or return 0;
     my $key = $args->{key};
-    return $self->err_line("no_key") unless length($key);
 
     my $fid = $args->{fid} or return $self->err_line("no_fid");
     my $devid = $args->{devid} or return $self->err_line("no_devid");
@@ -742,6 +747,15 @@ sub cmd_create_close {
                                        "FROM tempfile WHERE fid=?",
                                        undef, $fid);
     return $self->err_line("no_temp_file") unless $trow;
+
+    # if a temp file is closed without a provided-key, that means to
+    # delete it.
+    unless (length($key)) {
+        # add to to-delete list
+        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fid);
+        $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
+        return $self->ok_line;
+    }
 
     # see if we have a fid for this key already
     my $old_file = Mgd::key_filerow($dbh, $dmid, $key);
