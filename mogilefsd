@@ -434,13 +434,16 @@ sub job_replicate {
             # iterate through each class, including the implicit class 0
             while (my ($min, $classid) = each %{$min{$dmid}}) {
 
+                print "Checking replication for dmid=$dmid, classid=$classid, min=$min\n" if $Mgd::DEBUG >= 1;
+
                 my $LIMIT = 1000;
                 while (1) {
                     my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
                                                         "AND devcount>0 AND devcount<? AND length IS NOT NULL ".
                                                         "LIMIT $LIMIT", undef, $dmid, $classid, $min);
-
+                    die $dbh->errstr if $dbh->err;
                     my $count = $fids ? scalar @$fids : 0;
+                    print "  found $count for dmid=$dmid/classid=$classid/min=$min\n" if $Mgd::DEBUG >= 1;
                     last unless $count;
                     my $fixed = 0;
 
