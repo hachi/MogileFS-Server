@@ -22,6 +22,9 @@ use DBI;
 use DBD::mysql;
 use File::Copy ();
 use Carp;
+use File::Basename ();
+use File::Path ();
+
 
 my (
     $daemonize,
@@ -465,8 +468,22 @@ sub make_path {
     return undef unless $dinfo;
     my $hostname = hostid_name($dinfo->{hostid});
 
-    return "$hostname/dev$devid/$fid.fid";
+    my $hashpath = join "/", map {
+        lc sprintf("%02x", $fid >> $_ & 255)
+    } (24, 16, 8, 0);
 
+    my $path = "$hostname/dev$devid/$hashpath/$fid.fid";
+    make_dirs( "$MOG_ROOT/$path" ) or return undef;
+
+    return $path;
+}
+
+sub make_dirs
+{
+    my $filename = shift;
+    my $dir = File::Basename::dirname($filename);
+    eval { File::Path::mkpath($dir, 0, 0775); };
+    return $@ ? 0 : 1;
 }
 
 sub add_file_on {
@@ -523,7 +540,7 @@ sub randlist
 
 
 #####################################################################
-###	C L I E N T   C L A S S
+### C L I E N T   C L A S S
 #####################################################################
 package Client;
 
