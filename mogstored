@@ -9,6 +9,7 @@ use strict;
 use lib 'lib';
 use Perlbal;
 use Linux::AIO '1.3';
+use IO::Socket::INET;
 
 my $opt_daemonize;
 my $opt_config;
@@ -75,7 +76,85 @@ Perlbal::Socket::register_callback(1, sub {
     return 60;
 });
 
+# setup a new socket for handling size requests
+my $server = IO::Socket::INET->new(LocalPort => 7501, # FIXME make this configurable
+                                   Type      => SOCK_STREAM,
+                                   Proto     => 'tcp',
+                                   Blocking  => 0,
+                                   Reuse     => 1,
+                                   Listen    => 10 )
+    or die "Error creating socket: $@\n";
+
+# in Perl 5.6, we weren't always seeing this turned off by IO::Socket
+# so we have to do it manually here just to be sure.
+IO::Handle::blocking($server, 0);
+
+# accept handler for new workers
+my $accept_handler = sub {
+    my $csock = $server->accept()
+        or return;
+    IO::Handle::blocking($csock, 0);
+    my $client = Client->new($csock);
+    $client->watch_read(1);
+    # ... that's it.  Client->new adds to event loop.
+};
+
+# add to fd list so this one gets processed
+Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
+
+# now start the main loop
 Perlbal::run();
+
+#############################################################################
+### simple package for handling the stream request port
+package Client;
+
+use Danga::Socket ();
+use base qw{Danga::Socket};
+use fields qw{read_buf};
+
+# needed since we're pretending to be a Perlbal::Socket... never idle out
+sub max_idle_time { return 0; }
+
+sub new {
+    my Client $self = shift;
+    $self = fields::new($self) unless ref $self;
+    $self->SUPER::new(@_);
+    return $self;
+}
+
+sub event_read {
+    my Client $self = shift;
+
+    my $bref = $self->read(1024);
+    return $self->close() unless defined $bref;
+    $self->{read_buf} .= $$bref;
+
+    if ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
+        # got a line of text in $1
+        if ($1 =~ /^size (\S+)$/) {
+            # validate uri
+            my $uri = $1;
+            if ($uri =~ /\.\./) {
+                $self->write("ERROR: uri invalid (contains ..)\r\n");
+                return;
+            }
+
+            # now stat the file to get the size and such
+            Linux::AIO::aio_stat("$path$uri", sub {
+                return if $self->{closed};
+                my $size = -e _ ? -s _ : -1;
+                $self->write("$uri $size\r\n");
+            });
+        } else {
+            $self->write("ERROR: unknown command\r\n");
+        }
+    }
+}
+
+# override Danga::Socket's event handlers which die
+sub event_err { $_[0]->close; }
+sub event_hup { $_[0]->close; }
 
 # Local Variables:
 # mode: perl
