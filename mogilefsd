@@ -683,6 +683,18 @@ sub get_file_size {
     return 0;
 }
 
+sub class_id {
+    my ($dmid, $class) = @_;
+    return undef unless $dmid > 0 && length $class;
+
+    my $dbh = Mgd::get_dbh;
+    my $classid = $dbh->selectrow_array
+        ("SELECT classid FROM class WHERE dmid=? AND classname=?", undef, $dmid, $class)
+            or return undef;
+    return undef unless $classid;
+    return $classid;
+}
+
 sub domain_id {
     my $domain = shift;
     # FIXME: cache this
@@ -1100,6 +1112,78 @@ sub cmd_get_devices {
     return $self->ok_line($ret);
 }
 
+sub cmd_create_domain {
+    my Client $self = shift;
+    my $args = shift;
+
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+
+    my $domain = $args->{domain};
+    return $self->err_line('no_domain') unless length $domain;
+
+    # FIXME: add some sort of authentication/limitation on this?
+    
+    my $dmid = Mgd::domain_id($domain);
+    return $self->err_line('domain_exists') if $dmid;
+
+    # get the max domain id
+    my $maxid = $dbh->selectrow_array('SELECT MAX(dmid) FROM domain');
+    $dbh->do('INSERT INTO domain (dmid, namespace) VALUES (?, ?)',
+             undef, $maxid + 1, $domain);
+    return $self->err_line('failure') if $dbh->err;
+
+    # return the domain id we created
+    return $self->ok_line({ domain => $domain });
+}
+
+sub cmd_create_class {
+    my Client $self = shift;
+    my $args = shift;
+
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+
+    my $domain = $args->{domain};
+    return $self->err_line('no_domain') unless length $domain;
+
+    my $class = $args->{class};
+    return $self->err_line('no_class') unless length $class;
+
+    my $mindevcount = $args->{mindevcount}+0;
+    return $self->err_line('invalid_mindevcount') unless $mindevcount > 0;
+
+    # FIXME: add some sort of authentication/limitation on this?
+    
+    my $dmid = Mgd::domain_id($domain);
+    return $self->err_line('no_domain') unless $dmid;
+
+    my $cid = Mgd::class_id($dmid, $class);
+    return $self->err_line('class_exists') if $cid && !$args->{update};
+
+    # setup verb; if we have the update option set on, then we're doing a
+    # replace so we update our class
+    my $verb = $args->{update} ? 'REPLACE' : 'INSERT';
+
+    # get the max class id in this domain
+    my $maxid = $dbh->selectrow_array
+        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid);
+    $dbh->do("$verb INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
+             undef, $dmid, $maxid + 1, $class, $mindevcount);
+    return $self->err_line('failure') if $dbh->err;
+
+    # return success
+    return $self->ok_line({ class => $class, mindevcount => $mindevcount, domain => $domain });
+}
+
+sub cmd_update_class {
+    my Client $self = shift;
+    my $args = shift;
+
+    # simply passes through to create_class with update set
+    $self->cmd_create_class({ %$args, update => 1 });
+}
+
 sub cmd_get_domains {
     my Client $self = shift;
     my $args = shift;
@@ -1192,6 +1276,12 @@ sub err_line {
     my $err_code = shift;
     my $err_text = {
         'unknown_command' => "Unknown server command",
+        'no_domain' => "No domain provided",
+        'no_class' => "No class provided",
+        'class_exists' => "That class already exists in that domain",
+        'domain_exists' => "That domain already exists",
+        'invalid_mindevcount' => "The mindevcount must be at least 1",
+        'failure' => "Operation failed",
     }->{$err_code};
 
     $self->write("ERR $err_code " . eurl($err_text) . "\r\n");
