@@ -370,7 +370,8 @@ sub make_new_child {
     sigprocmask(SIG_BLOCK, $sigset)
         or die "Can't block SIGINT for fork: $!\n";
 
-    die "fork: $!" unless defined ($pid = fork);
+    return error("fork failed creating $job: $!")
+        unless defined ($pid = fork);
 
     if ($pid) {
         sigprocmask(SIG_UNBLOCK, $sigset)
