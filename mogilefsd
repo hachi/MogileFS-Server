@@ -20,6 +20,7 @@ use Symbol;
 use POSIX;
 use DBI;
 use DBD::mysql;
+use File::Copy ();
 
 use vars qw($dbh);
 
@@ -30,7 +31,11 @@ sub get_dbh {
 use vars qw($MOG_ROOT);
 $MOG_ROOT = "/mnt/mogilefs";
 
+use vars qw($DEBUG);
+$DEBUG = 0;
+
 my $conf_port = 7001;
+
 
 
 # establish SERVER socket, bind and listen.
@@ -78,7 +83,8 @@ while (1) {
     while (my ($job, $jobstat) = each %jobs) {
 	my $need = $jobstat->[0] - $jobstat->[1];
 	if ($need > 0) {
-	    print "Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.\n";
+	    print "Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.\n"
+		if $DEBUG;
 	    for (1..$need) {
 		my $cpid = make_new_child($job);
 		$child{$cpid} = $job;
@@ -184,10 +190,131 @@ sub job_delete {
     }
 }
 
+# replicates $fid if its devcount is less than $min.
+sub replicate {
+    my ($dbh, $fid, $min) = @_;
+
+    print "Replicating: $fid (need $min)\n" if $Mgd::DEBUG >= 2;
+
+    my $lockname = "mgfs:fid:$fid:replicate";
+    my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 1)", undef,
+				     $lockname);
+    return 0 unless $lock;
+
+    # hashref of devid -> $device_row_href  (where devid is alive)
+    my $devs = Mgd::get_device_summary();
+    return 0 unless $devs && %$devs;
+
+    # learn what devices this file is already on
+    my $on_count = 0;
+    my %on_host;     # hostid -> 1
+    my @dead_devid;   # list of dead devids
+    my @exist_devid;  # list of existing devids
+
+    my $sth = $dbh->prepare("SELECT devid FROM file_on WHERE fid=?");
+    $sth->execute($fid);
+    die $dbh->errstr if $dbh->err;
+    while (my ($devid) = $sth->fetchrow_array) {
+	my $d = $devs->{$devid};
+	unless ($d) {
+	    push @dead_devid, $devid;
+	    next;
+	}
+	$on_host{$d->{hostid}} = 1;
+	$on_count++;
+	push @exist_devid, $devid;
+    }
+
+    my $retunlock = sub {
+	my $rv = shift;
+	$dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+	return $rv;
+    };
+
+    return $retunlock->(1) if $on_count >= $min;
+    return $retunlock->(0) if $on_count == 0;
+    return $retunlock->(0) if @exist_devid == 0;
+
+    my $sdevid;
+    
+    while ($on_count < $min) {
+	my $need = $min - $on_count;
+
+	my @good_devids = randlist(grep {
+	    $devs->{$_}{status} eq 'alive' && ! $on_host{$devs->{$_}{hostid}}
+	} keys %$devs);
+
+	# wasn't able to replicate enough?
+	last unless @good_devids;
+
+	my $ddevid = shift @good_devids;
+	$sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
+
+	my $dst_path = $MOG_ROOT . "/" . make_path($ddevid, $fid);
+	my $src_path = $MOG_ROOT . "/" . make_path($sdevid, $fid);
+	my $rv = File::Copy::copy($src_path, $dst_path);
+
+	return $retunlock->(0) unless $rv;
+	add_file_on($fid, $ddevid, 1);
+	$on_count++;
+    }
+
+    return $retunlock->(1);
+}
+
 sub job_replicate {
     while (1) {
-	print "Replicating.\n";
-	sleep 10;
+	sleep 2;
+
+	my $dbh = get_dbh() or return 0;
+
+	# find the classes for each domainid (including domains without explict classes)
+	my %min; # dmid -> classid -> mindevcount
+	my $sth = $dbh->prepare("SELECT d.dmid, c.classid, c.mindevcount ".
+				"FROM domain d LEFT JOIN class c ON d.dmid=c.dmid");
+	$sth->execute;
+	while (my ($dmid, $classid, $mct) = $sth->fetchrow_array) {
+	    $min{$dmid} ||= {};  # note the existence of this dmid
+
+	    # classid may be NULL (undef), in which case there are no classes defined
+	    # and we don't note the mindevcount (yet)
+	    $min{$dmid}{$classid} = int($mct) if defined $classid;
+	}
+
+	# iterate through each domain, replicating its contents
+	foreach my $dmid (keys %min) {
+	    # each domain's classid=0, if not defined, has an implied mindevcount of 2,
+	    # which most people will probably use.
+	    $min{$dmid}{0} = 2 unless exists $min{$dmid}{0};
+
+	    # iterate through each class, including the implicit class 0
+	    foreach my $classid (keys %{$min{$dmid}}) {
+		my $min = $min{$dmid}{$classid};
+
+		my $LIMIT = 1000;
+		while (1) {
+		    my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
+							"AND devcount<? AND length IS NOT NULL LIMIT $LIMIT",
+							undef, $dmid, $classid, $min);
+		    my $count = $fids ? scalar @$fids : 0;
+		    last unless $count;
+		    my $fixed = 0;
+
+		    # randomize the list so multiple daemons/threads working on
+		    # replicate at the same time don't all fight over the
+		    # same fids to move
+		    my @rand_finds = randlist(@$fids);
+
+		    print "Need to replicate: $dmid/$classid: @$fids\n" if $Mgd::DEBUG >= 1;
+		    foreach my $fid (@$fids) {
+			$fixed++ if replicate($dbh, $fid, $min);
+		    }
+		    
+		    last unless $count == $LIMIT || $fixed != $count;
+		}
+		
+	    }
+	}
     }
 }
 
@@ -202,7 +329,7 @@ sub job_client_listen {
     }
 }
 
-# returns hashref of devid -> $device_row_href  (where devid is alive)
+# returns hashref of devid -> $device_row_href  (where devid is alive/down, but not dead)
 # cached for 15 seconds.
 use vars qw($cache_device_summary $cache_device_summary_time);
 
@@ -214,9 +341,10 @@ sub get_device_summary {
 
     # learn devices
     my %dev;  # 
-    my %hostdevs;  # hostid -> [ devid ]  (where devid is alive)
-    my $sth = $dbh->prepare("SELECT devid, hostid, mb_total, mb_used FROM device ".
-			    "WHERE status='alive'");
+    my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
+    my $sth = $dbh->prepare("SELECT devid, hostid, mb_total, mb_used, status ".
+			    "FROM device ".
+			    "WHERE status IN ('alive', 'down')");
     $sth->execute;
     $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
 
@@ -275,14 +403,14 @@ sub make_path {
 }
 
 sub add_file_on {
-    my ($fid, $devid) = @_;
+    my ($fid, $devid, $no_lock) = @_;
     
     my $dbh = get_dbh() or return 0;
 
     my $rv = $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
 		      undef, $fid, $devid);
     if ($rv > 0) {
-	return update_fid_devcount($fid);
+	return update_fid_devcount($fid, $no_lock);
     } else {
 	# was already on that device
 	return 1;
@@ -290,22 +418,40 @@ sub add_file_on {
 }
 
 sub update_fid_devcount {
-    my ($fid) = @_;
+    my ($fid, $no_lock) = @_;
 
     my $dbh = get_dbh() or return 0;
 
-    my $lockname = "mgfs:fid:$fid:devcount";
-    my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 10)", undef,
+    my $lockname = "mgfs:fid:$fid";
+    unless ($no_lock) {
+	my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 10)", undef,
 					 $lockname);
-    return 0 unless $lock;
+	return 0 unless $lock;
+    }
     my $ct = $dbh->selectrow_array("SELECT COUNT(*) FROM file_on WHERE fid=?",
 				   undef, $fid);
 
     $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
 	     $ct, $fid);
 
-    $dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+    unless ($no_lock) {
+	$dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+    }
+	
     return 1;
+}
+
+sub randlist
+{
+    my @rlist = @_;
+    my $size = scalar(@rlist);
+    
+    my $i;
+    for ($i=0; $i<$size; $i++)
+    {
+        unshift @rlist, splice(@rlist, $i+int(rand()*($size-$i)), 1);
+    }
+    return @rlist;
 }
 
 package Client;
@@ -386,6 +532,7 @@ sub cmd_create_open {
     return undef unless $fid > 0;
 
     # find a device to put this file on that has 100Mb free.
+    # FIXME: make this use get_device_summary, removing this SQL:
     my $devids = $dbh->selectcol_arrayref("SELECT devid FROM device ".
 					  "WHERE status='alive' AND (mb_used IS NULL ".
 					  "   OR (mb_total-mb_used > 100))");
@@ -395,6 +542,7 @@ sub cmd_create_open {
     # pick a random alive device
     my $devid = $devids->[int(rand($count))];
 
+    # FIXME: verify the path is good, and try alt device otherwise
     my $path = Mgd::make_path($devid, $fid);
     
 
@@ -513,7 +661,8 @@ sub cmd_get_paths {
 	paths => 0,
     };
     foreach my $devid (@{$devids || []}) {
-	next unless $dsum->{$devid};
+	my $dev = $dsum->{$devid};
+	next unless $dev && $dev->{status} eq "alive";
 	my $path = Mgd::make_path($devid, $fid);
 	next unless $ret->{paths} || (-s "$Mgd::MOG_ROOT/$path" == $filerow->{length});
 	my $n = ++$ret->{paths};
