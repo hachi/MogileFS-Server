@@ -72,6 +72,7 @@ my (
     $worker_port,
     $upgrade,
     $min_free_space,
+    $max_disk_age,
    );
 
 # Command-line options will override
@@ -90,6 +91,7 @@ Getopt::Long::GetOptions(
     'no_http'       => \$cmdline{no_http},
     'workerport=i'  => \$cmdline{worker_port},
     'upgrade'       => \$upgrade,
+    'maxdiskage=i'  => \$cmdline{max_disk_age},
     'minfreespace=i' => \$cmdline{min_free_space},
     'default_mindevcount=i' => \$cmdline{default_mindevcount},
 );
@@ -149,6 +151,7 @@ $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
 $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
 $worker_port    = choose_value( 'worker_port', 7200 );
 $min_free_space = choose_value( 'min_free_space', 100 );
+$max_disk_age   = choose_value( 'max_disk_age', 5 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
 $default_mindevcount = choose_value( 'default_mindevcount', 2 );
@@ -916,7 +919,7 @@ sub job_monitor {
         my $devs = Mgd::get_device_summary();
         next unless $devs && %$devs;
 
-        # now iterate over dead devices
+        # now iterate over devices
         foreach my $dev (values %$devs) {
             my $host = $Mgd::cache_host{$dev->{hostid}};
             my $port = $host->{http_get_port} || $host->{http_port};
@@ -1151,6 +1154,7 @@ use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_
 #     random => 1,              # get random device (else find first suitable)
 #     min_free_space => 100,    # with at least 100MB free
 #     weight_by_free => 1,      # find result weighted by free space
+#     max_disk_age => 5,        # minutes of age the last usage report can be before we ignore the disk
 #     not_on_hosts => [ 1, 2 ], # no devices on hosts 1 and 2
 # );
 #
@@ -1162,6 +1166,8 @@ sub find_deviceid {
 
     # copy down global minimum free space if not specified
     $opts{min_free_space} ||= $min_free_space;
+    $opts{max_disk_age} ||= $max_disk_age;
+    $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
 
     # setup for iterating over devices
     my $devs = Mgd::get_device_summary();
@@ -1180,6 +1186,8 @@ sub find_deviceid {
         # series of suitability checks
         next unless $dev->{status} eq 'alive';
         next if $not_on_host{$dev->{hostid}};
+        next if $opts{max_disk_age} && $dev->{mb_asof} &&
+                $dev->{mb_asof} < $opts{max_disk_age};
         next if $opts{min_free_space} && $dev->{mb_total} &&
                 $dev->{mb_free} < $opts{min_free_space};
 
@@ -1213,8 +1221,8 @@ sub get_device_summary {
     # learn devices
     my %dev;  #
     my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, mb_used, status ".
-                            "FROM device ".
+    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
+                            "mb_used, mb_asof, status FROM device ".
                             "WHERE status IN ('alive', 'down' $include_dead)");
     $sth->execute;
     $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
