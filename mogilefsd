@@ -701,9 +701,10 @@ sub replicate {
     while ($on_count < $min) {
         my $need = $min - $on_count;
 
-        my @good_devids = randlist(grep {
-            $devs->{$_}{status} eq 'alive' && ! $on_host{$devs->{$_}{hostid}}
-        } keys %$devs);
+        my @good_devids = Mgd::find_deviceid(
+            random => 1,
+            not_on_hosts => [ keys %on_host ],
+        );
 
         # wasn't able to replicate enough?
         last unless @good_devids;
@@ -875,6 +876,54 @@ sub job_queryworker {
 # cached for 15 seconds.
 use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_host_time);
 
+# general purpose device locator.  example:
+#
+# my $devid = Mgd::find_deviceid(
+#     random => 1,              # get random device
+#     free_space => 100,        # with at least 100MB free
+#     weight_by_free => 1,      # -or- weight by free space (NOT IMPLEMENTED YET)
+#     not_on_hosts => [ 1, 2 ], # no devices on hosts 1 and 2
+# );
+#
+# returns undef if no suitable device was found.  else, if you wanted an
+# array will return an array of the suitable devices--if you want just a
+# single item, you get just the first one found.
+sub find_deviceid {
+    my %opts = ( @_ );
+
+    # setup for iterating over devices
+    my $devs = Mgd::get_device_summary();
+    my @devids = keys %{$devs || {}};
+    my $devcount = scalar(@devids);
+    my $start = $opts{random} ? int(rand($devcount)) : 0;
+    my %not_on_host = ( map { $_ => 1 } @{$opts{not_on_hosts} || []} );
+
+    # now find a device that matches what they want
+    my @list;
+    for (my $i = 0; $i < $devcount; $i++) {
+        my $idx = ($i + $start) % $devcount;
+        my $dev = $devs->{$devids[$idx]};
+
+        # series of suitability checks
+        next unless $dev->{status} eq 'alive';
+        next if $not_on_host{$dev->{hostid}};
+
+        #FIXME: as soon as we're using the mb_* columns in the database, this can be
+        #       used.  until then, we don't know how much space is on devices, so we
+        #       can't use this yet...
+        #next if $opts{free_space} &&
+        #        $dev->{mb_free} < $opts{free_space};
+
+        # we get here, return this device
+        push @list, $dev->{devid};
+        last unless wantarray;
+    }
+
+    # no suitable device found
+    return $list[0] unless wantarray;
+    return @list;
+}
+
 sub get_device_summary {
     my $now = time;
     return $cache_device_summary if $cache_device_summary_time > $now - 15;
@@ -889,6 +938,20 @@ sub get_device_summary {
                             "WHERE status IN ('alive', 'down')");
     $sth->execute;
     $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
+
+    # now override device status with host status if the host status is less than the device status
+    Mgd::check_host_cache();
+    foreach my $devid (keys %dev) {
+        # makes others have an easier time of finding devices by free space
+        $dev{$devid}->{mb_free} = $dev{$devid}->{mb_total} - $dev{$devid}->{mb_used};
+
+        my $host_status = $cache_host{$dev{$devid}->{hostid}}->{status};
+        if ($dev{$devid}->{status} eq 'alive' && $host_status ne 'alive') {
+            $dev{$devid}->{status} = $host_status;
+        } elsif ($dev{$devid}->{status} eq 'down' && $host_status eq 'dead') {
+            $dev{$devid}->{status} = $host_status;
+        }
+    }
 
     $cache_device_summary_time = $now;
     return $cache_device_summary = \%dev;
@@ -1893,15 +1956,11 @@ sub cmd_create_open {
     return undef unless $fid > 0;
 
     # find a device to put this file on that has 100Mb free.
-    # FIXME: make this use get_device_summary, removing this SQL:
-    my $devids = $dbh->selectcol_arrayref("SELECT devid FROM device ".
-                                          "WHERE status='alive' AND (mb_used IS NULL ".
-                                          "   OR (mb_total-mb_used > 100))");
-    my $count = $devids ? @$devids : 0;
-    return $self->err_line("no_devices") unless $count;
-
-    # pick a random alive device
-    my $devid = $devids->[int(rand($count))];
+    my $devid = Mgd::find_deviceid(
+        random => 1,
+        free_space => 100,
+    );
+    return $self->err_line("no_devices") unless $devid;
 
     # FIXME: verify the path is good, and try alt device otherwise
     my $path = Mgd::make_path($devid, $fid);
