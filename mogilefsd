@@ -653,13 +653,14 @@ sub get_device_summary {
 
 sub check_host_cache {
     my $now = time;
-    return if $cache_host_time > $now - 10;
+    return if $cache_host_time > $now - 2;
 
     %cache_host = ();
     my $dbh = get_dbh();
     my $sth = $dbh->prepare("SELECT hostid, status, hostname, hostip, http_port, remoteroot FROM host");
     $sth->execute;
     $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
+    $cache_host_time = $now;
 }
 
 sub key_filerow {
