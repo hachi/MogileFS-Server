@@ -1400,6 +1400,16 @@ sub get_file_size {
 
     # sub to parse the response from $sock.  common code, so we have it here.
     my $parse_response = sub {
+        # select our socket to see if it's readable
+        my $rin;
+        vec($rin, fileno($sock), 1) = 1;
+        my $nfound = select($rin, undef, undef, 2);
+
+        # if nfound is undef or 0, we know something happened, consider it a failure
+        return 0 
+            unless defined $nfound && $nfound;
+
+        # now we know there's readable data
         my $line = <$sock>;
         return 0 unless defined $line;
         return 0 unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
