@@ -50,7 +50,7 @@ my (
     $db_user,
     $db_pass,
     $conf_port,
-    $worker_jobs,
+    $query_jobs,
     $delete_jobs,
     $replicate_jobs,
     $mog_root,
@@ -70,7 +70,7 @@ Getopt::Long::GetOptions(
     'dbpass=s'      => \$cmdline{db_pass},
     'r|mogroot=s'   => \$cmdline{mog_root},
     'p|confport=i'  => \$cmdline{conf_port},
-    'w|workers=i'   => \$cmdline{worker_jobs},
+    'w|workers=i'   => \$cmdline{query_jobs},
     'no_http'       => \$cmdline{no_http},
     'workerport=i'  => \$cmdline{worker_port},
     'default_mindevcount=i' => \$cmdline{default_mindevcount},
@@ -129,8 +129,8 @@ $db_user        = choose_value( 'db_user', "mogile" );
 $db_pass        = choose_value( 'db_pass', "", 1 );
 $conf_port      = choose_value( 'conf_port', 7001 );
 $MOG_ROOT       = choose_value( 'mog_root', $DEFAULT_MOG_ROOT );
-$worker_jobs    = choose_value( 'listener_jobs', undef) || # undef if not present, then we
-                  choose_value( 'worker_jobs', 20 );       # fall back to worker_jobs, new name
+$query_jobs    = choose_value( 'listener_jobs', undef) || # undef if not present, then we
+                  choose_value( 'query_jobs', 20 );       # fall back to query_jobs, new name
 $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
 $worker_port    = choose_value( 'worker_port', 7200 );
@@ -152,7 +152,7 @@ my %jobs   = ();    # jobname -> [ min, current ]
 
 # FIXME: make these configurable
 $jobs{'frontend'} = [ 1, 0 ]; # only one frontend job
-$jobs{'worker'} = [ $worker_jobs, 0 ];
+$jobs{'worker'} = [ $query_jobs, 0 ];
 $jobs{'delete'} = [ $delete_jobs, 0 ];
 $jobs{'replicate'} = [ $replicate_jobs, 0 ];
 
