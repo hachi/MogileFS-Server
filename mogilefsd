@@ -1092,20 +1092,11 @@ sub cmd_rename {
     my $dbh = Mgd::get_dbh or
         return $self->err_line("nodb");
 
-    # is this fid still owned by this key?
-    my $fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
-                                    undef, $dmid, $fkey);
-    return $self->err_line("unknown_key") unless $fid;
-
-    # get fid of target key name
-    my $tfid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
-                                     undef, $dmid, $tkey);
-    return $self->err_line("key_exists") unless $fid;
-
-    # now, rename it!
-    $dbh->do('UPDATE file SET dkey = ? WHERE dmid = ? AND fid = ?',
-             undef, $tkey, $dmid, $fid);
-    return $self->err_line("failure") if $dbh->err;
+    # rename the file
+    my $ct = $dbh->do('UPDATE file SET dkey = ? WHERE dmid = ? AND dkey = ?',
+                      undef, $tkey, $dmid, $fkey);
+    return $self->err_line("key_exists") if $dbh->err;
+    return $self->err_line("unknown_key") unless $ct > 0;
 
     return $self->ok_line();
 }
