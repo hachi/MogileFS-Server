@@ -265,6 +265,31 @@ This means that we really can't do anything, so we're going to shut down.
 NODEVICES
 }
 
+# see if they have the new fid table
+my $fid = $dbh->selectrow_array('SELECT fid FROM unreachable_fids LIMIT 1');
+if ($dbh->err) {
+    if ($upgrade) {
+        print STDERR "Creating unreachable_fids table...\n";
+        $dbh->do("CREATE TABLE unreachable_fids (" .
+                 "    fid        INT UNSIGNED NOT NULL," .
+                 "    lastupdate INT UNSIGNED NOT NULL," .
+                 "    PRIMARY KEY (fid)," .
+                 "    INDEX (lastupdate)" .
+                 ")");
+        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
+    } else {
+        die <<NEEDUPDATE;
+Error: database schema out of date.
+
+MogileFS needs to update your database schema.  Please rerun the MogileFS
+server with the --upgrade option if you wish for us to do this.
+
+This will NOT destroy any existing data.
+NEEDUPDATE
+
+    }
+}
+
 # we're done with this, so undef it before we start forking, as then
 # maybe we'll end up with children having the same socket and everybody
 # writing to it at the same time...
@@ -704,6 +729,19 @@ sub job_delete {
 sub http_copy {
     my ($sdevid, $ddevid, $fid) = @_;
 
+    # handles setting unreachable magic; $error->(reachability, "message")
+    my $error = sub {
+        if ($_[0]) {
+            send_to_parent("repl_unreachable $fid");
+
+            # update database table
+            Mgd::validate_dbh();
+            my $dbh = Mgd::get_dbh();
+            $dbh->do("REPLACE INTO unreachable_fids VALUES ($fid, UNIX_TIMESTAMP())");
+        }
+        return error($_[1]);
+    };
+
     # get some information we'll need
     my $devs = Mgd::get_device_summary();
     my ($sdev, $ddev) = ($devs->{$sdevid}, $devs->{$ddevid});
@@ -738,13 +776,13 @@ sub http_copy {
         last unless length $line;
         if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
             # make sure we get a good response
-            return error("Error: Resource http://$shost:$sport$spath failed: HTTP $1")
+            return $error->(1, "Error: Resource http://$shost:$sport$spath failed: HTTP $1")
                 unless $1 >= 200 && $1 <= 299;
         }
         next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
         $clen = $1;
     }
-    return error("File $spath has a content-length of 0; unable to replicate")
+    return $error->(1, "File $spath has a content-length of 0; unable to replicate")
         unless $clen;
 
     # open target for put
@@ -1055,6 +1093,13 @@ sub job_replicate {
         }
     };
 
+    # { fid => lastcheck }; instructs us not to replicate this fid... we will clear
+    # out fids from this list that are expired
+    my %fidfailure;
+
+    # { fid => 1 }; used to keep track of fids we find in the unreachable_fids table
+    my %unreachable;
+
     my $sleep = 2;
     while (1) {
         sleep $sleep;
@@ -1067,6 +1112,20 @@ sub job_replicate {
 
         # start off assuming that we're going to get everything replicated and then take a break
         $sleep = 2;
+
+        # update our unreachable fid list... we consider them good for 15 minutes
+        my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
+        die $dbh->errstr if $dbh->err;
+        foreach my $r (@{$urfids || []}) {
+            my $nv = $r->[1] + 900;
+            unless ($fidfailure{$r->[0]} && $fidfailure{$r->[0]} < $nv) {
+                # given that we might have set it below to a time past the unreachable
+                # 15 minute timeout, we want to only overwrite %fidfailure's idea of
+                # the expiration time if we are extending it
+                $fidfailure{$r->[0]} = $nv;
+            }
+            $unreachable{$r->[0]} = 1;
+        }
 
         # get the min dev counts
         my %min = %{ Mgd::get_mindevcounts() };
@@ -1086,6 +1145,7 @@ sub job_replicate {
                 my $attempted = 0;
                 my $devcount = 1;
                 while ($fixed < $LIMIT && $devcount < $min) {
+                    my $now = time();
                     my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
                                                         "AND devcount = ? AND length IS NOT NULL ".
                                                         "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
@@ -1111,7 +1171,23 @@ sub job_replicate {
                         # now replicate this fid
                         $attempted++;
                         next unless $fidtodo{$fid};
+
+                        if ($fidfailure{$fid}) {
+                            if ($fidfailure{$fid} < $now) {
+                                delete $fidfailure{$fid};
+                            } else {
+                                next;
+                            }
+                        }
+
                         if (replicate($dbh, $fid, $min)) {
+                            # if it was no longer reachable, mark it reachable
+                            if (delete $unreachable{$fid}) {
+                                $dbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
+                                die $dbh->errstr if $dbh->err;
+                            }
+
+                            # housekeeping
                             $fixed++;
                             send_to_parent("repl_i_did $fid");
                             $parse_parent_response->(\%fidtodo);
@@ -1122,6 +1198,9 @@ sub job_replicate {
                                 error(sprintf("replicated=$fixed, attempted=$attempted, ratio=%.2f%%", $ratio))
                                     if $fixed % 20 == 0;
                             }
+                        } else {
+                            # failed in replicate, don't retry for a minute
+                            $fidfailure{$fid} = $now + 60;
                         }
                     }
                 }
@@ -2064,7 +2143,6 @@ sub HandleChildRequest {
     # and not a command.  they also specify their pid, just so we know what
     # connection goes with what pid, in case it's ever useful information.
     my WorkerConn $child = $_[1];
-    my $job = $child->job;
     unless (defined $child->job) {
         my ($pid, $job) = ($_[2] =~ /^(\d+)\s+(.+)/);
         $child->job($job);
@@ -2080,6 +2158,16 @@ sub HandleChildRequest {
         return;
     }
 
+    # see if we should downsize this child
+    my $check_job = sub {
+        if (Mgd::job_needs_reduction($child->job)) {
+            Mgd::error("Reducing headcount of " . $child->job . " job by 1.");
+            Frontend->AskWorkerToDie($child);
+        } else {
+            $child->drain_queue;
+        }
+    };
+
     # at this point we've got a command of some sort
     my $cmd = $_[2];
     if ($cmd =~ /^error (.+)$/i) {
@@ -2091,55 +2179,27 @@ sub HandleChildRequest {
         $child->drain_queue;
 
     } elsif ($cmd =~ /^del_i_looped/) {
-        # see if we need to kill it
-        if (Mgd::job_needs_reduction('delete')) {
-            Mgd::error("Reducing headcount of delete job by 1.");
-            Frontend->AskWorkerToDie($child);
-        } else {
-            # just drain the queue that we have for them
-            $child->drain_queue;
-        }
+        $check_job->();
 
     } elsif ($cmd =~ /^monitor_ping/) {
-        # kill if necessary
-        if (Mgd::job_needs_reduction('monitor')) {
-            Mgd::error("Reducing headcount of monitor job by 1.");
-            Frontend->AskWorkerToDie($child);
-        } else {
-            # just drain the queue that we have for them
-            $child->drain_queue;
-        }
+        $check_job->();
 
     } elsif ($cmd =~ /^reaper_ping/) {
-        # kill if necessary
-        if (Mgd::job_needs_reduction('reaper')) {
-            Mgd::error("Reducing headcount of reaper job by 1.");
-            Frontend->AskWorkerToDie($child);
-        } else {
-            # just drain the queue that we have for them
-            $child->drain_queue;
-        }
+        $check_job->();
 
     } elsif ($cmd =~ /^repl_ping/) {
-        # they've pinged us, say hi
-        if (Mgd::job_needs_reduction('replicate')) {
-            Mgd::error("Reducing headcount of replicate job by 1.");
-            Frontend->AskWorkerToDie($child);
-        } else {
-            # just drain the queue that we have for them
-            $child->drain_queue;
-        }
+        $check_job->();
+
+    } elsif ($cmd =~ /^repl_unreachable (\d+)/) {
+        my $fid = $1;
+        $check_job->();
+
+        # announce to the other replicators that this fid was done
+        Frontend->SendToChildrenByJob('replicate', "repl_unreachable $fid", $child);
 
     } elsif ($cmd =~ /^repl_i_did (\d+)/) {
-        # see if we should kill this off?
         my $fid = $1;
-        if (Mgd::job_needs_reduction('replicate')) {
-            Mgd::error("Reducing headcount of replicate job by 1.");
-            Frontend->AskWorkerToDie($child);
-        } else {
-            # just drain the queue that we have for them
-            $child->drain_queue;
-        }
+        $check_job->();
 
         # announce to the other replicators that this fid was done
         Frontend->SendToChildrenByJob('replicate', "repl_was_done $fid", $child);
