@@ -83,7 +83,7 @@ if ( $config && !$skipconfig ) {
         die "Malformed config file (line $linecount)" unless $line =~ $configLine;
 
         my ( $key, $value ) = ( $1, $2 );
-        print STDERR "Setting '$key' to '$value'\n";
+        print STDERR "Setting '$key' to '$value'\n" if $cmdline{debug};
         $cfgfile{ $key } = $value;
     }
 
@@ -157,10 +157,19 @@ sub get_dbh {
 }
 
 # Install signal handlers.
-$SIG{$_}  = sub {
-    kill 'INT' => keys %child;
+$SIG{TERM}  = sub {
+    print STDERR scalar keys %child, " children to kill.\n" if $DEBUG;
+    my $count = kill( 'TERM' => keys %child );
+    print STDERR "Sent SIGTERM to $count children.\n" if $DEBUG;
     exit 0;
-} foreach qw(KILL INT);
+};
+$SIG{INT}  = sub {
+    print STDERR scalar keys %child, " children to kill.\n" if $DEBUG;
+    my $count = kill( 'INT' => keys %child );
+    print STDERR "Sent SIGINT to $count children.\n" if $DEBUG;
+    exit 0;
+};
+
 
 # Keep jobs alive
 while (1) {
@@ -213,13 +222,19 @@ sub daemonize {
     ## Clear file creation mask
     umask 0;
 
+    print STDERR "Daemon running as pid $$.\n" if $DEBUG;
+
     ## Close open file descriptors
     close(STDIN);
     close(STDOUT);
     close(STDERR);
 
     ## Reopen stderr, stdout, stdin to /dev/null
-    open(STDIN,  "+>/dev/null");
+    if ( $DEBUG ) {
+        open(STDIN,  "+>/tmp/mogilefsd.log");
+    } else {
+        open(STDIN,  "+>/dev/null");
+    }
     open(STDOUT, "+>&STDIN");
     open(STDERR, "+>&STDIN");
 }
