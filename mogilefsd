@@ -54,6 +54,7 @@ my (
     $delete_jobs,
     $replicate_jobs,
     $mog_root,
+    $default_mindevcount,
    );
 
 # Command-line options will override
@@ -70,6 +71,7 @@ Getopt::Long::GetOptions(
     'p|confport=i'  => \$cmdline{conf_port},
     'l|listeners=i' => \$cmdline{listener_jobs},
     'no_http'       => \$cmdline{no_http},
+    'default_mindevcount=i' => \$cmdline{default_mindevcount},
 );
 
 $config = $DEFAULT_CONFIG if !$config && -r $DEFAULT_CONFIG;
@@ -130,6 +132,7 @@ $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
+$default_mindevcount = choose_value( 'default_mindevcount', 2 );
 
 
 #####################################################################
@@ -555,9 +558,10 @@ sub job_replicate {
 
         # iterate through each domain, replicating its contents
         foreach my $dmid (keys %min) {
-            # each domain's classid=0, if not defined, has an implied mindevcount of 2,
+            # each domain's classid=0, if not defined, has an implied mindevcount of $default_mindevcount
             # which most people will probably use.
-            $min{$dmid}{0} = $host_ct < 2 ? $host_ct : 2 unless exists $min{$dmid}{0};
+            $min{$dmid}{0} = $host_ct < $default_mindevcount ? $host_ct : $default_mindevcount
+                unless exists $min{$dmid}{0};
 
             # iterate through each class, including the implicit class 0
             while (my ($classid, $min) = each %{$min{$dmid}}) {
@@ -1214,6 +1218,11 @@ sub cmd_get_domains {
             $ret->{"domain${outercount}class" . ++$innercount . "name"} = $irow->[0];
             $ret->{"domain${outercount}class" . $innercount . "mindevcount"} = $irow->[1];
         }
+
+        # record the default class and mindevcount
+        $ret->{"domain${outercount}class" . ++$innercount . "name"} = 'default';
+        $ret->{"domain${outercount}class" . $innercount . "mindevcount"} = $default_mindevcount;
+        
         $ret->{"domain${outercount}classes"} = $innercount;
     }
     $ret->{"domains"} = $outercount;
@@ -1267,8 +1276,40 @@ sub cmd_stats {
     my Client $self = shift;
     my $args = shift;
 
-    # FIXME: DO!
+    # get database handle
+    my $ret = {};
+    my $dbh = Mgd::get_dbh
+        or return $self->err_line('nodb');
 
+    # if they want replication counts, or didn't specify what they wanted
+    if ($args->{replication} || $args->{all}) {
+        # get names of all domains and classes for use later
+        my %classes;
+        my $rows = $dbh->selectall_arrayref('SELECT class.dmid, namespace, classid, classname ' .
+                                            'FROM domain, class WHERE class.dmid = domain.dmid');
+        foreach my $row (@$rows) {
+            $classes{$row->[0]}->{name} = $row->[1];
+            $classes{$row->[0]}->{classes}->{$row->[2]} = $row->[3];
+        }
+        $classes{$_}->{classes}->{0} = 'default'
+            foreach keys %classes;
+    
+        # replication stats
+        my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, devcount, COUNT(devcount) FROM file GROUP BY 1, 2, 3');
+        my $count = 0;
+        foreach my $stat (@$stats) {
+            $count++;
+            $ret->{"replication${count}domain"} = $classes{$stat->[0]}->{name};
+            $ret->{"replication${count}class"} = $classes{$stat->[0]}->{classes}->{$stat->[1]};
+            $ret->{"replication${count}devcount"} = $stat->[2];
+            $ret->{"replication${count}files"} = $stat->[3];
+        }
+        $ret->{"replicationcount"} = $count;
+    }
+
+    # FIXME: DO! add other stats
+
+    return $self->ok_line($ret);
 }
 
 sub ok_line {
