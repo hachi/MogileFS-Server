@@ -466,11 +466,10 @@ sub make_path {
     return undef unless $dinfo;
     my $hostname = hostid_name($dinfo->{hostid});
 
-    my $hashpath = join "/", map {
-        lc sprintf("%02x", $fid >> $_ & 255)
-    } (24, 16, 8, 0);
+    my $nfid = sprintf '%010d', $fid;
+    my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
 
-    my $path = "$hostname/dev$devid/$hashpath/$fid.fid";
+    my $path = "$hostname/dev$devid/$b/$mmm/$ttt/$nfid.fid";
     make_dirs( "$MOG_ROOT/$path" ) or return undef;
 
     return $path;
