@@ -130,7 +130,6 @@ $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
-print "USE_HTTP: $USE_HTTP\n";
 
 
 #####################################################################
