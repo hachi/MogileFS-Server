@@ -826,6 +826,50 @@ sub check_domain {
     return $dmid;
 }
 
+sub cmd_get_hosts {
+    my Client $self = shift;
+    my $args = shift;
+
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+
+    Mgd::check_host_cache();
+
+    my $ret = { hosts => 0 };
+    while (my ($hostid, $row) = each %Mgd::cache_host) {
+        next if defined $args->{hostid} && $hostid != $args->{hostid};
+
+        $ret->{hosts}++;
+        while (my ($key, $val) = each %$row) {
+            $ret->{"host$ret->{hosts}_$key"} = $val;
+        }
+    }
+
+    return $self->ok_line($ret);
+}
+
+sub cmd_get_devices {
+    my Client $self = shift;
+    my $args = shift;
+
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+
+    my $devs = Mgd::get_device_summary();
+
+    my $ret = { devices => 0 };
+    while (my ($devid, $row) = each %$devs) {
+        next if defined $args->{devid} && $devid != $args->{devid};
+
+        $ret->{devices}++;
+        while (my ($key, $val) = each %$row) {
+            $ret->{"dev$ret->{devices}_$key"} = $val;
+        }
+    }
+
+    return $self->ok_line($ret);
+}
+
 sub cmd_get_paths {
     my Client $self = shift;
     my $args = shift;
