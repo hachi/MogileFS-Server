@@ -537,6 +537,9 @@ sub job_replicate {
         validate_dbh();
         my $dbh = get_dbh() or return 0;
 
+        Mgd::check_host_cache();
+        my $host_ct = keys %Mgd::cache_host;
+
         # find the classes for each domainid (including domains without explict classes)
         my %min; # dmid -> classid -> mindevcount
         my $sth = $dbh->prepare("SELECT d.dmid, c.classid, c.mindevcount ".
@@ -547,14 +550,14 @@ sub job_replicate {
 
             # classid may be NULL (undef), in which case there are no classes defined
             # and we don't note the mindevcount (yet)
-            $min{$dmid}{$classid} = int($mct) if defined $classid;
+            $min{$dmid}{$classid} = int($host_ct < $mct ? $host_ct : $mct) if defined $classid;
         }
 
         # iterate through each domain, replicating its contents
         foreach my $dmid (keys %min) {
             # each domain's classid=0, if not defined, has an implied mindevcount of 2,
             # which most people will probably use.
-            $min{$dmid}{0} = 2 unless exists $min{$dmid}{0};
+            $min{$dmid}{0} = $host_ct < 2 ? $host_ct : 2 unless exists $min{$dmid}{0};
 
             # iterate through each class, including the implicit class 0
             while (my ($classid, $min) = each %{$min{$dmid}}) {
