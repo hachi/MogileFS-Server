@@ -1971,6 +1971,7 @@ sub ProcessQueues {
             # if we get here the client is valid
             last;
         }
+        next unless $clref;
 
         # get worker and make sure it's not closed already
         my WorkerConn $worker = shift @QueryWorkerQueue;
