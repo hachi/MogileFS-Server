@@ -34,13 +34,11 @@ use File::Path ();
 ### C O N F I G
 #####################################################################
 
-use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $DEBUG);
+use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $DEBUG $USE_HTTP);
 
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $DEFAULT_MOG_ROOT = "/mnt/mogilefs";
 $DEBUG = 0;
-
-use constant USE_HTTP => 1;
 
 my (
     %cmdline,
@@ -71,6 +69,7 @@ Getopt::Long::GetOptions(
     'r|mogroot=s'   => \$cmdline{mog_root},
     'p|confport=i'  => \$cmdline{conf_port},
     'l|listeners=i' => \$cmdline{listener_jobs},
+    'no_http'       => \$cmdline{no_http},
 );
 
 $config = $DEFAULT_CONFIG if !$config && -r $DEFAULT_CONFIG;
@@ -130,6 +129,8 @@ $listener_jobs  = choose_value( 'listener_jobs', 20 );
 $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
+$USE_HTTP       = ! choose_value( 'no_http', 0, 1);
+print "USE_HTTP: $USE_HTTP\n";
 
 
 #####################################################################
@@ -515,7 +516,7 @@ sub replicate {
         $sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
 
         my $rv = undef;
-        if (Mgd::USE_HTTP) {
+        if ($USE_HTTP) {
             $rv = http_copy($sdevid, $ddevid, $fid);
         } else {
             my $dst_path = $MOG_ROOT . "/" . make_path($ddevid, $fid);
@@ -753,7 +754,7 @@ sub is_url {
 
 sub make_path {
     # jump out if we should be using HTTP stuff
-    return Mgd::make_full_url(@_) if Mgd::USE_HTTP;
+    return Mgd::make_full_url(@_) if $USE_HTTP;
     
     my ($devid, $fid) = @_;
 
