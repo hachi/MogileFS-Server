@@ -1435,18 +1435,28 @@ sub HandleQueryWorkerResponse {
     my WorkerConn $worker = $_[1];
     return unless $worker && $Mappings{$worker->{fd}};
 
+    # parse out the query time
+    my ($time, $res);
+    if ($_[2] =~ /^(\d+\.\d+)\s(.+)$/) {
+        # save time and response for use later
+        ($time, $res) = ($1, $2);
+    } else {
+        # didn't match, must be in a different format?
+        ($time, $res) = ('undef', $_[2]);
+    }
+
     # now time this interval and add to @RecentQueries
     my $tinterval = Time::HiRes::tv_interval([$Mappings{$worker->{fd}}->[2]]);
-    push @RecentQueries, sprintf("%s %.4f", $Mappings{$worker->{fd}}->[1], $tinterval);
+    push @RecentQueries, sprintf("%s %.4f %s", $Mappings{$worker->{fd}}->[1], $tinterval, $time);
     shift @RecentQueries if scalar(@RecentQueries) > 50;
 
     # get client; fail if we don't have one or it's closed
     my Client $client = $Mappings{$worker->{fd}}->[0];
-    return Frontend->HandleChildRequest($worker, $_[2]) if !$client;
+    return Frontend->HandleChildRequest($worker, $res) if !$client;
     return Frontend->EnqueueQueryWorker($worker) if $client->{closed};
 
     # send text to client, put worker back in queue
-    $client->write($_[2] . "\r\n");
+    $client->write("$res\r\n");
     Frontend->EnqueueQueryWorker($worker);
 }
 
@@ -1771,13 +1781,14 @@ sub NoteDeadWorkerConn {
 #####################################################################
 package QueryWorker;
 
-use fields qw{sock};
+use fields qw{sock querystarttime};
 
 sub new {
     my QueryWorker $self = shift;
 
     $self = fields::new($self) unless ref $self;
     $self->{sock} = shift;
+    $self->{querystarttime} = undef;
 
     return $self;
 }
@@ -1805,6 +1816,7 @@ sub process_line {
         $cmd = lc($cmd);
 
         no strict 'refs';
+        $self->{querystarttime} = Time::HiRes::gettimeofday();
         my $cmd_handler = *{"cmd_$cmd"}{CODE};
         if ($cmd_handler) {
             my $args = decode_url_args(\$args);
@@ -2325,9 +2337,16 @@ sub cmd_stats {
 
 sub ok_line {
     my QueryWorker $self = shift;
+
+    my $delay;
+    if ($self->{querystarttime}) {
+        $delay = sprintf("%.4f ", Time::HiRes::tv_interval([ $self->{querystarttime} ]));
+        $self->{querystarttime} = undef;
+    }
+
     my $args = shift;
     my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
-    $self->{sock}->write("OK $argline\r\n");
+    $self->{sock}->write("${delay}OK $argline\r\n");
     return 1;
 }
 
@@ -2350,7 +2369,13 @@ sub err_line {
         'key_exists' => "Target key name already exists; can't overwrite.",
     }->{$err_code};
 
-    $self->{sock}->write("ERR $err_code " . eurl($err_text) . "\r\n");
+    my $delay;
+    if ($self->{querystarttime}) {
+        $delay = sprintf("%.4f ", Time::HiRes::tv_interval([ $self->{querystarttime} ]));
+        $self->{querystarttime} = undef;
+    }
+
+    $self->{sock}->write("${delay}ERR $err_code " . eurl($err_text) . "\r\n");
     return 0;
 }
 
