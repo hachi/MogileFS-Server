@@ -874,7 +874,7 @@ sub replicate {
         return $rv ? $rv : error($_[0]);
     };
 
-    return $retunlock->(1) if $on_count >= $min;
+    return $retunlock->(2) if $on_count >= $min;
     return $retunlock->(0, "Source is no longer available replicating $fid") if $on_count == 0;
     return $retunlock->(0, "No eligible devices available replicating $fid") if @exist_devid == 0;
 
@@ -1195,7 +1195,12 @@ sub job_replicate {
                             }
                         }
 
-                        if (replicate($dbh, $fid, $min)) {
+                        if (my $status = replicate($dbh, $fid, $min)) {
+                            # $status is either 0 (failure, handled below), 1 (success, we actually
+                            # replicated this file), or 2 (success, but someone else replicated it).
+                            # so if it's 2, we just want to go to the next fid.  this file is done.
+                            next if $status == 2;
+
                             # if it was no longer reachable, mark it reachable
                             if (delete $unreachable{$fid}) {
                                 $dbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
@@ -2207,18 +2212,18 @@ sub HandleChildRequest {
         $check_job->();
 
     } elsif ($cmd =~ /^repl_unreachable (\d+)/) {
-        my $fid = $1;
-        $check_job->();
-
-        # announce to the other replicators that this fid was done
-        Frontend->SendToChildrenByJob('replicate', "repl_unreachable $fid", $child);
+        # announce to the other replicators that this fid can't be reached, but note
+        # that we don't actually drain the queue to the requestor, as the replicator
+        # isn't in a place where it can accept a queue drain right now.
+        Frontend->SendToChildrenByJob('replicate', "repl_unreachable $1", $child);
 
     } elsif ($cmd =~ /^repl_i_did (\d+)/) {
         my $fid = $1;
-        $check_job->();
 
-        # announce to the other replicators that this fid was done
+        # announce to the other replicators that this fid was done and then drain the
+        # queue to this person.
         Frontend->SendToChildrenByJob('replicate', "repl_was_done $fid", $child);
+        $check_job->();
 
     } else {
         # unknown command
@@ -2234,13 +2239,14 @@ sub HandleChildRequest {
 sub SendToChildrenByJob {
     my $childref = $ChildrenByJob{$_[1]};
     return 0 unless defined $childref && %$childref;
-    my $msg = $_[2] . "\r\n";
+    my $msg = $_[2];
+
     foreach my $child (values %$childref) {
         # ignore the child specified as the third arg if one is sent
         next if defined $_[3] && $_[3] == $child;
 
         # send the message to this child
-        $child->write(\$msg);
+        $child->enqueue_line($msg);
     }
     return scalar(keys %$childref);
 }
