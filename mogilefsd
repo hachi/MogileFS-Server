@@ -47,7 +47,7 @@ my (
     $mog_root,
    );
 
-# Command-line options will override 
+# Command-line options will override
 Getopt::Long::Configure( "bundling" );
 Getopt::Long::GetOptions(
     'c|config=s'    => \$config,
@@ -452,7 +452,7 @@ sub job_replicate {
                     # same fids to move
                     my @rand_finds = randlist(@$fids);
 
-                    print "Need to replicate: $dmid/$classid: @$fids\n" if $Mgd::DEBUG >= 1;
+                    print "Need to replicate: $dmid/$classid: @$fids\n" if $Mgd::DEBUG >= 2;
                     foreach my $fid (@$fids) {
                         $fixed++ if replicate($dbh, $fid, $min);
                     }
@@ -471,10 +471,10 @@ sub job_client_listen {
     my $accept_handler = sub {
         my $csock = $server->accept();
         printf( "Listen child making a Client for %d.\n", fileno($csock) )
-            if $DEBUG;
+            if $DEBUG >= 2;
         validate_dbh();
         my $client = Client->new($csock);
-        printf( "Client is %s\n", $client ) if $DEBUG;
+        printf( "Client is %s\n", $client ) if $DEBUG >= 2;
         $client->watch_read(1);
     };
 
