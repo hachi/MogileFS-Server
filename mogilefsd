@@ -257,6 +257,7 @@ my $spawn_children = sub {
     # see if anybody has died, but don't hang up on doing so
     my $pid = waitpid -1, WNOHANG;
     return 1 if $pid <= 0 && $allkidsup;
+    $allkidsup = 0; # know something died
 
     # when a child dies, figure out what it was doing
     # and note that job has one less worker
@@ -284,6 +285,7 @@ my $spawn_children = sub {
             error("Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.");
             for (1..$need) {
                 my $cpid = make_new_child($job);
+                return 1 unless $cpid;
                 $child{$cpid} = $job;
 
                 # now increase the count of processes currently doing this job
