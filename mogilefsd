@@ -229,6 +229,7 @@ my $accept_handler = sub {
 
 # now setup socket for workers to connect to
 my $wserver = IO::Socket::INET->new(LocalPort => $worker_port,
+                                    LocalAddr => '127.0.0.1',
                                     Type      => SOCK_STREAM,
                                     Proto     => 'tcp',
                                     Blocking  => 0,
