@@ -6,6 +6,8 @@
 #
 # Authors:
 #   Brad Fitzpatrick <brad@danga.com>
+#   Brad Whitaker    <whitaker@danga.com>
+#   Mark Smith       <junior@danga.com>
 #
 # License:
 #   undecided.
@@ -21,6 +23,7 @@ use strict;
 use Getopt::Long;
 use IO::Socket;
 use Symbol;
+use POSIX ":sys_wait_h"; # argument for waitpid
 use POSIX;
 use DBI;
 use DBD::mysql;
@@ -28,18 +31,20 @@ use File::Copy ();
 use Carp;
 use File::Basename ();
 use File::Path ();
+use Sys::Syslog;
 use Socket qw(MSG_NOSIGNAL);
+use Time::HiRes qw(gettimeofday tv_interval);
 
 
 #####################################################################
 ### C O N F I G
 #####################################################################
 
-use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $DEBUG $USE_HTTP $MOGSTORED_STREAM_PORT $FLAG_NOSIGNAL);
+use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $MOGSTORED_STREAM_PORT $DEBUG $USE_HTTP $FLAG_NOSIGNAL);
 
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $DEFAULT_MOG_ROOT = "/mnt/mogilefs";
-$MOGSTORED_STREAM_PORT = 7501; # FIXME make this configurable
+$MOGSTORED_STREAM_PORT = 7501;
 $DEBUG = 0;
 
 # used in send() calls to request not to get SIGPIPEd
@@ -134,7 +139,7 @@ $db_user        = choose_value( 'db_user', "mogile" );
 $db_pass        = choose_value( 'db_pass', "", 1 );
 $conf_port      = choose_value( 'conf_port', 7001 );
 $MOG_ROOT       = choose_value( 'mog_root', $DEFAULT_MOG_ROOT );
-$query_jobs    = choose_value( 'listener_jobs', undef) || # undef if not present, then we
+$query_jobs     = choose_value( 'listener_jobs', undef) || # undef if not present, then we
                   choose_value( 'query_jobs', 20 );       # fall back to query_jobs, new name
 $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
@@ -152,15 +157,21 @@ daemonize() if $daemonize;
 
 # keep track of what all child pids are doing, and what jobs are being
 # satisifed.
-my %child  = ();    # pids -> job
+my %child  = ();    # pid -> job
+my %todie  = ();    # pid -> 1 (lists pids that we've asked to die)
 my %jobs   = ();    # jobname -> [ min, current ]
+my $psock;          # IO::Socket::INET connection to parent (undef if parent)
+my $foreground = 1; # 1 if we're running in the foreground
 my %streamcache;    # host -> IO::Socket::INET to mogstored
 
-# FIXME: make these configurable
-$jobs{'frontend'} = [ 1, 0 ]; # only one frontend job
-$jobs{'worker'} = [ $query_jobs, 0 ];
+# [ what we want to be at, what we are at ]
+$jobs{'queryworker'} = [ $query_jobs, 0 ];
 $jobs{'delete'} = [ $delete_jobs, 0 ];
 $jobs{'replicate'} = [ $replicate_jobs, 0 ];
+
+# open up our log
+openlog('mogilefsd', 'pid', 'daemon');
+Mgd::log('info', 'beginning run');
 
 sub validate_dbh {
     return unless $dbh;
@@ -189,19 +200,68 @@ $SIG{INT}  = sub {
     exit 0;
 };
 
+#############################################################################
+## beginning of main execution path
+#############################################################################
 
-# Keep jobs alive
-while (1) {
-    my $pid = wait;
+# setup server socket to listen for client connections
+my $server = IO::Socket::INET->new(LocalPort => $conf_port,
+                                   Type      => SOCK_STREAM,
+                                   Proto     => 'tcp',
+                                   Blocking  => 0,
+                                   Reuse     => 1,
+                                   Listen    => 10 )
+    or die "Error creating socket: $@\n";
+
+# accept handler for new clients
+my $accept_handler = sub {
+    my $csock = $server->accept();
+    printf( "Listen child making a Client for %d.\n", fileno($csock) )
+        if $DEBUG >= 2;
+    my $client = Client->new($csock);
+    printf( "Client is %s\n", $client ) if $DEBUG >= 2;
+    $client->watch_read(1);
+};
+
+# now setup socket for workers to connect to
+my $wserver = IO::Socket::INET->new(LocalPort => $worker_port,
+                                    Type      => SOCK_STREAM,
+                                    Proto     => 'tcp',
+                                    Blocking  => 0,
+                                    Reuse     => 1,
+                                    Listen    => 10 )
+    or die "Error creating socket: $@\n";
+
+# accept handler for new workers
+my $waccept_handler = sub {
+    my $csock = $wserver->accept();
+    printf( "Listen child making a Client for %d.\n", fileno($csock) )
+        if $DEBUG >= 2;
+    my $client = WorkerConn->new($csock);
+    printf( "Child is %s\n", $client ) if $DEBUG >= 2;
+    Frontend->RegisterWorkerConn($client);
+};
+
+# thing to keep jobs alive
+my $spawn_children = sub {
+    # see if anybody has died, but don't hang up on doing so
+    my $pid = waitpid -1, WNOHANG;
 
     # when a child dies, figure out what it was doing
     # and note that job has one less worker
     my $job;
     if ($pid > -1 && ($job = delete $child{$pid})) {
-        print "Child $pid died: $?\n";
+        my $extra = $todie{$pid} ? "expected" : "UNEXPECTED";
+        error("Child $pid ($job) died: $? ($extra)");
+        Frontend->NoteDeadChild($pid);
 
         if (my $jobstat = $jobs{$job}) {
-            $jobstat->[1]--;
+            # if the pid is in %todie, then we have asked it to shut down
+            # and have already decremented the jobstat counter and don't
+            # want to do it again
+            unless (my $true = delete $todie{$pid}) {
+                $jobstat->[1]--;
+            }
         }
     }
 
@@ -209,8 +269,7 @@ while (1) {
     while (my ($job, $jobstat) = each %jobs) {
         my $need = $jobstat->[0] - $jobstat->[1];
         if ($need > 0) {
-            print "Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.\n"
-                if $DEBUG;
+            error("Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.");
             for (1..$need) {
                 my $cpid = make_new_child($job);
                 $child{$cpid} = $job;
@@ -219,7 +278,33 @@ while (1) {
         }
     }
 
-}
+    # true value keeps us running
+    return 1;
+};
+
+# setup Danga::Socket to start handling connections
+Client->DebugLevel( 3 );
+Client->OtherFds( fileno($server)  => $accept_handler,
+                  fileno($wserver) => $waccept_handler, );
+
+# setup the post event loop callback to spawn jobs, and the timeout
+Client->SetLoopTimeout( 250 ); # 250 milliseconds
+Client->SetPostLoopCallback($spawn_children);
+
+# and now, actually start listening for events
+eval {
+    print( "Starting event loop for frontend job on pid $$.\n" ) if $DEBUG;
+    Client->EventLoop();
+};
+
+if ( $@ ) { print STDERR "ERR: $@\n" }
+print "Main event loop terminating.\n";
+Mgd::log('info', 'ending run');
+closelog();
+
+#############################################################################
+## end of main
+#############################################################################
 
 sub daemonize {
     my($pid, $sess_id, $i);
@@ -242,6 +327,7 @@ sub daemonize {
     umask 0;
 
     print STDERR "Daemon running as pid $$.\n" if $DEBUG;
+    $foreground = 0;
 
     ## Close open file descriptors
     close(STDIN);
@@ -278,15 +364,74 @@ sub make_new_child {
     }
 
     $SIG{INT} = 'DEFAULT';
+    $SIG{TERM} = 'DEFAULT';
+    $0 .= " [$job]";
 
     # unblock signals
     sigprocmask(SIG_UNBLOCK, $sigset)
         or die "Can't unblock SIGINT for fork: $!\n";
 
+    # set our frontend into child mode
+    Frontend->SetAsChild;
+
+    # try to create a connection to the parent
+    $psock = IO::Socket::INET->new(PeerAddr => "127.0.0.1",
+                                   PeerPort => $worker_port,
+                                   Type     => SOCK_STREAM,
+                                   Proto    => 'tcp',)
+        or die "Error creating socket to master: $@\n";
+    $psock->write("$$ $job\n");
+
+    # now call our job function
     no strict 'refs';
     my $job_handler = *{"job_$job"}{CODE};
     $job_handler->($$);
     exit;
+}
+
+# given (job, pid), record that this worker is about to die
+sub note_pending_death {
+    my ($job, $pid) = @_;
+
+    die "$job not defined in call to note_pending_death.\n"
+        unless defined $jobs{$job};
+
+    $todie{$pid} = 1;
+    $jobs{$job}->[1]--;
+}
+
+# log stuff to syslog or the screen
+sub log {
+    # simple logging functionality
+    if ($foreground) {
+        # syslog acts like printf so we have to use printf and append a \n
+        shift; # ignore the first parameter (info, warn, critical, etc)
+        printf(shift(@_) . "\n", @_);
+    } else {
+        # just pass the parameters to syslog
+        syslog(@_);
+    }
+}
+
+# argument: a string to send to the parent process.
+sub send_to_parent {
+    # send a string to our parent
+    return unless $psock;
+    $psock->write("$_[0]\r\n");
+}
+
+# argument: a string to take as indicating the error that just happened.
+sub error {
+    if ($psock) {
+        # we're a child, pass error to parent
+        send_to_parent("error $_[0]");
+    } else {
+        # we're a parent, so just handle output of error
+        # FIXME make this syslog or something
+        Frontend->NoteError(\$_[0]);
+        print STDERR "$_[0]\n";
+    }
+    return 0;
 }
 
 sub job_delete {
@@ -296,6 +441,16 @@ sub job_delete {
         sleep 9;
         validate_dbh();
         my $dbh = get_dbh();
+
+        # see if we have anything from the parent
+        send_to_parent('del_i_looped');
+        while (defined (my $line = <$psock>)) {
+            $line =~ s/\r?\n$//;
+            last if $line eq '.';
+            if ($line eq 'shutdown') {
+                exit 0;
+            }
+        }
 
         my $LIMIT = 500;
         while (1) {
@@ -339,8 +494,8 @@ sub job_delete {
                     }
 
                     # send delete request
-                    print "Sending delete for $path\n" if $Mgd::DEBUG >= 2;
-                    print $sock "DELETE $urlref->[2] HTTP/1.0\r\n\r\n";
+                    error("Sending delete for $path") if $Mgd::DEBUG >= 2;
+                    $sock->write("DELETE $urlref->[2] HTTP/1.0\r\n\r\n");
                     my $response = <$sock>;
                     if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
                         if (($1 >= 200 && $1 <= 299) || $1 == 404) {
@@ -348,12 +503,12 @@ sub job_delete {
                             $rv = 1;
                         } else {
                             # remote file system error?  mark node as down
-                            warn "Error: unlink failure: $path: $1\n";
+                            error("Error: unlink failure: $path: $1");
                             $dev_down{$devid} = 1;
                             next;
                         }
                     } else {
-                        warn "Error: unknown response line: $response\n";
+                        error("Error: unknown response line: $response");
                     }
                 } else {
                     # do normal unlink
@@ -395,21 +550,18 @@ sub http_copy {
     # get some information we'll need
     my $devs = Mgd::get_device_summary();
     my ($sdev, $ddev) = ($devs->{$sdevid}, $devs->{$ddevid});
-    unless (ref $sdev && ref $ddev) {
-        warn "Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid\n";
-        return 0;
-    }
+    return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid")
+        unless ref $sdev && ref $ddev;
     my ($spath, $dpath) = (Mgd::make_http_path($sdevid, $fid),
                            Mgd::make_http_path($ddevid, $fid));
     my ($shost, $sport) = (Mgd::hostid_ip($sdev->{hostid}), Mgd::hostid_http_port($sdev->{hostid}));
     my ($dhost, $dport) = (Mgd::hostid_ip($ddev->{hostid}), Mgd::hostid_http_port($ddev->{hostid}));
     unless (defined $spath && defined $dpath && defined $shost && defined $dhost && $sport && $dport) {
         # show detailed information to find out what's not configured right
-        warn "Error: unable to replicate file fid=$fid from device id $sdevid to device id $ddevid\n";
-        warn "       http://$shost:$sport$spath -> http://$dhost:$dport$dpath\n";
+        error("Error: unable to replicate file fid=$fid from device id $sdevid to device id $ddevid");
+        error("       http://$shost:$sport$spath -> http://$dhost:$dport$dpath");
         return 0;
     }
-    print "http://$shost:$sport$spath -> http://$dhost:$dport$dpath\n" if $Mgd::DEBUG >= 2;
 
     # setup our pipe error handler, in case we get closed on
     my $pipe_closed = 0;
@@ -417,9 +569,10 @@ sub http_copy {
 
     # okay, now get the file
     my $sock = IO::Socket::INET->new(PeerAddr => $shost, PeerPort => $sport, Timeout => 2)
-        or return 0;
-    print $sock "GET $spath HTTP/1.0\r\n\r\n";
-    return 0 if $pipe_closed;
+        or return error("Unable to create socket to $shost:$sport for $spath");
+    $sock->write("GET $spath HTTP/1.0\r\n\r\n");
+    return error("Pipe closed retrieving $spath from $shost:$sport")
+        if $pipe_closed;
 
     # we just want a content length
     my $clen;
@@ -428,33 +581,42 @@ sub http_copy {
         last unless length $line;
         if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
             # make sure we get a good response
-            unless ($1 >= 200 && $1 <= 299) {
-                warn "Error: Resource http://$shost:$sport$spath failed: HTTP $1\n";
-                return 0;
-            }
+            return error("Error: Resource http://$shost:$sport$spath failed: HTTP $1")
+                unless $1 >= 200 && $1 <= 299;
         }
         next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
         $clen = $1;
     }
-    return 0 unless $clen;
+    return error("File $spath has a content-length of 0; unable to replicate")
+        unless $clen;
 
     # open target for put
-    my $dsock = IO::Socket::INET->new(PeerAddr => $dhost, PeerPort => $dport, Timeout => 2) or return 0;
-    $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen\r\n\r\n") or return 0;
-    return 0 if $pipe_closed;
+    my $dsock = IO::Socket::INET->new(PeerAddr => $dhost, PeerPort => $dport, Timeout => 2)
+        or return error("Unable to create socket to $dhost:$dport for $dpath");
+    $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen\r\n\r\n")
+        or return error("Unable to write data to $dpath on $dhost:$dport");
+    return error("Pipe closed during write to $dpath on $dhost:$dport")
+        if $pipe_closed;
 
-    # now read data and print while we're reading
-    my ($data, $read) = ('', 0);
-    while (!$pipe_closed && (my $bytes = read($sock, $data, $clen - $read))) {
+    # now read data and print while we're reading.
+    my ($data, $read, $written) = ('', 0, 0);
+    while (!$pipe_closed && (my $bytes = $sock->read($data, $clen - $read))) {
+        # now we've read in $bytes bytes
         $read += $bytes;
-        last unless $dsock->write($data);
+        my $wbytes = $dsock->send($data);
+        $written += $wbytes;
+        return error("Error: wrote $wbytes; expected to write $bytes; failed putting to $dpath")
+            unless $wbytes == $bytes;
     }
+    return error("Error: wrote $written bytes, expected to write $clen")
+        unless $written == $clen;
 
     # now read in the response line (should be first line)
     my $line = <$dsock>;
     if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
         return 1 if $1 >= 200 && $1 <= 299;
-        warn "Error: got a 404 in put: device not on host?: http://$dhost:$dport$dpath" if $1 == 404;
+        warn "Error: got a 404 in put: device not on host?: http://$dhost:$dport$dpath"
+            if $1 == 404;
     } else {
         warn "Error: HTTP response line not recognized: $line";
     }
@@ -465,16 +627,16 @@ sub http_copy {
 sub replicate {
     my ($dbh, $fid, $min) = @_;
 
-    print "Replicating: $fid (need $min)\n" if $Mgd::DEBUG >= 2;
-
     my $lockname = "mgfs:fid:$fid:replicate";
     my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 1)", undef,
                                      $lockname);
-    return 0 unless $lock;
+    return error("Unable to obtain lock $lockname")
+        unless $lock;
 
     # hashref of devid -> $device_row_href  (where devid is alive)
     my $devs = Mgd::get_device_summary();
-    return 0 unless $devs && %$devs;
+    return error("Device information from get_device_summary is empty")
+        unless $devs && %$devs;
 
     # learn what devices this file is already on
     my $on_count = 0;
@@ -499,12 +661,12 @@ sub replicate {
     my $retunlock = sub {
         my $rv = shift;
         $dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
-        return $rv;
+        return $rv ? $rv : error($_[0]);
     };
 
     return $retunlock->(1) if $on_count >= $min;
-    return $retunlock->(0) if $on_count == 0;
-    return $retunlock->(0) if @exist_devid == 0;
+    return $retunlock->(0, "Source is no longer available replicating $fid") if $on_count == 0;
+    return $retunlock->(0, "No eligible devices available replicating $fid") if @exist_devid == 0;
 
     my $sdevid;
 
@@ -530,7 +692,7 @@ sub replicate {
             $rv = File::Copy::copy($src_path, $dst_path);
         }
 
-        return $retunlock->(0) unless $rv;
+        return $retunlock->(0, "Copier failed replicating $fid") unless $rv;
         add_file_on($fid, $ddevid, 1);
         $on_count++;
     }
@@ -539,13 +701,33 @@ sub replicate {
 }
 
 sub job_replicate {
+    my $parse_parent_response = sub {
+        # now see what was in our message queue
+        while (defined (my $line = <$psock>)) {
+            $line =~ s/\r?\n$//;
+            last if $line eq '.';
+
+            # now find out what command this is?
+            if ($line =~ /^repl_was_done (\d+)/ && $_[0]) {
+                delete $_[0]->{$1};
+            } elsif ($line eq 'shutdown') {
+                exit 0;
+            }
+        }
+    };
+
+    my $sleep = 2;
     while (1) {
-        sleep 2;
+        sleep $sleep;
         validate_dbh();
         my $dbh = get_dbh() or return 0;
 
         Mgd::check_host_cache();
         my $host_ct = keys %Mgd::cache_host;
+
+        # general report in to parent
+        send_to_parent('repl_ping');
+        $parse_parent_response->(undef);
 
         # find the classes for each domainid (including domains without explict classes)
         my %min; # dmid -> classid -> mindevcount
@@ -560,6 +742,9 @@ sub job_replicate {
             $min{$dmid}{$classid} = int($host_ct < $mct ? $host_ct : $mct) if defined $classid;
         }
 
+        # start off assuming that we're going to get everything replicated and then take a break
+        $sleep = 2;
+
         # iterate through each domain, replicating its contents
         foreach my $dmid (keys %min) {
             # each domain's classid=0, if not defined, has an implied mindevcount of $default_mindevcount
@@ -569,102 +754,68 @@ sub job_replicate {
 
             # iterate through each class, including the implicit class 0
             while (my ($classid, $min) = each %{$min{$dmid}}) {
-
-                print "Checking replication for dmid=$dmid, classid=$classid, min=$min\n" if $Mgd::DEBUG >= 1;
+                error("Checking replication for dmid=$dmid, classid=$classid, min=$min")
+                    if $Mgd::DEBUG >= 1;
 
                 my $LIMIT = 1000;
-                while (1) {
+
+                # try going from devcount of 1 up to devcount of $min-1
+                my %fidtodo; # fid => 1
+                my $fixed = 0;
+                my $attempted = 0;
+                my $devcount = 1;
+                while ($fixed < $LIMIT && $devcount < $min) {
                     my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
-                                                        "AND devcount>0 AND devcount<? AND length IS NOT NULL ".
-                                                        "LIMIT $LIMIT", undef, $dmid, $classid, $min);
+                                                        "AND devcount = ? AND length IS NOT NULL ".
+                                                        "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
                     die $dbh->errstr if $dbh->err;
+                    $fidtodo{$_} = 1 foreach @$fids;
+
+                    # increase devcount so we try to replicate the files at the next devcount
+                    $devcount++;
+
+                    # see if we have any files to replicate
                     my $count = $fids ? scalar @$fids : 0;
-                    print "  found $count for dmid=$dmid/classid=$classid/min=$min\n" if $Mgd::DEBUG >= 1;
-                    last unless $count;
-                    my $fixed = 0;
+                    error("  found $count for dmid=$dmid/classid=$classid/min=$min")
+                        if $Mgd::DEBUG >= 1;
+                    next unless $count;
 
                     # randomize the list so multiple daemons/threads working on
                     # replicate at the same time don't all fight over the
                     # same fids to move
-                    my @rand_finds = randlist(@$fids);
+                    my @randfids = randlist(@$fids);
 
-                    print "Need to replicate: $dmid/$classid: @$fids\n" if $Mgd::DEBUG >= 2;
-                    foreach my $fid (@rand_finds) {
-                        $fixed++ if replicate($dbh, $fid, $min);
+                    error("Need to replicate: $dmid/$classid: @$fids") if $Mgd::DEBUG >= 2;
+                    foreach my $fid (@randfids) {
+                        # now replicate this fid
+                        $attempted++;
+                        next unless $fidtodo{$fid};
+                        if (replicate($dbh, $fid, $min)) {
+                            $fixed++;
+                            send_to_parent("repl_i_did $fid");
+                            $parse_parent_response->(\%fidtodo);
+
+                            # status update
+                            if ($fixed % 20 == 0) {
+                                my $ratio = $fixed/$attempted*100;
+                                error(sprintf("replicated=$fixed, attempted=$attempted, ratio=%.2f%%", $ratio))
+                                    if $fixed % 20 == 0;
+                            }
+                        }
                     }
-
-                    last unless $count == $LIMIT || $fixed != $count;
                 }
 
+                # if we did 1000, we just want to jump to the next pass through all domains and classes without pausing
+                $sleep = 0 if $fixed >= $LIMIT;
             }
         }
     }
 }
 
-sub job_frontend {
-    # setup server socket to listen for client connections
-    my $server = IO::Socket::INET->new(LocalPort => $conf_port,
-                                       Type      => SOCK_STREAM,
-                                       Proto     => 'tcp',
-                                       Blocking  => 0,
-                                       Reuse     => 1,
-                                       Listen    => 10 )
-        or die "Error creating socket: $@\n";
-
-    # accept handler for new clients
-    my $accept_handler = sub {
-        my $csock = $server->accept();
-        printf( "Listen child making a Client for %d.\n", fileno($csock) )
-            if $DEBUG >= 2;
-        my $client = Client->new($csock);
-        printf( "Client is %s\n", $client ) if $DEBUG >= 2;
-        $client->watch_read(1);
-    };
-
-    # now setup socket for workers to connect to
-    my $wserver = IO::Socket::INET->new(LocalPort => $worker_port,
-                                        Type      => SOCK_STREAM,
-                                        Proto     => 'tcp',
-                                        Blocking  => 0,
-                                        Reuse     => 1,
-                                        Listen    => 10 )
-        or die "Error creating socket: $@\n";
-
-    # accept handler for new workers
-    my $waccept_handler = sub {
-        my $csock = $wserver->accept();
-        printf( "Listen child making a Client for %d.\n", fileno($csock) )
-            if $DEBUG >= 2;
-        my $client = Client->new($csock);
-        printf( "Worker is %s\n", $client ) if $DEBUG >= 2;
-        Frontend->RegisterWorker($client);
-    };
-    
-    # setup Danga::Socket to start handling connections
-    Client->DebugLevel( 3 );
-    Client->OtherFds( fileno($server)  => $accept_handler,
-                      fileno($wserver) => $waccept_handler, );
-
-    # and now, actually start listening for events
-    eval {
-        print( "Starting event loop for frontend job on pid $$.\n" ) if $DEBUG;
-        Client->EventLoop();
-    };
-
-    if ( $@ ) { print STDERR "ERR: client_listen: $@\n" }
-}
-
-sub job_worker {
-    # connect to master
-    my $msock = IO::Socket::INET->new(PeerAddr => "127.0.0.1",
-                                      PeerPort => $worker_port,
-                                      Type     => SOCK_STREAM,
-                                      Proto    => 'tcp',)
-        or die "Error creating socket to master: $@\n";
-
+sub job_queryworker {
     # process lines of input, blocking.
-    my $worker = Worker->new($msock);
-    while (defined (my $line = <$msock>)) {
+    my $worker = QueryWorker->new($psock);
+    while (defined (my $line = <$psock>)) {
         $line =~ s/[\r\n]+$//;
         validate_dbh();
         $worker->process_line(\$line);
@@ -719,6 +870,12 @@ sub key_filerow {
     return $row;
 }
 
+# see if we should reduce the number of active children
+sub job_needs_reduction {
+    my $job = shift;
+    return $jobs{$job}->[0] < $jobs{$job}->[1];
+}
+
 # get size of file, return 0 on error
 sub get_file_size {
     my $path = shift;
@@ -738,18 +895,12 @@ sub get_file_size {
     my $rv = 0;
     my $sock = $streamcache{$host};
 
-    # handle errors
-    my $error = sub {
-        print STDERR $_[0];
-        return 0;
-    };
-
     # sub to parse the response from $sock.  common code, so we have it here.
     my $parse_response = sub {
         my $line = <$sock>;
         return 0 unless defined $line;
         return 0 unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
-        return $error->("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
+        return error("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
             if $1 ne $uri;
         return $2+0;
     };
@@ -760,7 +911,7 @@ sub get_file_size {
         if ($!) {
             undef $streamcache{$host};
         } elsif ($rv != $reqlen) {
-            return $error->("send() didn't return expected length ($rv, not $reqlen) for $path");
+            return error("send() didn't return expected length ($rv, not $reqlen) for $path");
         } else {
             # success
             return $parse_response->();
@@ -774,9 +925,9 @@ sub get_file_size {
         if ($sock) {
             $rv = send($sock, $req, $FLAG_NOSIGNAL);
             if ($!) {
-                return $error->("error talking to mogstored stream ($path): $!");
+                return error("error talking to mogstored stream ($path): $!");
             } elsif ($rv != $reqlen) {
-                return $error->("send() didn't return expected length ($rv, not $reqlen) for $path");
+                return error("send() didn't return expected length ($rv, not $reqlen) for $path");
             } else {
                 # success
                 return $parse_response->();
@@ -786,7 +937,7 @@ sub get_file_size {
 
     # failure case: use a HEAD request to get the size of the file
     my $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 3)
-        or return $error->("get_file_size() unable to contact mogstored for size of $path");
+        or return error("get_file_size() unable to contact mogstored for size of $path");
     $sock->write("HEAD $uri HTTP/1.0\r\n\r\n");
     while (defined (my $line = <$sock>)) {
         if ($line =~ /^Content-length: (\d+)/i) {
@@ -796,7 +947,7 @@ sub get_file_size {
     }
 
     # no content length found?
-    return $error->("get_file_size() found no content-length header in response for $path");
+    return error("get_file_size() found no content-length header in response for $path");
 }
 
 sub class_id {
@@ -882,7 +1033,7 @@ sub is_url {
 sub make_path {
     # jump out if we should be using HTTP stuff
     return Mgd::make_full_url(@_) if $USE_HTTP;
-    
+
     my ($devid, $fid) = @_;
 
     my $dsum = get_device_summary();
@@ -966,53 +1117,151 @@ sub randlist
 ### event driven class.
 #####################################################################
 package Client; # define it so that "my Client" works
+package WorkerConn;
 package Frontend;
 
-# Mappings: fd => [ clientref, jobstring ]
+# Mappings: fd => [ clientref, jobstring, starttime ]
 # queues are just lists of Client class objects
-our (@WorkerQueue, @ClientQueue, %Mappings);
+# ChildrenByJob: job => { pid => $client }
+# ErrorsTo: fid => Client
+# RecentQueries: [ string, string, string, ... ]
+# Stats: element => number
+our ($IsChild, @QueryWorkerQueue, @ClientQueue, @RecentQueries,
+     %Mappings, %ChildrenByJob, %ErrorsTo, %Stats);
+$IsChild = 0;
+
+# when a child is spawned, they'll have copies of all the data from the
+# parent, but they don't need it.  this method is called when you want
+# to indicate that this Frontend is running on a child and should clean.
+sub SetAsChild {
+    @QueryWorkerQueue = ();
+    @ClientQueue = ();
+    %Mappings = ();
+    $IsChild = 1;
+    %ErrorsTo = ();
+
+    # and now kill off our event loop so that we don't waste time
+    Client->SetPostLoopCallback(sub { return 0; });
+}
+
+# called when a child has died.  a child is someone doing a job for us,
+# but it might be a queryworker or any other type of job.  we just want
+# to remove them from our list of children.  they're actually respawned
+# by the make_new_child function elsewhere in Mgd.
+sub NoteDeadChild {
+    my $pid = $_[1];
+    foreach my $job (keys %ChildrenByJob) {
+        return if # bail out if we actually delete one
+            delete $ChildrenByJob{$job}->{$pid};
+    }
+}
+
+# called when a client dies.  clients are users, management or non.
+# we just want to remove them from the error reporting interface, if
+# they happen to be part of it.
+sub NoteDeadClient {
+    my Client $client = $_[1];
+    delete $ErrorsTo{$client->{fd}};
+}
+
+# called when the error function in Mgd is called and we're in the parent,
+# so it's pretty simple that basically we just spit it out to folks listening
+# to errors
+sub NoteError {
+    my Client $client;
+    return unless %ErrorsTo;
+
+    my $msg = ":: ${$_[1]}\r\n";
+    foreach $client (values %ErrorsTo) {
+        $client->write(\$msg);
+    }
+}
+
+# take a new connection that we know is from one of our children, but
+# we're not sure what type of child, so just set it in read mode until
+# they tell us what they are
+sub RegisterWorkerConn {
+    my WorkerConn $worker = $_[1];
+    $worker->watch_read(1);
+}
 
 # take a new worker and note that it's a worker and ready to be used
 # for commands.  this is called when workers connect to the frontend.
-sub RegisterWorker {
+sub RegisterQueryWorker {
     # basically take the worker, mark it as a worker, enqueue it,
     # and then try to process the outstanding queues
-    my Client $worker = $_[1];
-    $worker->isWorker(1);
-    Frontend->EnqueueWorker($worker);
+    my WorkerConn $worker = $_[1];
+    Frontend->EnqueueQueryWorker($worker);
 }
 
 # puts a worker back in the queue, deleting any outstanding jobs in
 # the mapping list for this fd.
-sub EnqueueWorker {
+sub EnqueueQueryWorker {
     # first arg is class, second is worker
-    my Client $worker = $_[1];
+    my WorkerConn $worker = $_[1];
     delete $Mappings{$worker->{fd}};
-    push @WorkerQueue, $worker;
+
+    # see if we need to kill off some workers
+    if (Mgd::job_needs_reduction('queryworker')) {
+        Mgd::error("Reducing queryworker headcount by 1.");
+        Frontend->AskWorkerToDie($worker);
+        return;
+    }
+
+    # must be okay, so put it in the queue
+    push @QueryWorkerQueue, $worker;
     Frontend->ProcessQueues;
+}
+
+# if we need to kill off a worker, this function takes in the WorkerConn
+# object, tells it to die, marks us as having requested its death, and decrements
+# the count of running jobs.
+sub AskWorkerToDie {
+    my WorkerConn $worker = $_[1];
+    $worker->write("shutdown\r\n");
+    Mgd::note_pending_death($worker->job, $worker->pid);
+}
+
+# kill bored query workers so we can get down to the level requested.  this
+# continues killing until we run out of folks to kill.
+sub CullQueryWorkers {
+    while (@QueryWorkerQueue && Mgd::job_needs_reduction('queryworker')) {
+        my WorkerConn $worker = shift @QueryWorkerQueue;
+        Frontend->AskWorkerToDie($worker);
+    }
 }
 
 # called when we get a response from a worker.  this reenqueues the
 # worker so it can handle another response as well as passes the answer
 # back on to the client.
-sub HandleWorkerResponse {
+sub HandleQueryWorkerResponse {
+    return Mgd::error("Frontend (Child) got worker response: $_[2]") if $IsChild;
+
     # got a response from a worker
-    my Client $worker = $_[1];
-    return unless $worker;
+    my WorkerConn $worker = $_[1];
+    return unless $worker && $Mappings{$worker->{fd}};
+
+    # now time this interval and add to @RecentQueries
+    my $tinterval = Time::HiRes::tv_interval([$Mappings{$worker->{fd}}->[2]]);
+    push @RecentQueries, sprintf("%s %.4f", $Mappings{$worker->{fd}}->[1], $tinterval);
+    shift @RecentQueries if scalar(@RecentQueries) > 50;
 
     # get client; fail if we don't have one or it's closed
     my Client $client = $Mappings{$worker->{fd}}->[0];
-    return Frontend->EnqueueWorker($worker) if !$client || $client->{closed};
+    return Frontend->HandleChildRequest($worker, $_[2]) if !$client;
+    return Frontend->EnqueueQueryWorker($worker) if $client->{closed};
 
     # send text to client, put worker back in queue
     $client->write($_[2] . "\r\n");
-    Frontend->EnqueueWorker($worker);
+    Frontend->EnqueueQueryWorker($worker);
 }
 
 # called from various spots to empty the queues of available pairs.
 sub ProcessQueues {
+    return if $IsChild;
+
     # try to match up a client with a worker
-    while (@WorkerQueue && @ClientQueue) {
+    while (@QueryWorkerQueue && @ClientQueue) {
         # get client that isn't closed
         my $clref;
         while (@ClientQueue) {
@@ -1025,98 +1274,315 @@ sub ProcessQueues {
             # if we get here the client is valid
             last;
         }
-        
+
         # get worker and make sure it's not closed already
-        my Client $worker = shift @WorkerQueue;
+        my WorkerConn $worker = shift @QueryWorkerQueue;
         if (!defined $worker || $worker->{closed}) {
             unshift @ClientQueue, $clref;
             next;
         }
 
         # put in mapping and send data to worker
+        push @$clref, Time::HiRes::gettimeofday();
         $Mappings{$worker->{fd}} = $clref;
         $worker->write($clref->[1] . "\r\n");
         $worker->watch_read(1);
     }
 }
 
+# send short descriptions of commands we support to the user
+sub SendHelp {
+    my Client $client = $_[1];
+
+    # not supported yet
+    #my $whaton = $_[2];
+
+    # send general purpose help
+    $client->write(<<HELP);
+Welcome to mogilefsd's built-in help system.  Available commands:
+
+    !recent     Recently executed queries and how long they took.
+    !queue      Queries that are pending execution.
+    !stats      General stats on what we're up to.
+    !watch      Observe errors/messages from children.
+    !jobs       Outstanding job counts, desired level, and pids.
+    !shutdown   IMMEDIATELY kill all of mogilefsd.  IMMEDIATELY.
+
+    !to <job class> <message>
+                Send <message> to all workers of <job class>.
+                Mostly used for debugging.
+
+    !want <count> <job class>
+                Alter the level of workers of this class desired.
+                Example: !want 20 queryworker, !want 3 replicate.
+                See !jobs for what jobs are available.
+
+More to come...
+.
+HELP
+    
+}
+
 # called when a client sends us text.  we just create a job for
 # it and then call ProcessQueues.
 sub HandleClientRequest {
+    return Mgd::error("Frontend (Child) got request from client: $_[2]") if $IsChild;
+
+    # if it's just 'help', 'h', '?', or something, do that
+    if ((substr($_[2], 0, 1) eq '?') || ($_[2] eq 'help') || ($_[2] eq '')) {
+        Frontend->SendHelp($_[1]);
+        return;
+    }
+
+    # quick check to see if we the parent should handle this
+    if (substr($_[2], 0, 1) eq '!') {
+        my Client $client = $_[1];
+        my ($cmd, $args) = ($_[2] =~ m/^!(.+?)(?:\s+(.+))?$/);
+
+        my @out;
+        if ($cmd =~ /^stats$/) {
+            # print out some stats on the queues
+            my $ccount = scalar(@ClientQueue);
+            my $wcount = scalar(@QueryWorkerQueue);
+            my $ipcount = scalar(keys %Mappings);
+            push @out, "pending_queries $ccount",
+                       "processing_queries $ipcount",
+                       "bored_queryworkers $wcount",
+                       map { "$_ $Stats{$_}" } sort keys %Stats;
+
+        } elsif ($cmd =~ /^shutdown/) {
+            print "User requested shutdown: $args\n";
+            kill 15, $$; # kill us, that kills our kids
+
+        } elsif ($cmd =~ /^jobs/) {
+            # dump out a list of running jobs and pids
+            foreach my $job (sort keys %ChildrenByJob) {
+                my $ct = scalar(keys %{$ChildrenByJob{$job}});
+                push @out, "$job count $ct";
+                push @out, "$job desired $jobs{$job}->[0]";
+                push @out, "$job pids " . join(' ', sort { $a <=> $b } keys %{$ChildrenByJob{$job}});
+            }
+
+        } elsif ($cmd =~ /^want/) {
+            # !want <count> <jobclass>
+            # set the new desired staffing level for a class
+            if ($args =~ /^(\d+)\s+(\S+)/) {
+                my ($count, $job) = ($1, $2);
+
+                # validate count
+                $count = 0 if $count < 0;
+                # FIXME ...add an upper limit?
+
+                # now make sure it's a real job
+                if (defined $jobs{$job}) {
+                    $jobs{$job}->[0] = $count;
+                    push @out, "Now desiring $count children doing '$job'.";
+
+                    # try to clean out the queryworkers (if that's what we're doing?)
+                    Frontend->CullQueryWorkers
+                        if $job eq 'queryworker';
+                } else {
+                    my $classes = join(", ", sort keys %jobs);
+                    push @out, "ERROR: Invalid class '$job'.  Valid classes: $classes";
+                }
+            } else {
+                push @out, "ERROR: usage: !want <count> <jobclass>";
+            }
+
+        } elsif ($cmd =~ /^to/) {
+            # !to <jobclass> <message>
+            # sends <message> to all children of <jobclass>
+            if ($args =~ /^(\S+)\s+(.+)/) {
+                my $ct = Frontend->SendToChildrenByJob($1, $2);
+                push @out, "Message sent to $ct children.";
+
+            } else {
+                push @out, "ERROR: usage: !to <jobclass> <message>";
+            }
+
+        } elsif ($cmd =~ /^queue/ || $cmd =~ /^pend/) {
+            foreach my $clq (@ClientQueue) {
+                push @out, $clq->[1];
+            }
+
+        } elsif ($cmd =~ /^watch/) {
+            if (delete $ErrorsTo{$client->{fd}}) {
+                push @out, "Removed you from watcher list.";
+            } else {
+                $ErrorsTo{$client->{fd}} = $client;
+                push @out, "Added you to watcher list.";
+            }
+
+        } elsif ($cmd =~ /^recent/) {
+            # show the most recent N queries
+            push @out, @RecentQueries;
+
+        } else {
+            Frontend->SendHelp($client, $args);
+        }
+        $client->write(join("\r\n", @out) . "\r\n") if @out;
+        $client->write(".\r\n");
+        return;
+    }
+
     # just push the input onto the client queue
-    push @ClientQueue, [ $_[1], $_[2] ];
+    $Stats{queries}++;
+    push @ClientQueue, [ $_[1], "cmd $_[2]" ];
     Frontend->ProcessQueues;
 }
 
-# called when we notice that a client has died.  we may need to
-# replay their request at another backend.
-sub NoteDeadClient {
-    my Client $client = $_[1];
-    return unless $client->isWorker;
+# a child has contacted us with some command/status/something.
+sub HandleChildRequest {
+    return Mgd::error("Frontend (Child) got request from child: $_[2]") if $IsChild;
+
+    # if they have no job set, then their first line is what job they are
+    # and not a command.  they also specify their pid, just so we know what
+    # connection goes with what pid, in case it's ever useful information.
+    my WorkerConn $child = $_[1];
+    my $job = $child->job;
+    unless (defined $child->job) {
+        my ($pid, $job) = ($_[2] =~ /^(\d+)\s+(.+)/);
+        $child->job($job);
+        $child->pid($pid);
+
+        # now do any special case startup
+        if ($job eq 'queryworker') {
+            Frontend->RegisterQueryWorker($child);
+        }
+
+        # add to normal list
+        $ChildrenByJob{$job}->{$child->pid} = $child;
+        return;
+    }
+
+    # at this point we've got a command of some sort
+    my $cmd = $_[2];
+    if ($cmd =~ /^error (.+)$/i) {
+        # pass it on to our error handler, prefaced with the child's job
+        Mgd::error("[" . $child->job . "(" . $child->pid . ")] $1");
+
+    } elsif ($cmd =~ /^queue/) {
+        # send out what we have queued up for it
+        $child->drain_queue;
+
+    } elsif ($cmd =~ /^del_i_looped/) {
+        # see if we need to kill it
+        if (Mgd::job_needs_reduction('delete')) {
+            Mgd::error("Reducing headcount of delete job by 1.");
+            Frontend->AskWorkerToDie($child);
+        } else {
+            # just drain the queue that we have for them
+            $child->drain_queue;
+        }
+
+    } elsif ($cmd =~ /^repl_ping/) {
+        # they've pinged us, say hi
+        if (Mgd::job_needs_reduction('replicate')) {
+            Mgd::error("Reducing headcount of replicate job by 1.");
+            Frontend->AskWorkerToDie($child);
+        } else {
+            # just drain the queue that we have for them
+            $child->drain_queue;
+        }
+
+    } elsif ($cmd =~ /^repl_i_did (\d+)/) {
+        # see if we should kill this off?
+        my $fid = $1;
+        if (Mgd::job_needs_reduction('replicate')) {
+            Mgd::error("Reducing headcount of replicate job by 1.");
+            Frontend->AskWorkerToDie($child);
+        } else {
+            # just drain the queue that we have for them
+            $child->drain_queue;
+        }
+
+        # announce to the other replicators that this fid was done
+        Frontend->SendToChildrenByJob('replicate', "repl_was_done $fid", $child);
+
+    } else {
+        # unknown command
+        Mgd::error("Unknown command [$_[2]] from child; job=" . $child->job);
+    }
+}
+
+# given a job class, and a message, send it to all children of that job.  returns
+# the number of children the message was sent to.
+# arguments: ( jobclass, message, [ child ] )
+# if child is specified, the message will be sent to members of the job class that
+# aren't that child.  so you can exclude the one that originated the message.
+sub SendToChildrenByJob {
+    my $childref = $ChildrenByJob{$_[1]};
+    return 0 unless defined $childref && %$childref;
+    my $msg = $_[2] . "\r\n";
+    foreach my $child (values %$childref) {
+        # ignore the child specified as the third arg if one is sent
+        next if defined $_[3] && $_[3] == $child;
+
+        # send the message to this child
+        $child->write(\$msg);
+    }
+    return scalar(keys %$childref);
+}
+
+# called when we notice that a worker has bit it.  we might have to restart a
+# job that they had been working on.
+sub NoteDeadWorkerConn {
+    return if $IsChild;
+
+    # get parms and error check
+    my WorkerConn $worker = $_[1];
+    return unless $worker;
 
     # if there's a mapping for this worker's fd, they had a job that didn't get done
-    if ($Mappings{$client->{fd}}) {
+    if ($Mappings{$worker->{fd}}) {
         # unshift, since this one already went through the queue once
-        unshift @ClientQueue, $Mappings{$client->{fd}};
-        delete $Mappings{$client->{fd}};
+        unshift @ClientQueue, $Mappings{$worker->{fd}};
+        delete $Mappings{$worker->{fd}};
+
+        # now try to get it processing again
         Frontend->ProcessQueues;
     }
 }
 
 #####################################################################
 ### C L I E N T   C L A S S
-### Workers and users are both clients.  We keep track of which we
-### are with a flag, though, and we use that to determine how we
-### should handle input.  This class is just a connection to the
-### client or worker.
+### A client is a user connection for sending requests to us.  Requests
+### can either be normal user requests to be sent to a QueryWorker
+### or management requests that start with a !.
 #####################################################################
 package Client;
 
 use Danga::Socket ();
 use base qw{Danga::Socket};
 
-use fields qw{read_buf is_worker};
+use fields qw{read_buf};
 
 sub new {
     my Client $self = shift;
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new( @_ );
-
-    # mark as not a worker by default
-    $self->{is_worker} = 0;
-
-    $self->debugmsg( 3, "New client for %d running.", $self->{fd} );
     return $self;
 }
 
 # Client
 sub event_read {
     my Client $self = shift;
-    $self->debugmsg( 3, "Read event on %d.", $self->{fd} );
 
     my $bref = $self->read(1024);
     return $self->close() unless defined $bref;
     $self->{read_buf} .= $$bref;
 
-    if ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
-        if ($self->isWorker) {
-            Frontend->HandleWorkerResponse($self, $1);
-        } else {
-            Frontend->HandleClientRequest($self, $1);
-        }
+    while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
+        next unless length $1;
+        Frontend->HandleClientRequest($self, $1);
     }
 }
 
-sub isWorker {
-    my Client $self = shift;
-    return $self->{is_worker} unless @_;
-    return $self->{is_worker} = shift;
-}
-
 # Client
-sub event_err {  my $self = shift; $self->close; }
-sub event_hup {  my $self = shift; $self->close; }
+sub event_err { my $self = shift; $self->close; }
+sub event_hup { my $self = shift; $self->close; }
 
+# just note that we've died
 sub close {
     # mark us as being dead
     my Client $self = shift;
@@ -1124,17 +1590,96 @@ sub close {
     $self->SUPER::close(@_);
 }
 
+#####################################################################
+### W O R K E R C O N N   C L A S S
+### This class maintains a connection to one of our various classes
+### of workers.
+#####################################################################
+package WorkerConn;
+
+use Danga::Socket ();
+use base qw{Danga::Socket};
+
+use fields qw{read_buf job pid cmd_buf};
+
+sub new {
+    my WorkerConn $self = shift;
+    $self = fields::new($self) unless ref $self;
+    $self->SUPER::new( @_ );
+
+    # mark as not a worker by default
+    $self->{pid} = 0;
+    $self->{job} = undef;
+    $self->{cmd_buf} = [];
+
+    return $self;
+}
+
+sub event_read {
+    my WorkerConn $self = shift;
+
+    my $bref = $self->read(1024);
+    return $self->close() unless defined $bref;
+    $self->{read_buf} .= $$bref;
+
+    while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
+        my $line = $1;
+        if ($self->job eq 'queryworker' && (substr($line, 0, 5) ne 'error')) {
+            Frontend->HandleQueryWorkerResponse($self, $line);
+        } else {
+            Frontend->HandleChildRequest($self, $line);
+        }
+    }
+}
+
+sub job {
+    my WorkerConn $self = shift;
+    return $self->{job} unless @_;
+    return $self->{job} = shift;
+}
+
+sub pid {
+    my WorkerConn $self = shift;
+    return $self->{pid} unless @_;
+    return $self->{pid} = shift;
+}
+
+sub event_hup { my $self = shift; $self->close; }
+
+sub close {
+    # mark us as being dead
+    my WorkerConn $self = shift;
+    Frontend->NoteDeadWorkerConn($self);
+    $self->SUPER::close(@_);
+}
+
+sub enqueue_line {
+    my WorkerConn $self = $_[0];
+    return if $self->job eq 'queryworker'; # they don't use this queueing
+    my $msg = "$_[1]\r\n";
+    push @{$self->{cmd_buf}}, $msg;
+}
+
+sub drain_queue {
+    my WorkerConn $worker = $_[0];
+    foreach my $cmd (@{$worker->{cmd_buf}}) {
+        $worker->write($cmd);
+    }
+    $worker->write(".\r\n");
+    $worker->{cmd_buf} = [];
+}
+
 
 #####################################################################
 ### W O R K E R   C L A S S
 ### Class that handles all of the actions that a worker can take.
 #####################################################################
-package Worker;
+package QueryWorker;
 
 use fields qw{sock};
 
 sub new {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
 
     $self = fields::new($self) unless ref $self;
     $self->{sock} = shift;
@@ -1143,10 +1688,24 @@ sub new {
 }
 
 sub process_line {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $lineref = shift;
 
-    if ($$lineref =~ /^(\w+)\s*(.*)/) {
+    # see what kind of command this is
+    return $self->err_line('unknown_command')
+        unless $$lineref =~ /^(\S+)\s*(.*)/;
+    my ($cmd, $line) = ($1, $2);
+
+    # some basic commands we support
+    if ($cmd eq 'echo') {
+        Mgd::send_to_parent($line);
+        return;
+    } elsif ($cmd eq 'shutdown') {
+        exit 0;
+    }
+
+    # fallback to normal command handling
+    if ($line =~ /^(\w+)\s*(.*)/) {
         my ($cmd, $args) = ($1, $2);
         $cmd = lc($cmd);
 
@@ -1164,7 +1723,7 @@ sub process_line {
 
 # returns 0 on error, or dmid of domain
 sub check_domain {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     return $self->err_line("no_domain") unless length($args->{domain});
@@ -1177,14 +1736,14 @@ sub check_domain {
 }
 
 sub cmd_sleep {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
     sleep($args->{duration} || 10);
     return $self->ok_line;
 }
 
 sub cmd_create_open {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -1242,7 +1801,7 @@ sub cmd_create_open {
 }
 
 sub cmd_create_close {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -1310,7 +1869,7 @@ sub cmd_create_close {
 }
 
 sub cmd_delete {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -1335,7 +1894,7 @@ sub cmd_delete {
 }
 
 sub cmd_rename {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -1357,7 +1916,7 @@ sub cmd_rename {
 }
 
 sub cmd_get_hosts {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1379,7 +1938,7 @@ sub cmd_get_hosts {
 }
 
 sub cmd_get_devices {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1401,7 +1960,7 @@ sub cmd_get_devices {
 }
 
 sub cmd_create_domain {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1411,7 +1970,7 @@ sub cmd_create_domain {
     return $self->err_line('no_domain') unless length $domain;
 
     # FIXME: add some sort of authentication/limitation on this?
-    
+
     my $dmid = Mgd::domain_id($domain);
     return $self->err_line('domain_exists') if $dmid;
 
@@ -1426,7 +1985,7 @@ sub cmd_create_domain {
 }
 
 sub cmd_create_class {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1442,7 +2001,7 @@ sub cmd_create_class {
     return $self->err_line('invalid_mindevcount') unless $mindevcount > 0;
 
     # FIXME: add some sort of authentication/limitation on this?
-    
+
     my $dmid = Mgd::domain_id($domain);
     return $self->err_line('no_domain') unless $dmid;
 
@@ -1470,7 +2029,7 @@ sub cmd_create_class {
 }
 
 sub cmd_update_class {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     # simply passes through to create_class with update set
@@ -1478,7 +2037,7 @@ sub cmd_update_class {
 }
 
 sub cmd_get_domains {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1503,7 +2062,7 @@ sub cmd_get_domains {
         # record the default class and mindevcount
         $ret->{"domain${outercount}class" . ++$innercount . "name"} = 'default';
         $ret->{"domain${outercount}class" . $innercount . "mindevcount"} = $default_mindevcount;
-        
+
         $ret->{"domain${outercount}classes"} = $innercount;
     }
     $ret->{"domains"} = $outercount;
@@ -1512,7 +2071,7 @@ sub cmd_get_domains {
 }
 
 sub cmd_get_paths {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     my $key = $args->{key};
@@ -1525,7 +2084,7 @@ sub cmd_get_paths {
     # get DB handle
     my $dbh = Mgd::get_dbh or
         return $self->err_line("nodb");
-    
+
     my $filerow = Mgd::key_filerow($dbh, $dmid, $key);
     return $self->err_line("unknown_key") unless $filerow;
 
@@ -1558,7 +2117,7 @@ sub cmd_get_paths {
 }
 
 sub cmd_set_state {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     # get database handle
@@ -1594,7 +2153,7 @@ sub cmd_set_state {
 }
 
 sub cmd_stats {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
 
     # get database handle
@@ -1670,17 +2229,17 @@ sub cmd_stats {
 }
 
 sub ok_line {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $args = shift;
     my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
-    $self->{sock}->print("OK $argline\r\n");
+    $self->{sock}->write("OK $argline\r\n");
     return 1;
 }
 
 # first argument: error code.
 # second argument: optional error text.  text will be taken from code if no text provided.
 sub err_line {
-    my Worker $self = shift;
+    my QueryWorker $self = shift;
     my $err_code = shift;
     my $err_text = shift || {
         'unknown_command' => "Unknown server command",
@@ -1696,7 +2255,7 @@ sub err_line {
         'key_exists' => "Target key name already exists; can't overwrite.",
     }->{$err_code};
 
-    $self->{sock}->print("ERR $err_code " . eurl($err_text) . "\r\n");
+    $self->{sock}->write("ERR $err_code " . eurl($err_text) . "\r\n");
     return 0;
 }
 
