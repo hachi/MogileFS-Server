@@ -600,8 +600,7 @@ sub cmd_create_open {
 
     # validate parameters
     my $dmid = $self->check_domain($args) or return 0;
-    my $key = $args->{key};
-    return $self->err_line("no_key") unless length($key);
+    my $key = $args->{key} || "";
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
@@ -618,20 +617,10 @@ sub cmd_create_open {
             or return $self->err_line("unreg_class");
     }
 
-    # see if we have a fid for this key already
-    my $old_file = Mgd::key_filerow($dbh, $dmid, $key);
-    if ($old_file) {
-        # add to to-delete list
-        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_file->{fid});
-        $dbh->do("DELETE FROM file WHERE fid=?", undef, $old_file->{fid});
-    }
-
-
     # setup the new mapping
-    $dbh->do("INSERT INTO file SET ".
-             " fid=NULL, dmid=?, dkey=?, length=NULL, ".
-             " classid=?, devcount=0", undef,
-             $dmid, $key, $classid);
+    $dbh->do("INSERT INTO tempfile SET ".
+             " fid=NULL, dmid=?, dkey=?, classid=?",
+             undef, $dmid, $key, $classid);
     return undef if $dbh->err;
     my $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
     return undef unless $fid > 0;
@@ -649,7 +638,6 @@ sub cmd_create_open {
 
     # FIXME: verify the path is good, and try alt device otherwise
     my $path = Mgd::make_path($devid, $fid);
-
 
     return $self->ok_line({
         fid => $fid,
@@ -679,18 +667,34 @@ sub cmd_create_close {
     my $dbh = Mgd::get_dbh or
         return $self->err_line("nodb");
 
-    # is this fid still owned by this key?
-    my $cur_fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
-                                        undef, $dmid, $key);
-    return $self->err_line("expired_fid") unless $cur_fid == $fid;
+    # find the temp file we're closing and making real
+    my $trow = $dbh->selectrow_hashref("SELECT classid, dmid, dkey ".
+                                       "FROM tempfile WHERE fid=?",
+                                       undef, $fid);
+    return $self->err_line("no_temp_file") unless $trow;
+
+    # see if we have a fid for this key already
+    my $old_file = Mgd::key_filerow($dbh, $dmid, $key);
+    if ($old_file) {
+        # add to to-delete list
+        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_file->{fid});
+        $dbh->do("DELETE FROM file WHERE fid=?", undef, $old_file->{fid});
+    }
 
     my $size = -s "$Mgd::MOG_ROOT/$path";
 
     # TODO: check for EIO?
     return $self->err_line("empty_file") unless $size;
 
-    $dbh->do("UPDATE file SET length=? WHERE fid=?", undef,
-             $size, $fid);
+    my $rv = $dbh->do("REPLACE INTO file ".
+                      "SET ".
+                      "  fid=?, dmid=?, dkey=?, length=?, ".
+                      "  classid=?, devcount=0", undef,
+                      $fid, $dmid, $key, $size, $trow->{classid});
+    return $self->err_line("db_error") unless $rv;
+
+    $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
+
     if (Mgd::add_file_on($fid, $devid)) {
         return $self->ok_line();
     } else {
