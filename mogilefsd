@@ -25,41 +25,99 @@ use Carp;
 use File::Basename ();
 use File::Path ();
 
+use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $DEBUG);
+
+$DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
+$DEFAULT_MOG_ROOT = "/mnt/mogilefs";
+$DEBUG = 0;
 
 my (
+    %cmdline,
+    %cfgfile,
+    $config,
     $daemonize,
+    $db_dsn,
+    $db_user,
+    $db_pass,
+    $conf_port,
+    $listener_jobs,
+    $delete_jobs,
+    $replicate_jobs,
+    $mog_root,
    );
 
+# Command-line options will override 
+Getopt::Long::Configure( "bundling" );
 Getopt::Long::GetOptions(
-    'd|daemon'      => \$daemonize,
+    'c|config=s'    => \$config,
+    'd|debug'       => \$cmdline{debug},
+    'D|daemon'      => \$cmdline{daemonize},
+    'dsn=s'         => \$cmdline{db_dsn},
+    'dbuser=s'      => \$cmdline{db_user},
+    'dbpass=s'      => \$cmdline{db_pass},
+    'r|mogroot=s'   => \$cmdline{mog_root},
+    'p|confport=i'  => \$cmdline{conf_port},
+    'l|listeners=i' => \$cmdline{listener_jobs},
 );
 
-daemonize() if $daemonize;
+# Read the config file if one was specified
+if ( $config ) {
+    open my $cf, "<$config" or die "open: $config: $!";
 
-use vars qw($dbh);
+    my $configLine = qr{
+        ^\s*                    # Leading space
+        (\w+)                   # Key
+        \s+ =? \s*              # space + optional equal + optional space
+        (.+?)                   # Value
+        \s*$                    # Trailing space
+    }x;
 
-sub validate_dbh {
-    return unless $dbh;
-    my $id = $dbh->selectrow_array("SELECT CONNECTION_ID()");
-    if (! $id) {
-        # handle's dead.  don't use it.  (MySQL-ism above)
-        undef $dbh;
+    my $linecount = 0;
+    while (defined( my $line = <$cf> )) {
+        $linecount++;
+        next if $line =~ m{^\s*(#.*)?$};
+        die "Malformed config file (line $linecount)" unless $line =~ $configLine;
+
+        my ( $key, $value ) = ( $1, $2 );
+        print STDERR "Setting '$key' to '$value'\n";
+        $cfgfile{ $key } = $value;
+    }
+
+    close $cf;
+}
+
+### FUNCTION: choose_value( $name, $default[, $boolean] )
+sub choose_value ($$;$) {
+    my ( $name, $default, $boolean ) = @_;
+
+    if ( $boolean ) {
+        return $cmdline{$name} if defined $cmdline{$name};
+        return $cfgfile{$name} if defined $cfgfile{$name};
+        return $default;
+    }
+
+    elsif ( !$boolean ) {
+        return $cmdline{$name} || $cfgfile{ $name } || $default;
     }
 }
 
-sub get_dbh {
-    return $dbh ||= DBI->connect("DBI:mysql:mogilefs", "mogile", "");
-}
 
-use vars qw($MOG_ROOT);
-$MOG_ROOT = "/mnt/mogilefs";
+# Fill in defaults for those values which were either loaded from config or
+# specified on the command line. Command line takes precendence, then values in
+# the config file, then the defaults.
+$daemonize      = choose_value( 'daemonize', 0, 1 );
+$db_dsn         = choose_value( 'db_dsn', "DBI:mysql:mogilefs" );
+$db_user        = choose_value( 'db_user', "mogile" );
+$db_pass        = choose_value( 'db_pass', "", 1 );
+$conf_port      = choose_value( 'conf_port', 7001 );
+$MOG_ROOT       = choose_value( 'mog_root', $DEFAULT_MOG_ROOT );
+$listener_jobs  = choose_value( 'listener_jobs', 20 );
+$delete_jobs    = choose_value( 'delete_jobs', 1 );
+$replicate_jobs = choose_value( 'replicate_jobs', 1 );
+$DEBUG          = choose_value( 'debug', 0, 1 );
 
-use vars qw($DEBUG);
-$DEBUG = 1;
 
-my $conf_port = 7001;
-
-
+daemonize() if $daemonize;
 
 # establish SERVER socket, bind and listen.
 my $server = IO::Socket::INET->new(LocalPort => $conf_port,
@@ -77,10 +135,22 @@ my %jobs   = ();    # jobname -> [ min, current ]
 
 # FIXME: make these configurable (and client_listen will use IO::Epoll or
 # something in the future, maybe IO::Multiplex)
-$jobs{'client_listen'} = [ 20, 0 ];
-$jobs{'delete'} = [ 1, 0 ];
-$jobs{'replicate'} = [ 1, 0 ];
+$jobs{'client_listen'} = [ $listener_jobs, 0 ];
+$jobs{'delete'} = [ $delete_jobs, 0 ];
+$jobs{'replicate'} = [ $replicate_jobs, 0 ];
 
+sub validate_dbh {
+    return unless $dbh;
+    my $id = $dbh->selectrow_array("SELECT CONNECTION_ID()");
+    if (! $id) {
+        # handle's dead.  don't use it.  (MySQL-ism above)
+        undef $dbh;
+    }
+}
+
+sub get_dbh {
+    return $dbh ||= DBI->connect($db_dsn, $db_user, $db_pass);
+}
 
 # Install signal handlers.
 $SIG{$_}  = sub {
@@ -469,7 +539,7 @@ sub make_path {
     my $nfid = sprintf '%010d', $fid;
     my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
 
-    my $path = "$hostname/dev$devid/$b/$mmm/$ttt/$fid.fid";
+    my $path = "$hostname/dev$devid/$b/$mmm/$ttt/$nfid.fid";
     make_dirs( "$MOG_ROOT/$path" ) or return undef;
 
     return $path;
