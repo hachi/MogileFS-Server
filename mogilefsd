@@ -1965,17 +1965,17 @@ sub HandleQueryWorkerResponse {
 
     # <numeric id> [client-side time to complete] <response>
     my ($time, $id, $res);
-    if ($_[2] =~ /^(\d+)\s+(\d+\.\d+)\s+(.+)$/) {
+    if ($_[2] =~ /^(\d+-\d+)\s+(\d+\.\d+)\s+(.+)$/) {
         # save time and response for use later
         ($id, $time, $res) = ($1, $2, $3);
-    } elsif ($_[2] =~ /^(\d+)\s(.+)$/) {
+    } elsif ($_[2] =~ /^(\d+-\d+)\s(.+)$/) {
         # didn't match, must be in a different format?
         ($id, $time, $res) = ($1, 'undef', $2);
     }
 
     # now, if it doesn't match
-    unless ($id == $worker->{reqid}) {
-        Mgd::error("Worker responded with id $id, expected $worker->{reqid}, killing");
+    unless ($id eq "$worker->{pid}-$worker->{reqid}") {
+        Mgd::error("Worker responded with id $id, expected $worker->{pid}-$worker->{reqid}, killing");
         $client->close('worker_mismatch');
         return Frontend->AskWorkerToDie($worker);
     }
@@ -2024,7 +2024,7 @@ sub ProcessQueues {
         # increment our counter so we know what request counter this is going out
         $worker->{reqid}++;
 
-        $worker->write($worker->{reqid} . " " . $clref->[1] . "\r\n");
+        $worker->write("$worker->{pid}-$worker->{reqid} $clref->[1]\r\n");
         $worker->watch_read(1);
     }
 }
@@ -2337,7 +2337,7 @@ sub process_line {
 
     # see what kind of command this is
     return $self->err_line('unknown_command')
-        unless $$lineref =~ /^(\d*)\s*(\S+)\s+(\S+)\s*(.*)/;
+        unless $$lineref =~ /^(\d+-\d+)?\s*(\S+)\s+(\S+)\s*(.*)/;
     $self->{reqid} = $1 || undef;
     my ($cmd, $line) = ($2, $4);
 
