@@ -292,21 +292,22 @@ sub job_delete {
 
   PASS:
     while (1) {
-        sleep 10;
+        sleep 9;
         validate_dbh();
         my $dbh = get_dbh();
 
-        my %dev_down;  # devid -> 1 (when device times out due to EIO)
-
         my $LIMIT = 500;
         while (1) {
+            sleep 1;
             my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
-                                                  "FROM file_to_delete fd LEFT JOIN file_on fo ON fd.fid=fo.fid ".
-                                                  "LIMIT $LIMIT ");
+                                                  "FROM file_to_delete fd ".
+                                                  "LEFT JOIN file_on fo ON fd.fid=fo.fid ".
+                                                  "LIMIT $LIMIT");
             my $count = $delmap ? scalar @$delmap : 0;
             next PASS unless $count;
 
             my %done;  # fid -> 1 (when fid is deleted from all devices)
+            my %dev_down;  # devid -> 1 (when device times out due to EIO)
 
             foreach my $dm (@$delmap) {
                 my ($fid, $devid) = @$dm;
@@ -335,7 +336,7 @@ sub job_delete {
                         $dev_down{$devid} = 1;
                         next;
                     }
-                    
+
                     # send delete request
                     print "Sending delete for $path\n" if $Mgd::DEBUG >= 2;
                     print $sock "DELETE $urlref->[2] HTTP/1.0\r\n\r\n";
@@ -356,21 +357,23 @@ sub job_delete {
                 } else {
                     # do normal unlink
                     $rv = unlink "$Mgd::MOG_ROOT/$path";
-                }
 
-                # device is timing out.  take note of it and
-                # continue dealing with other deletes
-                if (! $rv && $! == EIO) {
-                    $dev_down{$devid} = 1;
-                    next;
+                    # device is timing out.  take note of it and
+                    # continue dealing with other deletes
+                    if (! $rv) {
+                        if ($! == EIO) {
+                            $dev_down{$devid} = 1;
+                            next;
+                        } elsif ($! == ENOENT) {
+                            $rv = 1;  # count non-existent file as deleted
+                        }
+                    }
                 }
 
                 # if we deleted it, or it didn't exist, consider it
                 # deleted.
-                if ($rv || $! == ENOENT) {
-                    $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
-                             undef, $fid, $devid);
-                }
+                $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
+                         undef, $fid, $devid) if $rv;
             }
 
             if (%done) {
