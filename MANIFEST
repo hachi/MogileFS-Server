@@ -1,0 +1,5 @@
+Makefile.PL
+MANIFEST
+mogstored
+mogilefsd
+META.yml                                 Module meta-data (added by MakeMaker)
