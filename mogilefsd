@@ -66,6 +66,7 @@ my (
     $mog_root,
     $default_mindevcount,
     $worker_port,
+    $upgrade,
    );
 
 # Command-line options will override
@@ -83,6 +84,7 @@ Getopt::Long::GetOptions(
     'w|workers=i'   => \$cmdline{query_jobs},
     'no_http'       => \$cmdline{no_http},
     'workerport=i'  => \$cmdline{worker_port},
+    'upgrade'       => \$upgrade,
     'default_mindevcount=i' => \$cmdline{default_mindevcount},
 );
 
@@ -148,6 +150,66 @@ $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
 $default_mindevcount = choose_value( 'default_mindevcount', 2 );
 
+### initial setup
+Mgd::validate_dbh();
+my $dbh = Mgd::get_dbh();
+unless ($dbh) {
+    die <<NODB;
+Error: unable to establish connection with your MogileFS database.
+
+Please verify that you have correctly setup a configuration file or are
+providing the correct information in order to reach the database and try
+running the MogileFS server again.
+NODB
+}
+
+### make sure they have a database setup?
+my $host = $dbh->selectrow_hashref('SELECT * FROM host LIMIT 1');
+if ($dbh->err) {
+    my $err = $dbh->errstr;
+    my $db = ($db_dsn =~ /^DBI:mysql:(.+)$/) ? $1 : '<db_name>';
+    die <<ERR;
+Database error: $err
+
+This is commonly caused by not having the tables created in the database.
+The easiest way to setup your database is to do something like this:
+
+    cat devnotes/sql.txt | mysql -u$db_user -p $db
+
+NOTE: This will OVERWRITE any MogileFS related tablase in the database.
+Please make SURE that this is what you want to do before you do this!
+ERR
+}
+
+### but if it was undef, no hosts?
+if ($host) {
+    # see if they have the get port, else update it
+    unless (exists $host->{http_get_port}) {
+        if ($upgrade) {
+            print STDERR "Updating host table...\n";
+            $dbh->do("ALTER TABLE host ADD COLUMN http_get_port MEDIUMINT UNSIGNED AFTER http_port");
+            die "Error: " . $dbh->errstr . "\n" if $dbh->err;
+        } else {
+            die <<NEEDUPDATE;
+Error: host table out of date.
+
+MogileFS needs to update your database schema.  Please rerun the MogileFS
+server with the --upgrade option if you wish for us to do this.
+
+This will NOT destroy any existing data.
+NEEDUPDATE
+        }
+    }
+} else {
+    print STDERR <<NOHOSTS;
+Warning: no hosts found.
+
+It seems like you don't have any hosts defined in your MogileFS setup.
+This means that we really can't do anything.  We're going to run anyway,
+but clients will not be able to upload files until we have a set of
+hosts to use.
+NOHOSTS
+}
 
 #####################################################################
 ### D A E M O N   F U N C T I O N S
