@@ -28,17 +28,22 @@ use File::Copy ();
 use Carp;
 use File::Basename ();
 use File::Path ();
+use Socket qw(MSG_NOSIGNAL);
 
 
 #####################################################################
 ### C O N F I G
 #####################################################################
 
-use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $DEBUG $USE_HTTP);
+use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $DEBUG $USE_HTTP $MOGSTORED_STREAM_PORT $FLAG_NOSIGNAL);
 
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $DEFAULT_MOG_ROOT = "/mnt/mogilefs";
+$MOGSTORED_STREAM_PORT = 7501; # FIXME make this configurable
 $DEBUG = 0;
+
+# used in send() calls to request not to get SIGPIPEd
+eval { $FLAG_NOSIGNAL = MSG_NOSIGNAL };
 
 my (
     %cmdline,
@@ -149,6 +154,7 @@ daemonize() if $daemonize;
 # satisifed.
 my %child  = ();    # pids -> job
 my %jobs   = ();    # jobname -> [ min, current ]
+my %streamcache;    # host -> IO::Socket::INET to mogstored
 
 # FIXME: make these configurable
 $jobs{'frontend'} = [ 1, 0 ]; # only one frontend job
@@ -583,7 +589,7 @@ sub job_replicate {
                     my @rand_finds = randlist(@$fids);
 
                     print "Need to replicate: $dmid/$classid: @$fids\n" if $Mgd::DEBUG >= 2;
-                    foreach my $fid (@$fids) {
+                    foreach my $fid (@rand_finds) {
                         $fixed++ if replicate($dbh, $fid, $min);
                     }
 
@@ -718,22 +724,79 @@ sub get_file_size {
     my $path = shift;
 
     # quick case -- just a file on disk
-    unless ($path =~ m!^http://(.+?)(/.+)$!) {
+    unless ($path =~ m!^http://([^:/]+)(?::(\d+))?(/.+)$!) {
         return -s "$Mgd::MOG_ROOT/$path"
     }
+    my ($host, $port, $uri) = ($1, $2, $3);
 
-    # URL; use a HEAD request to get the size of the file
-    my $sock = IO::Socket::INET->new(PeerAddr => $1, Timeout => 2)
-        or return 0;
-    print $sock "HEAD $2 HTTP/1.0\r\n\r\n";
+    # don't sigpipe us
+    local $SIG{'PIPE'} = "IGNORE" unless $FLAG_NOSIGNAL;
+
+    # setup for sending size request to cached host
+    my $req = "size $uri\r\n";
+    my $reqlen = length $req;
+    my $rv = 0;
+    my $sock = $streamcache{$host};
+
+    # handle errors
+    my $error = sub {
+        print STDERR $_[0];
+        return 0;
+    };
+
+    # sub to parse the response from $sock.  common code, so we have it here.
+    my $parse_response = sub {
+        my $line = <$sock>;
+        return 0 unless defined $line;
+        return 0 unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
+        return $error->("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
+            if $1 ne $uri;
+        return $2+0;
+    };
+
+    # try using the cached socket
+    if ($sock) {
+        $rv = send($sock, $req, $FLAG_NOSIGNAL);
+        if ($!) {
+            undef $streamcache{$host};
+        } elsif ($rv != $reqlen) {
+            return $error->("send() didn't return expected length ($rv, not $reqlen) for $path");
+        } else {
+            # success
+            return $parse_response->();
+        }
+    }
+
+    # try creating a connection to the stream
+    unless ($rv) {
+        $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $MOGSTORED_STREAM_PORT, Timeout => 5);
+        $streamcache{$host} = $sock;
+        if ($sock) {
+            $rv = send($sock, $req, $FLAG_NOSIGNAL);
+            if ($!) {
+                return $error->("error talking to mogstored stream ($path): $!");
+            } elsif ($rv != $reqlen) {
+                return $error->("send() didn't return expected length ($rv, not $reqlen) for $path");
+            } else {
+                # success
+                return $parse_response->();
+            }
+        }
+    }
+
+    # failure case: use a HEAD request to get the size of the file
+    my $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 3)
+        or return $error->("get_file_size() unable to contact mogstored for size of $path");
+    $sock->write("HEAD $uri HTTP/1.0\r\n\r\n");
     while (defined (my $line = <$sock>)) {
         if ($line =~ /^Content-length: (\d+)/i) {
+            # success
             return $1+0;
         }
     }
 
     # no content length found?
-    return 0;
+    return $error->("get_file_size() found no content-length header in response for $path");
 }
 
 sub class_id {
