@@ -254,7 +254,7 @@ my $spawn_children = sub {
     # run only once per second
     return 1 unless time > $lastspawntime;
     $lastspawntime = time();
-    
+
     # see if anybody has died, but don't hang up on doing so
     my $pid = waitpid -1, WNOHANG;
     return 1 if $pid <= 0 && $allkidsup;
@@ -295,8 +295,11 @@ my $spawn_children = sub {
         }
     }
 
-    # true value keeps us running
+    # if we got this far, all jobs have been re-created.  note that
+    # so we avoid more CPU usage in this post-event-loop callback later
     $allkidsup = 1;
+
+    # true value keeps us running:
     return 1;
 };
 
