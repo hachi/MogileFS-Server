@@ -1132,7 +1132,8 @@ sub cmd_get_paths {
         my $dev = $dsum->{$devid};
         next unless $dev && $dev->{status} eq "alive";
         my $path = Mgd::make_path($devid, $fid);
-        next unless $ret->{paths} || (Mgd::get_file_size($path) == $filerow->{length});
+        next unless $ret->{paths} || $args->{noverify} ||
+                        (Mgd::get_file_size($path) == $filerow->{length});
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;
         last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
