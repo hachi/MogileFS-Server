@@ -25,6 +25,11 @@ use Carp;
 use File::Basename ();
 use File::Path ();
 
+
+#####################################################################
+### C O N F I G
+#####################################################################
+
 use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $DEBUG);
 
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
@@ -120,6 +125,10 @@ $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 
+
+#####################################################################
+### D A E M O N   F U N C T I O N S
+#####################################################################
 
 daemonize() if $daemonize;
 
@@ -489,9 +498,13 @@ sub job_client_listen {
 }
 
 
+#####################################################################
+### S E R V E R   A P I   F U N C T I O N S
+#####################################################################
+
 # returns hashref of devid -> $device_row_href  (where devid is alive/down, but not dead)
 # cached for 15 seconds.
-use vars qw($cache_device_summary $cache_device_summary_time);
+use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_host_time);
 
 sub get_device_summary {
     my $now = time;
@@ -512,7 +525,6 @@ sub get_device_summary {
     return $cache_device_summary = \%dev;
 }
 
-use vars qw(%cache_host $cache_host_time);
 sub check_host_cache {
     my $now = time;
     return if $cache_host_time > $now - 10;
@@ -636,8 +648,6 @@ package Client;
 use Danga::Socket ();
 use base qw{Danga::Socket};
 
-use fields qw{read_buf};
-
 sub new {
     my Client $self = shift;
     $self = fields::new($self) unless ref $self;
@@ -687,6 +697,19 @@ sub process_line {
     return $self->err_line('unknown_command');
 }
 
+# returns 0 on error, or dmid of domain
+sub check_domain {
+    my Client $self = shift;
+    my $args = shift;
+
+    return $self->err_line("no_domain") unless length($args->{domain});
+
+    # validate domain
+    my $dmid = Mgd::domain_id($args->{domain}) or
+        return $self->err_line("unreg_domain");
+
+    return $dmid;
+}
 
 sub cmd_create_open {
     my Client $self = shift;
@@ -834,20 +857,6 @@ sub cmd_delete {
 
     return $self->ok_line();
 
-}
-
-# returns 0 on error, or dmid of domain
-sub check_domain {
-    my Client $self = shift;
-    my $args = shift;
-
-    return $self->err_line("no_domain") unless length($args->{domain});
-
-    # validate domain
-    my $dmid = Mgd::domain_id($args->{domain}) or
-        return $self->err_line("unreg_domain");
-
-    return $dmid;
 }
 
 sub cmd_get_hosts {
