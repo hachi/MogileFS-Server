@@ -2471,7 +2471,7 @@ sub cmd_create_close {
     return $self->err_line("empty_file") unless $size;
 
     # insert file_on row
-    $dbh->do("INSERT INTO file_on VALUES (?, ?)", undef, $fid, $devid);
+    $dbh->do("INSERT IGNORE INTO file_on SET fid = ?, devid = ?", undef, $fid, $devid);
     return $self->err_line("db_error") if $dbh->err;
 
     my $rv = $dbh->do("REPLACE INTO file ".
