@@ -1389,12 +1389,8 @@ sub wait_for_readability {
     vec($rin, $fileno, 1) = 1;
     my $nfound = select($rin, undef, undef, $timeout);
 
-    # ensure we close the socket if it doesn't get readable
-    unless ($nfound) {
-        POSIX::close($fileno);
-        return 0;
-    }
-    return 1;
+    # nfound can be undef or 0, both failures, or 1, a success
+    return $nfound ? 1 : 0;
 }
 
 # get size of file, return 0 on error
@@ -1419,7 +1415,10 @@ sub get_file_size {
     # sub to parse the response from $sock.  common code, so we have it here.
     my $parse_response = sub {
         # give the socket 3 seconds to become readable
-        return 0 unless Mgd::wait_for_readability(fileno($sock), 3);
+        unless (Mgd::wait_for_readability(fileno($sock), 3)) {
+            close($sock);
+            return 0;
+        }
 
         # now we know there's readable data
         my $line = <$sock>;
