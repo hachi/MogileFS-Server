@@ -34,6 +34,7 @@ use File::Path ();
 use Sys::Syslog;
 use Socket qw(MSG_NOSIGNAL);
 use Time::HiRes qw(gettimeofday tv_interval);
+use Net::Netmask;
 
 
 #####################################################################
@@ -200,14 +201,34 @@ This will NOT destroy any existing data.
 NEEDUPDATE
         }
     }
+
+    # now update to add new columns?
+    unless (exists $host->{altip}) {
+        if ($upgrade) {
+            print STDERR "Updating host table...\n";
+            $dbh->do("ALTER TABLE host ADD COLUMN altip VARCHAR(15) AFTER hostip");
+            die "Error (1): " . $dbh->errstr . "\n" if $dbh->err;
+            $dbh->do("ALTER TABLE host ADD COLUMN altmask VARCHAR(18) AFTER altip");
+            die "Error (2): " . $dbh->errstr . "\n" if $dbh->err;
+            $dbh->do("ALTER TABLE host ADD UNIQUE altip (altip)");
+            die "Error (3): " . $dbh->errstr . "\n" if $dbh->err;
+        } else {
+            die <<NEEDUPDATE;
+Error: host table out of date.
+
+MogileFS needs to update your database schema.  Please rerun the MogileFS
+server with the --upgrade option if you wish for us to do this.
+
+This will NOT destroy any existing data.
+NEEDUPDATE
+        }
+    }
 } else {
-    print STDERR <<NOHOSTS;
-Warning: no hosts found.
+    die <<NOHOSTS;
+Error: no hosts found.
 
 It seems like you don't have any hosts defined in your MogileFS setup.
-This means that we really can't do anything.  We're going to run anyway,
-but clients will not be able to upload files until we have a set of
-hosts to use.
+This means that we really can't do anything, so we're going to shut down.
 NOHOSTS
 }
 
@@ -235,6 +256,8 @@ our $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid di
 our $starttime = time; # time we got going
 our %domaincache; # { domainname => { domainrow } }
 our $domaincachetime = 0;
+our $client_ip = undef; # client ip address
+our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
 
 # [ what we want to be at, what we are at ]
 $jobs{'queryworker'} = [ $query_jobs, 0 ];
@@ -1031,9 +1054,13 @@ sub check_host_cache {
     %cache_host = ();
     my $dbh = get_dbh();
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
-                            "hostip, http_port, http_get_port, remoteroot FROM host");
+                            "hostip, http_port, http_get_port, remoteroot, altip, altmask FROM host");
     $sth->execute;
-    $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
+    while (my $host = $sth->fetchrow_hashref) {
+        $cache_host{$host->{hostid}} = $host;
+        $cache_host{$host->{hostid}}->{mask} = Net::Netmask->new2($host->{altmask})
+            if $host->{altip} && $host->{altmask};
+    }
     $cache_host_time = $now;
 }
 
@@ -1195,7 +1222,15 @@ sub hostid_ip {
     my $hostid = shift;
     check_host_cache();
     my $h = $cache_host{$hostid};
-    return $h ? $h->{hostip} : undef;
+    return undef unless $h;
+
+    # if we have a client ip and an object for alt matching...
+    if ($h->{mask} && $h->{altip} &&
+            ($force_alt_zone || ($client_ip && $h->{altip} && $h->{mask}->match($client_ip)))) {
+        return $h->{altip};
+    } else {
+        return $h->{hostip};
+    }
 }
 
 sub hostid_http_port {
@@ -1815,7 +1850,7 @@ sub HandleClientRequest {
 
     # just push the input onto the client queue
     $Stats{queries}++;
-    push @ClientQueue, [ $_[1], "cmd $_[2]" ];
+    push @ClientQueue, [ $_[1], "cmd " . ($_[1]->peer_ip_string || '0.0.0.0') . " $_[2]" ];
     Frontend->ProcessQueues;
 }
 
@@ -1957,8 +1992,12 @@ sub process_line {
 
     # see what kind of command this is
     return $self->err_line('unknown_command')
-        unless $$lineref =~ /^(\S+)\s*(.*)/;
-    my ($cmd, $line) = ($1, $2);
+        unless $$lineref =~ /^(\S+)\s+(\S+)\s*(.*)/;
+    my ($cmd, $line) = ($1, $3);
+
+    # set global variables for zone determination
+    $client_ip = $2;
+    $force_alt_zone = 0;
 
     # some basic commands we support
     if ($cmd eq 'echo') {
@@ -1978,8 +2017,9 @@ sub process_line {
         my $cmd_handler = *{"cmd_$cmd"}{CODE};
         if ($cmd_handler) {
             my $args = decode_url_args(\$args);
+            $force_alt_zone = 1 if $args->{zone} eq 'alt';
             $cmd_handler->($self, $args);
-            next;
+            return;
         }
     }
 
