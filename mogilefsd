@@ -1389,8 +1389,12 @@ sub wait_for_readability {
     vec($rin, $fileno, 1) = 1;
     my $nfound = select($rin, undef, undef, $timeout);
 
-    return 0 unless defined $nfound;
-    return $nfound ? 1 : 0;
+    # ensure we close the socket if it doesn't get readable
+    unless (defined $nfound) {
+        POSIX::close($fileno);
+        return 0;
+    }
+    return 1;
 }
 
 # get size of file, return 0 on error
