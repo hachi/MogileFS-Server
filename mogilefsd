@@ -1615,7 +1615,7 @@ sub ok_line {
 sub err_line {
     my Worker $self = shift;
     my $err_code = shift;
-    my $err_text = $_[1] || {
+    my $err_text = shift || {
         'unknown_command' => "Unknown server command",
         'no_domain' => "No domain provided",
         'no_class' => "No class provided",
