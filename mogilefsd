@@ -73,6 +73,7 @@ my (
     $upgrade,
     $min_free_space,
     $max_disk_age,
+    $node_timeout,          # time in seconds to wait for storage node responses
    );
 
 # Command-line options will override
@@ -94,6 +95,7 @@ Getopt::Long::GetOptions(
     'maxdiskage=i'  => \$cmdline{max_disk_age},
     'minfreespace=i' => \$cmdline{min_free_space},
     'default_mindevcount=i' => \$cmdline{default_mindevcount},
+    'node_timeout=i' => \$cmdline{node_timeout},
 );
 
 $config = $DEFAULT_CONFIG if !$config && -r $DEFAULT_CONFIG;
@@ -155,6 +157,7 @@ $max_disk_age   = choose_value( 'max_disk_age', 5 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
 $default_mindevcount = choose_value( 'default_mindevcount', 2 );
+$node_timeout   = choose_value( 'node_timeout', 3 );
 
 ### initial setup
 Mgd::validate_dbh();
@@ -1415,7 +1418,7 @@ sub get_file_size {
     # sub to parse the response from $sock.  common code, so we have it here.
     my $parse_response = sub {
         # give the socket 3 seconds to become readable
-        unless (Mgd::wait_for_readability(fileno($sock), 3)) {
+        unless (Mgd::wait_for_readability(fileno($sock), $node_timeout)) {
             close($sock);
             return 0;
         }
