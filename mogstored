@@ -70,7 +70,7 @@ if ($opt_daemonize) {
 
 # register our disk usage callback to get disk usage and keep an eye on how we're doing
 Perlbal::Socket::register_callback(1, sub {
-    my $err = sub { Perlbal::log('critical', $_[0]); return 60; };
+    my $err = sub { Perlbal::log('crit', $_[0]); return 60; };
     my $rval = `df -l`;
     foreach my $l (split /\r?\n/, $rval) {
         next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
