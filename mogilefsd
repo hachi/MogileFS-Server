@@ -129,7 +129,8 @@ $db_user        = choose_value( 'db_user', "mogile" );
 $db_pass        = choose_value( 'db_pass', "", 1 );
 $conf_port      = choose_value( 'conf_port', 7001 );
 $MOG_ROOT       = choose_value( 'mog_root', $DEFAULT_MOG_ROOT );
-$worker_jobs    = choose_value( 'worker_jobs', 20 );
+$worker_jobs    = choose_value( 'listener_jobs', undef) || # undef if not present, then we
+                  choose_value( 'worker_jobs', 20 );       # fall back to worker_jobs, new name
 $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
 $worker_port    = choose_value( 'worker_port', 7200 );
