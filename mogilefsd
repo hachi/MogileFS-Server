@@ -432,7 +432,7 @@ sub job_replicate {
             $min{$dmid}{0} = 2 unless exists $min{$dmid}{0};
 
             # iterate through each class, including the implicit class 0
-            while (my ($min, $classid) = each %{$min{$dmid}}) {
+            while (my ($classid, $min) = each %{$min{$dmid}}) {
 
                 print "Checking replication for dmid=$dmid, classid=$classid, min=$min\n" if $Mgd::DEBUG >= 1;
 
