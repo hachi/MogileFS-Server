@@ -370,14 +370,14 @@ sub make_new_child {
     # block signal for fork
     $sigset = POSIX::SigSet->new(SIGINT);
     sigprocmask(SIG_BLOCK, $sigset)
-        or die "Can't block SIGINT for fork: $!\n";
+        or return error("Can't block SIGINT for fork: $!");
 
     return error("fork failed creating $job: $!")
         unless defined ($pid = fork);
 
     if ($pid) {
         sigprocmask(SIG_UNBLOCK, $sigset)
-            or die "Can't unblock SIGINT for fork: $!\n";
+            or return error("Can't unblock SIGINT for fork: $!");
         return $pid;
     }
 
@@ -387,12 +387,15 @@ sub make_new_child {
 
     # unblock signals
     sigprocmask(SIG_UNBLOCK, $sigset)
-        or die "Can't unblock SIGINT for fork: $!\n";
+        or return error("Can't unblock SIGINT for fork: $!");
 
     # set our frontend into child mode
     Frontend->SetAsChild;
 
-    # try to create a connection to the parent
+    # try to create a connection to the parent.  we die here because
+    # we're the child and if we can't talk to the master we really need
+    # to die so that a child isn't just sitting around without communication
+    # to the parent.
     $psock = IO::Socket::INET->new(PeerAddr => "127.0.0.1",
                                    PeerPort => $worker_port,
                                    Type     => SOCK_STREAM,
