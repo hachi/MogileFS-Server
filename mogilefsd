@@ -50,7 +50,7 @@ my (
 Getopt::Long::Configure( "bundling" );
 Getopt::Long::GetOptions(
     'c|config=s'    => \$config,
-    'd|debug'       => \$cmdline{debug},
+    'd|debug+'      => \$cmdline{debug},
     'D|daemon'      => \$cmdline{daemonize},
     'dsn=s'         => \$cmdline{db_dsn},
     'dbuser=s'      => \$cmdline{db_user},
@@ -413,14 +413,14 @@ sub job_replicate {
             $min{$dmid}{0} = 2 unless exists $min{$dmid}{0};
 
             # iterate through each class, including the implicit class 0
-            foreach my $classid (keys %{$min{$dmid}}) {
-                my $min = $min{$dmid}{$classid};
+            while (my ($min, $classid) = each %{$min{$dmid}}) {
 
                 my $LIMIT = 1000;
                 while (1) {
                     my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
-                                                        "AND devcount<? AND length IS NOT NULL LIMIT $LIMIT",
-                                                        undef, $dmid, $classid, $min);
+                                                        "AND devcount>0 AND devcount<? AND length IS NOT NULL ".
+                                                        "LIMIT $LIMIT", undef, $dmid, $classid, $min);
+
                     my $count = $fids ? scalar @$fids : 0;
                     last unless $count;
                     my $fixed = 0;
