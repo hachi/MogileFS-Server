@@ -83,12 +83,10 @@ $jobs{'replicate'} = [ 1, 0 ];
 
 
 # Install signal handlers.
-$SIG{INT}  = sub {
+$SIG{$_}  = sub {
     kill 'INT' => keys %child;
     exit 0;
-};
-
-
+} foreach qw(KILL INT);
 
 # Keep jobs alive
 while (1) {
