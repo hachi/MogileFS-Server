@@ -156,7 +156,7 @@ sub job_delete {
 		next if $dev_down{$devid};
 
 		my $path = make_path($devid, $fid);
-		my $rv = unlink $path;
+		my $rv = unlink "$Mgd::MOG_ROOT/$path";
 		
 		# device is timing out.  take note of it and
 		# continue dealing with other deletes
@@ -234,6 +234,14 @@ sub check_host_cache {
     my $sth = $dbh->prepare("SELECT hostid, status, hostname, hostip, remoteroot FROM host");
     $sth->execute;
     $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
+}
+
+sub key_filerow {
+    my ($dbh, $dmid, $key) = @_;
+    my $row = $dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
+				      "FROM file WHERE dmid=? AND dkey=?",
+				      undef, $dmid, $key);
+    return $row;
 }
 
 sub domain_id {
@@ -340,18 +348,13 @@ sub cmd_create_open {
     my $args = shift;
 
     # validate parameters
-    my $domain = $args->{domain};
-    return $self->err_line("no_domain") unless length($domain);
+    my $dmid = $self->check_domain($args) or return 0;
     my $key = $args->{key};
     return $self->err_line("no_key") unless length($key);
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
 	return $self->err_line("nodb");
-
-    # lookup domain
-    my $dmid = Mgd::domain_id($domain) or
-	return $self->err_line("unreg_domain");
 
     # figure out what classid this file is for
     my $class = $args->{class};
@@ -365,13 +368,11 @@ sub cmd_create_open {
     }
     
     # see if we have a fid for this key already
-    my $old_fid = $dbh->selectrow_array("SELECT fid FROM file WHERE ".
-					"dmid=? AND dkey=?",
-					undef, $dmid, $key);
-    if ($old_fid) {
+    my $old_file = Mgd::key_filerow($dbh, $dmid, $key);
+    if ($old_file) {
 	# add to to-delete list
-	$dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_fid);
-	$dbh->do("DELETE FROM file WHERE fid=?", undef, $old_fid);
+	$dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_file->{fid});
+	$dbh->do("DELETE FROM file WHERE fid=?", undef, $old_file->{fid});
     }
 	
 
@@ -409,10 +410,10 @@ sub cmd_create_close {
     my $args = shift;
 
     # validate parameters
-    my $domain = $args->{domain};
-    return $self->err_line("no_domain") unless length($domain);
+    my $dmid = $self->check_domain($args) or return 0;
     my $key = $args->{key};
     return $self->err_line("no_key") unless length($key);
+
     my $fid = $args->{fid} or return $self->err_line("no_fid");
     my $devid = $args->{devid} or return $self->err_line("no_devid");
     my $path = $args->{path} or return $self->err_line("no_path");
@@ -424,10 +425,6 @@ sub cmd_create_close {
     # get DB handle
     my $dbh = Mgd::get_dbh or
 	return $self->err_line("nodb");
-
-    # validate domain
-    my $dmid = Mgd::domain_id($domain) or
-	return $self->err_line("unreg_domain");
 
     # is this fid still owned by this key?
     my $cur_fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
@@ -454,18 +451,13 @@ sub cmd_delete {
     my $args = shift;
 
     # validate parameters
-    my $domain = $args->{domain};
-    return $self->err_line("no_domain") unless length($domain);
+    my $dmid = $self->check_domain($args) or return 0;
     my $key = $args->{key};
     return $self->err_line("no_key") unless length($key);
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
 	return $self->err_line("nodb");
-
-    # validate domain
-    my $dmid = Mgd::domain_id($domain) or
-	return $self->err_line("unreg_domain");
 
     # is this fid still owned by this key?
     my $fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
@@ -477,6 +469,58 @@ sub cmd_delete {
 
     return $self->ok_line();
 
+}
+
+# returns 0 on error, or dmid of domain
+sub check_domain {
+    my Client $self = shift;
+    my $args = shift;
+
+    return $self->err_line("no_domain") unless length($args->{domain});
+
+    # validate domain
+    my $dmid = Mgd::domain_id($args->{domain}) or
+	return $self->err_line("unreg_domain");
+
+    return $dmid;
+}
+
+sub cmd_get_paths {
+    my Client $self = shift;
+    my $args = shift;
+
+    my $key = $args->{key};
+    return $self->err_line("no_key") unless length($key);
+
+    # validate domain
+    my $dmid = $self->check_domain($args) or return 0;
+
+    # get DB handle
+    my $dbh = Mgd::get_dbh or
+	return $self->err_line("nodb");
+
+    my $filerow = Mgd::key_filerow($dbh, $dmid, $key);
+    return $self->err_line("unknown_key") unless $filerow;
+
+    my $fid = $filerow->{fid};
+    my $dsum = Mgd::get_device_summary();
+
+    # is this fid still owned by this key?
+    my $devids = $dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
+					  undef, $fid);
+
+    my $ret = {
+	paths => 0,
+    };
+    foreach my $devid (@{$devids || []}) {
+	next unless $dsum->{$devid};
+	my $path = Mgd::make_path($devid, $fid);
+	next unless $ret->{paths} || (-s "$Mgd::MOG_ROOT/$path" == $filerow->{length});
+	my $n = ++$ret->{paths};
+	$ret->{"path$n"} = $path;
+	last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
+    }
+    return $self->ok_line($ret);
 }
 
 sub ok_line {
