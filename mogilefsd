@@ -211,6 +211,11 @@ hosts to use.
 NOHOSTS
 }
 
+# we're done with this, so undef it before we start forking, as then
+# maybe we'll end up with children having the same socket and everybody
+# writing to it at the same time...
+undef $dbh;
+
 #####################################################################
 ### D A E M O N   F U N C T I O N S
 #####################################################################
