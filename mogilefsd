@@ -722,6 +722,39 @@ sub replicate {
     return $retunlock->(1);
 }
 
+sub get_mindevcounts {
+    # make sure we have good info
+    Mgd::check_host_cache();
+    my $host_ct = keys %Mgd::cache_host;
+    
+    # find the classes for each domainid (including domains without explict classes)
+    my %min; # dmid -> classid -> mindevcount
+    my $dbh = get_dbh();
+    my $sth = $dbh->prepare("SELECT d.dmid, c.classid, c.mindevcount ".
+                            "FROM domain d LEFT JOIN class c ON d.dmid=c.dmid");
+    $sth->execute;
+    while (my ($dmid, $classid, $mct) = $sth->fetchrow_array) {
+        $min{$dmid} ||= {};  # note the existence of this dmid
+
+        # classid may be NULL (undef), in which case there are no classes defined
+        # and we don't note the mindevcount (yet)
+        $min{$dmid}{$classid} = int($host_ct < $mct ? $host_ct : $mct) if defined $classid;
+    }
+
+
+    # now iterate over %min again to set the implicit class
+    foreach my $dmid (keys %min) {
+        # each domain's classid=0, if not defined, has an implied mindevcount of $default_mindevcount
+        # which most people will probably use.
+        $min{$dmid}{0} = $host_ct < $default_mindevcount ? $host_ct : $default_mindevcount
+            unless exists $min{$dmid}{0};
+    }
+
+    # return ref to hash
+    return \%min;
+}
+
+
 sub job_replicate {
     my $parse_parent_response = sub {
         # now see what was in our message queue
@@ -744,36 +777,18 @@ sub job_replicate {
         validate_dbh();
         my $dbh = get_dbh() or return 0;
 
-        Mgd::check_host_cache();
-        my $host_ct = keys %Mgd::cache_host;
-
         # general report in to parent
         send_to_parent('repl_ping');
         $parse_parent_response->(undef);
 
-        # find the classes for each domainid (including domains without explict classes)
-        my %min; # dmid -> classid -> mindevcount
-        my $sth = $dbh->prepare("SELECT d.dmid, c.classid, c.mindevcount ".
-                                "FROM domain d LEFT JOIN class c ON d.dmid=c.dmid");
-        $sth->execute;
-        while (my ($dmid, $classid, $mct) = $sth->fetchrow_array) {
-            $min{$dmid} ||= {};  # note the existence of this dmid
-
-            # classid may be NULL (undef), in which case there are no classes defined
-            # and we don't note the mindevcount (yet)
-            $min{$dmid}{$classid} = int($host_ct < $mct ? $host_ct : $mct) if defined $classid;
-        }
-
         # start off assuming that we're going to get everything replicated and then take a break
         $sleep = 2;
 
+        # get the min dev counts
+        my %min = %{ Mgd::get_mindevcounts() };
+
         # iterate through each domain, replicating its contents
         foreach my $dmid (keys %min) {
-            # each domain's classid=0, if not defined, has an implied mindevcount of $default_mindevcount
-            # which most people will probably use.
-            $min{$dmid}{0} = $host_ct < $default_mindevcount ? $host_ct : $default_mindevcount
-                unless exists $min{$dmid}{0};
-
             # iterate through each class, including the implicit class 0
             while (my ($classid, $min) = each %{$min{$dmid}}) {
                 error("Checking replication for dmid=$dmid, classid=$classid, min=$min")
@@ -993,6 +1008,32 @@ sub domain_id {
     my $dmid = $dbh->selectrow_array("SELECT dmid FROM domain WHERE namespace=?",
                                      undef, $domain);
     return $dmid;
+}
+
+sub class_name {
+    my ($dmid, $classid) = @_;
+    return undef unless $dmid > 0 && length $class;
+    # FIXME: cache this
+
+    # lookup class
+    my $dbh = Mgd::get_dbh;
+    my $classname = $dbh->selectrow_array
+        ("SELECT classname FROM class WHERE dmid=? AND classid=?", undef, $dmid, $classid)
+            or return undef;
+    return undef unless $classname;
+    return $classname;
+}
+
+sub domain_name {
+    my $dmid = shift;
+    # FIXME: cache this
+
+    # lookup domain
+    my $dbh = Mgd::get_dbh;
+    my $namespace = $dbh->selectrow_array
+        ("SELECT namespace FROM domain WHERE dmid=?", undef, $dmid);
+    return $namespace;
+
 }
 
 sub hostid_name {
@@ -1456,6 +1497,10 @@ Welcome to mogilefsd's built-in help system.  Available commands:
     !jobs       Outstanding job counts, desired level, and pids.
     !shutdown   IMMEDIATELY kill all of mogilefsd.  IMMEDIATELY.
 
+    !replication
+                See the replication status.  Output format:
+                <domain> <class> <devcount> <files>
+
     !to <job class> <message>
                 Send <message> to all workers of <job class>.
                 Mostly used for debugging.
@@ -1497,6 +1542,24 @@ sub HandleClientRequest {
                        "processing_queries $ipcount",
                        "bored_queryworkers $wcount",
                        map { "$_ $Stats{$_}" } sort keys %Stats;
+
+        } elsif ($cmd =~ /^repl/) {
+            my $dbh = Mgd::get_dbh();
+            my $mdcs = Mgd::get_mindevcounts();
+            foreach my $dmid (sort keys %$mdcs) {
+                my $dmname = Mgd::domain_name($dmid);
+                foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
+                    my $min = $mdcs->{$dmid}->{$classid};
+                    next unless $min > 1;
+
+                    my $classname = Mgd::class_name($dmid, $classid) || '_default';
+                    foreach my $ct (1..$min-1) {
+                        my $count = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
+                                                          undef, $dmid, $classid, $ct);
+                        push @out, "$dmname $classname $ct $count";
+                    }
+                }
+            }
 
         } elsif ($cmd =~ /^shutdown/) {
             print "User requested shutdown: $args\n";
