@@ -1161,15 +1161,20 @@ sub cmd_create_class {
     my $cid = Mgd::class_id($dmid, $class);
     return $self->err_line('class_exists') if $cid && !$args->{update};
 
-    # setup verb; if we have the update option set on, then we're doing a
-    # replace so we update our class
-    my $verb = $args->{update} ? 'REPLACE' : 'INSERT';
+    # update or insert at this point
+    if ($args->{update}) {
+        # now replace the old class
+        $dbh->do("REPLACE INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
+                 undef, $dmid, $cid, $class, $mindevcount);
+    } else {
+        # get the max class id in this domain
+        my $maxid = $dbh->selectrow_array
+            ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid);
 
-    # get the max class id in this domain
-    my $maxid = $dbh->selectrow_array
-        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid);
-    $dbh->do("$verb INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-             undef, $dmid, $maxid + 1, $class, $mindevcount);
+        # now insert the new class
+        $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
+                 undef, $dmid, $maxid + 1, $class, $mindevcount);
+    }
     return $self->err_line('failure') if $dbh->err;
 
     # return success
