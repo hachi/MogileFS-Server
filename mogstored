@@ -37,6 +37,7 @@ SET mogstored.dirindexing = 0
 SET mogstored.enable_put = 1
 SET mogstored.enable_delete = 1
 SET mogstored.min_put_directory = 1
+SET mogstored.persist_client = 1
 ENABLE mogstored
 ";
 
