@@ -218,6 +218,8 @@ my $server = IO::Socket::INET->new(LocalPort => $conf_port,
 # accept handler for new clients
 my $accept_handler = sub {
     my $csock = $server->accept();
+    return unless $csock;
+
     printf( "Listen child making a Client for %d.\n", fileno($csock) )
         if $DEBUG >= 2;
     my $client = Client->new($csock);
@@ -237,6 +239,8 @@ my $wserver = IO::Socket::INET->new(LocalPort => $worker_port,
 # accept handler for new workers
 my $waccept_handler = sub {
     my $csock = $wserver->accept();
+    return unless $csock;
+
     printf( "Listen child making a Client for %d.\n", fileno($csock) )
         if $DEBUG >= 2;
     my $client = WorkerConn->new($csock);
