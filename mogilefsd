@@ -800,7 +800,7 @@ sub cmd_create_close {
 
     $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
 
-    if (Mgd::add_file_on($fid, $devid)) {
+    if (Mgd::update_fid_devcount($fid)) {
         return $self->ok_line();
     } else {
         # FIXME: handle this better
