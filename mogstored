@@ -68,8 +68,11 @@ Perlbal::Socket::register_callback(1, sub {
         my $output = "time: $now\ndevice: $dev\ntotal: $total\nused: $used\navailable: $avail\nuse: $use\ndisk: $disk\n";
 
         # open a file on that disk location called 'usage'
-        open FILE, ">$disk/usage"
-            or return $err->("Unable to open '$disk/usage' for writing: $!");
+        my $rv = open(FILE, ">$disk/usage");
+        unless ($rv) {
+            $err->("Unable to open '$disk/usage' for writing: $!");
+            next;
+        }
         print FILE $output;
         close FILE;
 
