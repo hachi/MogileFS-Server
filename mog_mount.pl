@@ -12,7 +12,7 @@ die "Must be run as root\n" if $<;
 
 my $opt = { host => [] }; # host can be multiple options
 GetOptions($opt, 
-           qw(host|h=s port|p=i type|t=s at|a=s opts|o=s no-mount verbose help));
+           qw(host|h=s port|p=i type|t=s at|a=s opts|o=s no-mount remount unmount verbose help));
 
 if ($opt->{help}) {
     pod2usage($0);
@@ -24,6 +24,8 @@ my $mog_port   = $opt->{port} || 7001;
 my $mount_at   = $opt->{at}   || "/mnt/mogilefs";
 my $mount_opts = $opt->{opts} || "defaults,noatime,timeo=1,retrans=1,soft";
 my $mount_type = $opt->{type} || "nfs";
+my $unmount    = $opt->{unmount};
+my $remount    = $opt->{remount};
 my $no_mount   = $opt->{'no-mount'};
 my $verbose    = $opt->{verbose};
 
@@ -76,6 +78,7 @@ my %host_by_id   = map { $_->{hostid} => $_ } @$hosts;
 
 # see what is currently mounted
 my @mount_res = `mount` or die "Couldn't run 'mount'";
+my $did_umount = 0;
 foreach my $line (@mount_res) {
 
     # parse line of 'mount' output
@@ -99,20 +102,58 @@ foreach my $line (@mount_res) {
     # does device belong to host?
     next unless $dev_by_devid{$devid}->{hostid} == $hostid;
 
-    # don't need to mount this one
+    # if we're unmounting or remounting existing mounts, we'll do that now
+    if ($unmount || $remount) {
+
+        my $res = `umount $mnt 2>&1`;
+        my $doing = " - unmounting $mnt...";
+
+        # successful unmount
+        unless ($?) {
+            print "$doing OK\n" if $verbose;
+            $did_umount++;
+            next;
+        }
+
+        # error unmounting?
+        # -- alert user then proceed to delete from %dev_by_devid
+        print "$doing FAIL\n";
+
+        # need to do this hack because unmount seems to print duplicate
+        # error messages on unmount errors?
+        my $lasterr = "";
+        foreach (split("\n", $res)) {
+            next if $_ eq $lasterr;
+            print "    * $_\n";
+            $lasterr = $_;
+        }
+    }
+
+    # don't try to remount already mounted devices
     delete $dev_by_devid{$devid};
 }
 @$devices = grep { $dev_by_devid{$_->{devid}} } @$devices;
 
-# is there anything to do?
-die "All devices already mounted. Nothing to do.\n"
-    if $verbose && ! @$devices;
+# if our goal is just to umount all devices, that should be done at this point
+if ($verbose) {
 
-my $to_mount = @$devices;
-print "$to_mount device(s) to mount:\n\n" if $verbose;
+    # don't proceed further if our goal was just to unmount
+    if ($unmount) {
+        die "\n$did_umount devices unmounted.  Done\n" if $did_umount;
+        die "No devices to unmount.  Done\n";
+    }
+
+    # separator between unmounts and mounts
+    print "\n" if $remount;
+
+    # is there anything to do?
+    die "All devices already mounted. Nothing to do.\n"
+        if ! @$devices;
+}
 
 # mount all devices
 my $did_mount = 0;
+my $to_mount = @$devices;
 foreach my $dev (@$devices) {
 
     # calculate source/destination paths
@@ -184,7 +225,11 @@ foreach my $dev (@$devices) {
     $ok->();
 }
 
-print "\n$did_mount of $to_mount devices sucessfully mounted.\n" if $verbose;
+if ($verbose) {
+    print "\n";
+    print "$did_umount devices unmounted, " if $remount;
+    print "$did_mount of $to_mount devices sucessfully mounted.\n";
+}
 
 __END__
 
@@ -236,6 +281,14 @@ Default is 'defaults,noatime,timeo=1,retrans=1,soft'.
 =item -n, --no-mount
 
 Don't actually do any mounting, only create destination directories
+
+=item -r, --remount
+
+Unmount all mounted devices, then remount them all.
+
+=item -u, --unmount
+
+Unmount all mounted devices, mounting nothing.
 
 =item -v, --verbose
 
