@@ -1379,6 +1379,20 @@ sub job_needs_reduction {
     return $jobs{$job}->[0] < $jobs{$job}->[1];
 }
 
+# given a file descriptor number and a timeout, wait for that descriptor to
+# become readable; returns 0 or 1 on if it did or not
+sub wait_for_readability {
+    my ($fileno, $timeout) = @_;
+    return 0 unless $fileno && $timeout;
+
+    my $rin;
+    vec($rin, $fileno, 1) = 1;
+    my $nfound = select($rin, undef, undef, $timeout);
+
+    return 0 unless defined $nfound;
+    return $nfound ? 1 : 0;
+}
+
 # get size of file, return 0 on error
 sub get_file_size {
     my $path = shift;
@@ -1400,14 +1414,8 @@ sub get_file_size {
 
     # sub to parse the response from $sock.  common code, so we have it here.
     my $parse_response = sub {
-        # select our socket to see if it's readable
-        my $rin;
-        vec($rin, fileno($sock), 1) = 1;
-        my $nfound = select($rin, undef, undef, 2);
-
-        # if nfound is undef or 0, we know something happened, consider it a failure
-        return 0 
-            unless defined $nfound && $nfound;
+        # give the socket 3 seconds to become readable
+        return 0 unless Mgd::wait_for_readability(fileno($sock), 3);
 
         # now we know there's readable data
         my $line = <$sock>;
