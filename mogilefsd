@@ -2563,6 +2563,7 @@ sub err_line {
         'unknown_command' => "Unknown server command",
         'no_domain' => "No domain provided",
         'no_class' => "No class provided",
+        'unreg_domain' => "Domain name invalid/not found",
         'class_exists' => "That class already exists in that domain",
         'domain_exists' => "That domain already exists",
         'invalid_mindevcount' => "The mindevcount must be at least 1",
