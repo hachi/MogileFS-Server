@@ -401,7 +401,7 @@ sub make_new_child {
     # now call our job function
     no strict 'refs';
     my $job_handler = *{"job_$job"}{CODE};
-    $job_handler->($$);
+    $job_handler->();
     exit;
 }
 
