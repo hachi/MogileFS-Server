@@ -1223,7 +1223,7 @@ sub cmd_create_close {
 
     # get size of file and verify that it matches what we were given, if anything
     my $size = Mgd::get_file_size($path);
-    return $self->err_line("size_mismatch")
+    return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
         if $args->{size} && ($args->{size} != $size);
 
     # TODO: check for EIO?
@@ -1610,10 +1610,12 @@ sub ok_line {
     return 1;
 }
 
+# first argument: error code.
+# second argument: optional error text.  text will be taken from code if no text provided.
 sub err_line {
     my Worker $self = shift;
     my $err_code = shift;
-    my $err_text = {
+    my $err_text = $_[1] || {
         'unknown_command' => "Unknown server command",
         'no_domain' => "No domain provided",
         'no_class' => "No class provided",
