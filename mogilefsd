@@ -64,6 +64,7 @@ my (
     $query_jobs,
     $delete_jobs,
     $replicate_jobs,
+    $reaper_jobs,
     $mog_root,
     $default_mindevcount,
     $worker_port,
@@ -146,6 +147,7 @@ $query_jobs     = choose_value( 'listener_jobs', undef) || # undef if not presen
                   choose_value( 'query_jobs', 20 );       # fall back to query_jobs, new name
 $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
+$reaper_jobs    = choose_value( 'reaper_jobs', 1 );
 $worker_port    = choose_value( 'worker_port', 7200 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
@@ -263,6 +265,7 @@ our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
 $jobs{'queryworker'} = [ $query_jobs, 0 ];
 $jobs{'delete'} = [ $delete_jobs, 0 ];
 $jobs{'replicate'} = [ $replicate_jobs, 0 ];
+$jobs{'reaper'} = [ $reaper_jobs, 0 ];
 
 # open up our log
 openlog('mogilefsd', 'pid', 'daemon');
@@ -852,6 +855,76 @@ sub get_mindevcounts {
     return \%min;
 }
 
+sub job_reaper {
+    my $parse_parent_response = sub {
+        # now see what was in our message queue
+        while (defined (my $line = <$psock>)) {
+            $line =~ s/\r?\n$//;
+            last if $line eq '.';
+
+            # now find out what command this is?
+            if ($line eq 'shutdown') {
+                exit 0;
+            }
+        }
+    };
+
+    while (1) {
+        sleep 10;
+
+        # get db and note we're starting a run
+        error("Reaper running; looking for dead devices")
+            if $Mgd::DEBUG >= 1;
+        validate_dbh();
+        my $dbh = get_dbh() or return 0;
+
+        # general report in to parent
+        send_to_parent('reaper_ping');
+        $parse_parent_response->();
+
+        # get a current list of devices
+        my $devs = Mgd::get_device_summary(1);
+        my @deaddevs = grep { $_->{status} eq 'dead' } values %$devs;
+        next unless @deaddevs;
+
+        # now iterate over dead devices
+        foreach my $dev (@deaddevs) {
+            my $devid = $dev->{devid};
+
+            # look for files on this device
+            my $fids = $dbh->selectcol_arrayref('SELECT fid FROM file_on WHERE devid = ? LIMIT 1000',
+                                                undef, $devid);
+            if ($dbh->err) {
+                error("Error selecting jobs to reap: " . $dbh->errstr);
+                next;
+            }
+            next unless $fids && @$fids;
+
+            # note we got some
+            error("Found " . scalar(@$fids) . " files on dead device $devid");
+
+            # now iterate
+            foreach my $fid (@$fids) {
+                $dbh->do('DELETE FROM file_on WHERE fid = ? AND devid = ?',
+                         undef, $fid, $devid);
+                if ($dbh->err) {
+                    error("Error deleting from file_on (file $fid, device $devid): " . $dbh->errstr);
+                    next;
+                }
+
+                # now update the fid count
+                unless (Mgd::update_fid_devcount($fid)) {
+                    error("Error updating fid $fid devcount");
+                    next;
+                }
+
+                # if debugging on, note this is done
+                error("Reaper noted fid $fid no longer on device $devid")
+                    if $Mgd::DEBUG >= 2;
+            }
+        }
+    }
+}
 
 sub job_replicate {
     my $parse_parent_response = sub {
@@ -1015,6 +1088,7 @@ sub find_deviceid {
 }
 
 sub get_device_summary {
+    my $include_dead = shift() ? ", 'dead'" : '';
     my $now = time;
     return $cache_device_summary if $cache_device_summary_time > $now - 15;
 
@@ -1025,7 +1099,7 @@ sub get_device_summary {
     my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, mb_used, status ".
                             "FROM device ".
-                            "WHERE status IN ('alive', 'down')");
+                            "WHERE status IN ('alive', 'down' $include_dead)");
     $sth->execute;
     $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
 
@@ -1892,6 +1966,16 @@ sub HandleChildRequest {
         # see if we need to kill it
         if (Mgd::job_needs_reduction('delete')) {
             Mgd::error("Reducing headcount of delete job by 1.");
+            Frontend->AskWorkerToDie($child);
+        } else {
+            # just drain the queue that we have for them
+            $child->drain_queue;
+        }
+
+    } elsif ($cmd =~ /^reaper_ping/) {
+        # kill if necessary
+        if (Mgd::job_needs_reduction('reaper')) {
+            Mgd::error("Reducing headcount of reaper job by 1.");
             Frontend->AskWorkerToDie($child);
         } else {
             # just drain the queue that we have for them
