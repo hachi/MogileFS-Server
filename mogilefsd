@@ -2012,6 +2012,49 @@ sub cmd_delete {
 
 }
 
+sub cmd_list_keys {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    # validate parameters
+    my $dmid = $self->check_domain($args) or return 0;
+    my ($prefix, $after, $limit) = ($args->{prefix}, $args->{after}, $args->{limit});
+    return $self->err_line("no_key") unless $prefix;
+
+    # now validate that after matches prefix
+    return $self->err_line('after_mismatch')
+        if $after && $after !~ /^$prefix/;
+
+    # now fix the input... prefix always ends with a % so that it works
+    # in a LIKE call, and after is either blank or something
+    $prefix .= '%';
+    $after ||= '';
+    $limit ||= 1000;
+    $limit += 0;
+
+    # get DB handle
+    my $dbh = Mgd::get_dbh or
+        return $self->err_line("nodb");
+
+    # now select out our keys
+    my $keys = $dbh->selectcol_arrayref
+        ('SELECT dkey FROM file WHERE dmid = ? AND dkey LIKE ? AND dkey > ? ' .
+         "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, $after);
+
+    # if we got nothing, say so
+    return $self->err_line('none_match') unless $keys && @$keys;
+
+    # construct the output and send
+    my $ret = { key_count => 0, next_after => '' };
+    foreach my $key (@$keys) {
+        $ret->{key_count}++;
+        $ret->{next_after} = $key
+            if $key gt $ret->{next_after};
+        $ret->{"key_$ret->{key_count}"} = $key;
+    }
+    return $self->ok_line($ret);
+}
+
 sub cmd_rename {
     my QueryWorker $self = shift;
     my $args = shift;
@@ -2379,6 +2422,8 @@ sub err_line {
         'state_too_high' => "Status cannot go from dead to alive; must use down",
         'failure' => "Operation failed",
         'key_exists' => "Target key name already exists; can't overwrite.",
+        'none_match' => "No keys match that pattern and after-value (if any).",
+        'after_mismatch' => "Pattern does not match the after-value?",
     }->{$err_code};
 
     my $delay;
