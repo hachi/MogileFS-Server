@@ -290,6 +290,25 @@ NEEDUPDATE
     }
 }
 
+# now check for an updated tempfile table
+my $devids = $dbh->selectrow_array('SELECT devids FROM tempfile');
+if ($dbh->err) {
+    if ($upgrade) {
+        print STDERR "Updating tempfile table...\n";
+        $dbh->do("ALTER TABLE tempfile ADD COLUMN devids VARCHAR(60)");
+        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
+    } else {
+        die <<NEEDUPDATE;
+Error: database schema out of date.
+
+MogileFS needs to update your database schema.  Please rerun the MogileFS
+server with the --upgrade option if you wish for us to do this.
+
+This will NOT destroy any existing data.
+NEEDUPDATE
+    }
+}
+
 # we're done with this, so undef it before we start forking, as then
 # maybe we'll end up with children having the same socket and everybody
 # writing to it at the same time...
@@ -2336,6 +2355,7 @@ sub cmd_create_open {
     # validate parameters
     my $dmid = $self->check_domain($args) or return 0;
     my $key = $args->{key} || "";
+    my $multi = $args->{multi_dest} ? 1 : 0;
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
@@ -2352,35 +2372,51 @@ sub cmd_create_open {
             or return $self->err_line("unreg_class");
     }
 
-    # setup the new mapping
+    # find a device to put this file on that has 100Mb free.
+    my (@dests, @hosts);
+    my $devs = Mgd::get_device_summary();
+    while (scalar(@dests) < ($multi ? 3 : 1)) {
+        my $devid = Mgd::find_deviceid(
+            random => 1,
+            weight_by_free => 1,
+            not_on_hosts => \@hosts,
+        );
+
+        last unless defined $devid;
+
+        push @dests, $devid;
+        push @hosts, $devs->{$devid}->{hostid};
+    }
+    return $self->err_line("no_devices") unless @dests;
+
+    # setup the new mapping.  we store the devices that we picked for
+    # this file in here, knowing that they might not be used.  create_close
+    # is responsible for actually mapping in file_on.
     $dbh->do("INSERT INTO tempfile SET ".
-             " fid=NULL, dmid=?, dkey=?, classid=?, createtime=UNIX_TIMESTAMP()",
-             undef, $dmid, $key, $classid);
+             " fid=NULL, dmid=?, dkey=?, classid=?, createtime=UNIX_TIMESTAMP(), devids=?",
+             undef, $dmid, $key, $classid, join(',', @dests));
     return undef if $dbh->err;
     my $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
     return undef unless $fid > 0;
 
-    # find a device to put this file on that has 100Mb free.
-    my $devid = Mgd::find_deviceid(
-        random => 1,
-        weight_by_free => 1,
-    );
-    return $self->err_line("no_devices") unless $devid;
-
-    # FIXME: verify the path is good, and try alt device otherwise
-    my $path = Mgd::make_path($devid, $fid);
-
-    # make a note that this file will be going here, so if it's
-    # partially written and aborted, or closed, the cleanup
-    # process will know what to cleanup
-    $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
-             undef, $fid, $devid);
-
+    # original single path support
     return $self->ok_line({
         fid => $fid,
-        devid => $devid,
-        path => $path,
-    });
+        devid => $dests[0],
+        path => Mgd::make_path($dests[0], $fid),
+    }) unless $multi;
+
+    # multiple path support
+    my $ct = 0;
+    my $res = {};
+    foreach my $devid (@dests) {
+        $ct++;
+        $res->{"devid_$ct"} = $devid;
+        $res->{"path_$ct"} = Mgd::make_path($devid, $fid);
+    }
+    $res->{fid} = $fid;
+    $res->{dev_count} = $ct;
+    return $self->ok_line($res);
 }
 
 sub cmd_create_close {
