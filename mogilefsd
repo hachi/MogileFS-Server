@@ -35,6 +35,7 @@ use Sys::Syslog;
 use Socket qw(MSG_NOSIGNAL);
 use Time::HiRes qw(gettimeofday tv_interval);
 use Net::Netmask;
+use LWP::UserAgent;
 
 
 #####################################################################
@@ -65,10 +66,12 @@ my (
     $delete_jobs,
     $replicate_jobs,
     $reaper_jobs,
+    $monitor_jobs,
     $mog_root,
     $default_mindevcount,
     $worker_port,
     $upgrade,
+    $min_free_space,
    );
 
 # Command-line options will override
@@ -87,6 +90,7 @@ Getopt::Long::GetOptions(
     'no_http'       => \$cmdline{no_http},
     'workerport=i'  => \$cmdline{worker_port},
     'upgrade'       => \$upgrade,
+    'minfreespace=i' => \$cmdline{min_free_space},
     'default_mindevcount=i' => \$cmdline{default_mindevcount},
 );
 
@@ -122,15 +126,9 @@ if ( $config && !$skipconfig ) {
 sub choose_value ($$;$) {
     my ( $name, $default, $boolean ) = @_;
 
-    if ( $boolean ) {
-        return $cmdline{$name} if defined $cmdline{$name};
-        return $cfgfile{$name} if defined $cfgfile{$name};
-        return $default;
-    }
-
-    elsif ( !$boolean ) {
-        return $cmdline{$name} || $cfgfile{ $name } || $default;
-    }
+    return $cmdline{$name} if defined $cmdline{$name};
+    return $cfgfile{$name} if defined $cfgfile{$name};
+    return $default;
 }
 
 
@@ -148,7 +146,9 @@ $query_jobs     = choose_value( 'listener_jobs', undef) || # undef if not presen
 $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
 $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
+$monitor_jobs   = choose_value( 'monitor_jobs', 1 );
 $worker_port    = choose_value( 'worker_port', 7200 );
+$min_free_space = choose_value( 'min_free_space', 100 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
 $default_mindevcount = choose_value( 'default_mindevcount', 2 );
@@ -234,6 +234,34 @@ This means that we really can't do anything, so we're going to shut down.
 NOHOSTS
 }
 
+### and now check for devices
+my $device = $dbh->selectrow_hashref('SELECT * FROM device LIMIT 1');
+if ($device) {
+    unless (exists $device->{mb_asof}) {
+        if ($upgrade) {
+            print STDERR "Updating device table...\n";
+            $dbh->do("ALTER TABLE device ADD COLUMN mb_asof INT(10) UNSIGNED AFTER mb_used");
+            die "Error: " . $dbh->errstr . "\n" if $dbh->err;
+        } else {
+            die <<NEEDUPDATE;
+Error: device table out of date.
+
+MogileFS needs to update your database schema.  Please rerun the MogileFS
+server with the --upgrade option if you wish for us to do this.
+
+This will NOT destroy any existing data.
+NEEDUPDATE
+        }
+    }
+} else {
+    die <<NODEVICES;
+Error: no devices found.
+
+It seems like you don't have any devices defined in your MogileFS setup.
+This means that we really can't do anything, so we're going to shut down.
+NODEVICES
+}
+
 # we're done with this, so undef it before we start forking, as then
 # maybe we'll end up with children having the same socket and everybody
 # writing to it at the same time...
@@ -266,6 +294,7 @@ $jobs{'queryworker'} = [ $query_jobs, 0 ];
 $jobs{'delete'} = [ $delete_jobs, 0 ];
 $jobs{'replicate'} = [ $replicate_jobs, 0 ];
 $jobs{'reaper'} = [ $reaper_jobs, 0 ];
+$jobs{'monitor'} = [ $monitor_jobs, 0 ];
 
 # open up our log
 openlog('mogilefsd', 'pid', 'daemon');
@@ -797,6 +826,7 @@ sub replicate {
         my @good_devids = Mgd::find_deviceid(
             random => 1,
             not_on_hosts => [ keys %on_host ],
+            weight_by_free => 1,
         );
 
         # wasn't able to replicate enough?
@@ -853,6 +883,82 @@ sub get_mindevcounts {
 
     # return ref to hash
     return \%min;
+}
+
+sub job_monitor {
+    my $parse_parent_response = sub {
+        # now see what was in our message queue
+        while (defined (my $line = <$psock>)) {
+            $line =~ s/\r?\n$//;
+            last if $line eq '.';
+
+            # now find out what command this is?
+            if ($line eq 'shutdown') {
+                exit 0;
+            }
+        }
+    };
+
+    while (1) {
+        sleep 15;
+
+        # get db and note we're starting a run
+        error("Monitor running; scanning usage files")
+            if $Mgd::DEBUG >= 1;
+        validate_dbh();
+        my $dbh = get_dbh() or return 0;
+
+        # general report in to parent
+        send_to_parent('monitor_ping');
+        $parse_parent_response->();
+
+        # get a current list of devices
+        my $devs = Mgd::get_device_summary();
+        next unless $devs && %$devs;
+
+        # now iterate over dead devices
+        foreach my $dev (values %$devs) {
+            my $host = $Mgd::cache_host{$dev->{hostid}};
+            my $port = $host->{http_get_port} || $host->{http_port};
+            my $url = "http://$host->{hostip}:$port/dev$dev->{devid}/usage";
+
+            # now try to get the data with a short timeout
+            my $ua = LWP::UserAgent->new( timeout => 2 );
+            my $response = $ua->get($url);
+
+            unless ($response->is_success) {
+                error("Failed getting dev$dev->{devid}: " . $response->status_line);
+                next;
+            }
+
+            my %stats;
+            my $data = $response->content;
+            foreach (split(/\r?\n/, $data)) {
+                next unless /^(\w+)\s*:\s*(.+)$/;
+                $stats{$1} = $2;
+            }
+
+            my ($used, $total) = ($stats{used}, $stats{total});
+            unless ($used && $total) {
+                error("dev$dev->{devid} reports used = $used, total = $total, error?");
+                next;
+            }
+
+            # bytes => megabytes
+            $used /= 1024;
+            $total /= 1024;
+
+            $dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
+                     "WHERE devid = ?", undef, int($total), int($used), $dev->{devid});
+            if ($dbh->err) {
+                error("Database error in update query: " . $dbh->errstr);
+                next;
+            }
+
+            error("dev$dev->{devid}: used = $used, total = $total")
+                if $Mgd::DEBUG >= 1;
+        }
+    }
 }
 
 sub job_reaper {
@@ -1042,9 +1148,9 @@ use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_
 # general purpose device locator.  example:
 #
 # my $devid = Mgd::find_deviceid(
-#     random => 1,              # get random device
-#     free_space => 100,        # with at least 100MB free
-#     weight_by_free => 1,      # -or- weight by free space (NOT IMPLEMENTED YET)
+#     random => 1,              # get random device (else find first suitable)
+#     min_free_space => 100,    # with at least 100MB free
+#     weight_by_free => 1,      # find result weighted by free space
 #     not_on_hosts => [ 1, 2 ], # no devices on hosts 1 and 2
 # );
 #
@@ -1054,12 +1160,16 @@ use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_
 sub find_deviceid {
     my %opts = ( @_ );
 
+    # copy down global minimum free space if not specified
+    $opts{min_free_space} ||= $min_free_space;
+
     # setup for iterating over devices
     my $devs = Mgd::get_device_summary();
     my @devids = keys %{$devs || {}};
     my $devcount = scalar(@devids);
     my $start = $opts{random} ? int(rand($devcount)) : 0;
     my %not_on_host = ( map { $_ => 1 } @{$opts{not_on_hosts} || []} );
+    my $total_free = 0;
 
     # now find a device that matches what they want
     my @list;
@@ -1070,21 +1180,27 @@ sub find_deviceid {
         # series of suitability checks
         next unless $dev->{status} eq 'alive';
         next if $not_on_host{$dev->{hostid}};
+        next if $opts{min_free_space} && $dev->{mb_total} &&
+                $dev->{mb_free} < $opts{min_free_space};
 
-        #FIXME: as soon as we're using the mb_* columns in the database, this can be
-        #       used.  until then, we don't know how much space is on devices, so we
-        #       can't use this yet...
-        #next if $opts{free_space} &&
-        #        $dev->{mb_free} < $opts{free_space};
-
-        # we get here, return this device
+        # we get here, this is a suitable device
         push @list, $dev->{devid};
-        last unless wantarray;
+        $total_free += $dev->{mb_free};
     }
 
-    # no suitable device found
-    return $list[0] unless wantarray;
-    return @list;
+    # now we have a list ordered randomly, do free space weighting
+    if ($opts{weight_by_free}) {
+        my $rand = int(rand($total_free));
+        my $cur = 0;
+
+        foreach my $devid (@list) {
+            $cur += $devs->{$devid}->{mb_free};
+            return $devid if $cur >= $rand;
+        }
+    }
+
+    # return first listed suitable device
+    return @list ? $list[0] : undef;
 }
 
 sub get_device_summary {
@@ -1972,6 +2088,16 @@ sub HandleChildRequest {
             $child->drain_queue;
         }
 
+    } elsif ($cmd =~ /^monitor_ping/) {
+        # kill if necessary
+        if (Mgd::job_needs_reduction('monitor')) {
+            Mgd::error("Reducing headcount of monitor job by 1.");
+            Frontend->AskWorkerToDie($child);
+        } else {
+            # just drain the queue that we have for them
+            $child->drain_queue;
+        }
+
     } elsif ($cmd =~ /^reaper_ping/) {
         # kill if necessary
         if (Mgd::job_needs_reduction('reaper')) {
@@ -2165,7 +2291,7 @@ sub cmd_create_open {
     # find a device to put this file on that has 100Mb free.
     my $devid = Mgd::find_deviceid(
         random => 1,
-        free_space => 100,
+        weight_by_free => 1,
     );
     return $self->err_line("no_devices") unless $devid;
 
