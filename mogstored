@@ -130,9 +130,9 @@ sub event_read {
     return $self->close() unless defined $bref;
     $self->{read_buf} .= $$bref;
 
-    if ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
-        # got a line of text in $1
-        if ($1 =~ /^size (\S+)$/) {
+    while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
+        my $cmd = $1;
+        if ($cmd =~ /^size (\S+)$/) {
             # validate uri
             my $uri = $1;
             if ($uri =~ /\.\./) {
@@ -147,7 +147,10 @@ sub event_read {
                 $self->write("$uri $size\r\n");
             });
         } else {
-            $self->write("ERROR: unknown command\r\n");
+            # we don't understand this so pass it on to manage command interface
+            my @out;
+            Perlbal::run_manage_command($cmd, sub { push @out, $_[0]; });
+            $self->write(join("\r\n", @out) . "\r\n");
         }
     }
 }
