@@ -1,0 +1,538 @@
+#!/usr/bin/perl
+#
+# MogileFS daemon - HEAVILY UNDER CONSTRUCTION
+#
+# Copyright 2004, Danga Interactive
+#
+# Authors:
+#   Brad Fitzpatrick <brad@danga.com>
+#
+# License:
+#   undecided.
+#
+
+package Mgd;
+
+use strict;
+use Getopt::Long;
+use IO::Socket;
+use Symbol;
+use POSIX;
+use DBI;
+use DBD::mysql;
+
+use vars qw($dbh);
+
+sub get_dbh {
+    return $::dbh ||= DBI->connect("DBI:mysql:mogilefs", "mogile", "");
+}
+
+use vars qw($MOG_ROOT);
+$MOG_ROOT = "/mnt/mogilefs";
+
+my $conf_port = 7001;
+
+
+# establish SERVER socket, bind and listen.
+my $server = IO::Socket::INET->new(LocalPort => $conf_port,
+				   Type      => SOCK_STREAM,
+				   Proto     => 'tcp',
+				   Blocking  => 1,
+				   Reuse     => 1,
+				   Listen    => 10 )
+    or die "Error creating socket: $@\n";
+
+# keep track of what all child pids are doing, and what jobs are being
+# satisifed.
+my %child  = ();    # pids -> job
+my %jobs   = ();    # jobname -> [ min, current ]
+
+# FIXME: make these configurable (and client_listen will use IO::Epoll or
+# something in the future, maybe IO::Multiplex)
+$jobs{'client_listen'} = [ 20, 0 ];
+$jobs{'delete'} = [ 1, 0 ];
+$jobs{'replicate'} = [ 1, 0 ];
+    
+
+# Install signal handlers.
+$SIG{INT}  = sub {
+    kill 'INT' => keys %child;
+    exit 0;         
+};
+
+
+# Keep jobs alive
+while (1) {
+    my $pid = wait;
+
+    # when a child dies, figure out what it was doing
+    # and note that job has one less worker
+    my $job;
+    if ($pid > -1 && ($job = delete $child{$pid})) {
+	if (my $jobstat = $jobs{$job}) {
+	    $jobstat->[1]--;
+	}
+    }
+
+    # foreach job, fork enough children
+    while (my ($job, $jobstat) = each %jobs) {
+	my $need = $jobstat->[0] - $jobstat->[1];
+	if ($need > 0) {
+	    print "Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.\n";
+	    for (1..$need) {
+		my $cpid = make_new_child($job);
+		$child{$cpid} = $job;
+		$jobstat->[1]++;
+	    }
+	}
+    }
+
+}
+
+sub make_new_child {
+    my $job = shift;
+
+    my $pid;
+    my $sigset;
+    
+    # block signal for fork
+    $sigset = POSIX::SigSet->new(SIGINT);
+    sigprocmask(SIG_BLOCK, $sigset)
+        or die "Can't block SIGINT for fork: $!\n";
+    
+    die "fork: $!" unless defined ($pid = fork);
+    
+    if ($pid) {
+        sigprocmask(SIG_UNBLOCK, $sigset)
+            or die "Can't unblock SIGINT for fork: $!\n";
+        return $pid;
+    }
+
+    $SIG{INT} = 'DEFAULT';
+    
+    # unblock signals
+    sigprocmask(SIG_UNBLOCK, $sigset)
+	or die "Can't unblock SIGINT for fork: $!\n";
+
+    no strict 'refs';
+    my $job = *{"job_$job"}{CODE};
+    $job->($$);
+    exit;
+}
+
+sub job_delete {
+
+    my $dbh = get_dbh();
+
+  PASS:
+    while (1) {
+	sleep 10;
+
+	my %dev_down;  # devid -> 1 (when device times out due to EIO)
+
+	my $LIMIT = 500;
+	while (1) {
+	    my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
+						  "FROM file_to_delete fd LEFT JOIN file_on fo ON fd.fid=fo.fid ".
+						  "LIMIT $LIMIT ");
+	    my $count = $delmap ? scalar @$delmap : 0;
+	    next PASS unless $count;
+	    
+	    my %done;  # fid -> 1 (when fid is deleted from all devices)
+	    
+	    foreach my $dm (@$delmap) {
+		my ($fid, $devid) = @$dm;
+
+		# if no device is returned from the query above, that
+		# means there are no file_on rows for it, and we can consider
+		# it now deleted.
+		unless ($devid) {
+		    $done{$fid} = 1;
+		    next;
+		}
+
+		# don't try to delete from this device if we earlier
+		# found it to be timing out with EIO
+		next if $dev_down{$devid};
+
+		my $path = make_path($devid, $fid);
+		my $rv = unlink $path;
+		
+		# device is timing out.  take note of it and
+		# continue dealing with other deletes
+		if (! $rv && $! == EIO) {
+		    $dev_down{$devid} = 1;
+		    next;
+		}
+
+		# if we deleted it, or it didn't exist, consider it
+		# deleted.
+		if ($rv || $! == ENOENT) {
+		    $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
+			     undef, $fid, $devid);
+		}
+	    }
+
+	    if (%done) {
+		my $in = join(',', keys %done);
+		$dbh->do("DELETE FROM file_to_delete WHERE fid IN ($in)");
+	    }
+	    
+	    next PASS if $count < $LIMIT;
+	}
+
+    }
+}
+
+sub job_replicate {
+    while (1) {
+	print "Replicating.\n";
+	sleep 10;
+    }
+}
+
+sub job_client_listen {
+    while (my $csock = $server->accept()) {
+	my $client = Client->new($csock);
+
+	while (my $line = <$csock>) {
+	    $line =~ s/[\r\n]+$//;
+	    $client->process_line($line);
+	}
+    }
+}
+
+# returns hashref of devid -> $device_row_href  (where devid is alive)
+# cached for 15 seconds.
+use vars qw($cache_device_summary $cache_device_summary_time);
+
+sub get_device_summary {
+    my $now = time;
+    return $cache_device_summary if $cache_device_summary_time > $now - 15;
+
+    my $dbh = get_dbh();
+
+    # learn devices
+    my %dev;  # 
+    my %hostdevs;  # hostid -> [ devid ]  (where devid is alive)
+    my $sth = $dbh->prepare("SELECT devid, hostid, mb_total, mb_used FROM device ".
+			    "WHERE status='alive'");
+    $sth->execute;
+    $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
+
+    $cache_device_summary_time = $now;
+    return $cache_device_summary = \%dev;
+}
+
+use vars qw(%cache_host $cache_host_time);
+sub check_host_cache {
+    my $now = time;
+    return if $cache_host_time > $now - 10;
+
+    %cache_host = ();
+    my $dbh = get_dbh();
+    my $sth = $dbh->prepare("SELECT hostid, status, hostname, hostip, remoteroot FROM host");
+    $sth->execute;
+    $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
+}
+
+sub domain_id {
+    my $domain = shift;
+    # FIXME: cache this
+
+    my $dbh = Mgd::get_dbh;
+    # lookup domain
+    my $dmid = $dbh->selectrow_array("SELECT dmid FROM domain WHERE namespace=?",
+				     undef, $domain);
+    return $dmid;
+}
+
+sub hostid_name {
+    my $hostid = shift;
+    check_host_cache();
+    my $h = $cache_host{$hostid};
+    return $h ? $h->{hostname} : undef;
+}
+
+sub make_path {
+    my ($devid, $fid) = @_;
+
+    my $dsum = get_device_summary();
+    my $dinfo = $dsum->{$devid};
+    return undef unless $dinfo;
+    my $hostname = hostid_name($dinfo->{hostid});
+
+    return "$hostname/dev$devid/$fid.fid";
+
+}
+
+sub add_file_on {
+    my ($fid, $devid) = @_;
+    
+    my $dbh = get_dbh() or return 0;
+
+    my $rv = $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
+		      undef, $fid, $devid);
+    if ($rv > 0) {
+	return update_fid_devcount($fid);
+    } else {
+	# was already on that device
+	return 1;
+    }
+}
+
+sub update_fid_devcount {
+    my ($fid) = @_;
+
+    my $dbh = get_dbh() or return 0;
+
+    my $lockname = "mgfs:fid:$fid:devcount";
+    my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 10)", undef,
+					 $lockname);
+    return 0 unless $lock;
+    my $ct = $dbh->selectrow_array("SELECT COUNT(*) FROM file_on WHERE fid=?",
+				   undef, $fid);
+
+    $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
+	     $ct, $fid);
+
+    $dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+    return 1;
+}
+
+package Client;
+
+use fields qw(sock);
+
+sub new {
+    my Client $self = shift;
+    $self = fields::new($self) unless ref $self;
+
+    my $sock = shift;
+    $self->{sock} = $sock;
+
+    return $self;
+}
+
+sub process_line {
+    my Client $self = shift;
+    my $line = shift;
+
+    if ($line =~ /^(\w+)\s*(.*)/) {
+	my ($cmd, $args) = ($1, $2);
+	$cmd = lc($cmd);
+
+	no strict 'refs';
+	my $cmd = *{"cmd_$cmd"}{CODE};
+	if ($cmd) {
+	    my $args = decode_url_args(\$args);
+	    $cmd->($self, $args);
+	    next;
+	}
+    }
+
+    return $self->err_line('unknown_command');
+}
+
+
+sub cmd_create_open {
+    my Client $self = shift;
+    my $args = shift;
+
+    # validate parameters
+    my $domain = $args->{domain};
+    return $self->err_line("no_domain") unless length($domain);
+    my $key = $args->{key};
+    return $self->err_line("no_key") unless length($key);
+
+    # get DB handle
+    my $dbh = Mgd::get_dbh or
+	return $self->err_line("nodb");
+
+    # lookup domain
+    my $dmid = Mgd::domain_id($domain) or
+	return $self->err_line("unreg_domain");
+
+    # figure out what classid this file is for
+    my $class = $args->{class};
+    my $classid = 0;
+    if (length($class)) {
+	# TODO: cache this
+	$classid = $dbh->selectrow_array("SELECT classid FROM class ".
+					 "WHERE dmid=? AND classname=?",
+					 undef, $dmid, $class)
+	    or return $self->err_line("unreg_class");
+    }
+    
+    # see if we have a fid for this key already
+    my $old_fid = $dbh->selectrow_array("SELECT fid FROM file WHERE ".
+					"dmid=? AND dkey=?",
+					undef, $dmid, $key);
+    if ($old_fid) {
+	# add to to-delete list
+	$dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_fid);
+	$dbh->do("DELETE FROM file WHERE fid=?", undef, $old_fid);
+    }
+	
+
+    # setup the new mapping
+    $dbh->do("INSERT INTO file SET ".
+	     " fid=NULL, dmid=?, dkey=?, length=NULL, ".
+	     " classid=?, devcount=0", undef,
+	     $dmid, $key, $classid);
+    return undef if $dbh->err;
+    my $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
+    return undef unless $fid > 0;
+
+    # find a device to put this file on that has 100Mb free.
+    my $devids = $dbh->selectcol_arrayref("SELECT devid FROM device ".
+					  "WHERE status='alive' AND (mb_used IS NULL ".
+					  "   OR (mb_total-mb_used > 100))");
+    my $count = $devids ? @$devids : 0;
+    return $self->err_line("no_devices") unless $count;
+
+    # pick a random alive device
+    my $devid = $devids->[int(rand($count))];
+
+    my $path = Mgd::make_path($devid, $fid);
+    
+
+    return $self->ok_line({
+	fid => $fid,
+	devid => $devid,
+	path => $path,
+    });
+}
+
+sub cmd_create_close {
+    my Client $self = shift;
+    my $args = shift;
+
+    # validate parameters
+    my $domain = $args->{domain};
+    return $self->err_line("no_domain") unless length($domain);
+    my $key = $args->{key};
+    return $self->err_line("no_key") unless length($key);
+    my $fid = $args->{fid} or return $self->err_line("no_fid");
+    my $devid = $args->{devid} or return $self->err_line("no_devid");
+    my $path = $args->{path} or return $self->err_line("no_path");
+
+    # is the provided path what we'd expect for this fid/devid?
+    return $self->err_line("bogus_args") 
+	unless $path eq Mgd::make_path($devid, $fid);
+
+    # get DB handle
+    my $dbh = Mgd::get_dbh or
+	return $self->err_line("nodb");
+
+    # validate domain
+    my $dmid = Mgd::domain_id($domain) or
+	return $self->err_line("unreg_domain");
+
+    # is this fid still owned by this key?
+    my $cur_fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
+					undef, $dmid, $key);
+    return $self->err_line("expired_fid") unless $cur_fid == $fid;
+
+    my $size = -s "$Mgd::MOG_ROOT/$path";
+
+    # TODO: check for EIO?
+    return $self->err_line("empty_file") unless $size;
+
+    $dbh->do("UPDATE file SET length=? WHERE fid=?", undef,
+	     $size, $fid);
+    if (Mgd::add_file_on($fid, $devid)) {
+	return $self->ok_line();
+    } else {
+	# FIXME: handle this better
+	return $self->err_line("db_error");
+    }
+}
+
+sub cmd_delete {
+    my Client $self = shift;
+    my $args = shift;
+
+    # validate parameters
+    my $domain = $args->{domain};
+    return $self->err_line("no_domain") unless length($domain);
+    my $key = $args->{key};
+    return $self->err_line("no_key") unless length($key);
+
+    # get DB handle
+    my $dbh = Mgd::get_dbh or
+	return $self->err_line("nodb");
+
+    # validate domain
+    my $dmid = Mgd::domain_id($domain) or
+	return $self->err_line("unreg_domain");
+
+    # is this fid still owned by this key?
+    my $fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
+				    undef, $dmid, $key);
+    return $self->err_line("unknown_key") unless $fid;
+
+    $dbh->do("DELETE FROM file WHERE fid=?", undef, $fid);
+    $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fid);
+
+    return $self->ok_line();
+
+}
+
+sub ok_line {
+    my Client $self = shift;
+    my $args = shift;
+    $self->{sock}->print("OK " . join('&',
+				      map { eurl($_) . "=" . eurl($args->{$_}) }
+				      keys %$args) . "\r\n");
+    return 1;
+}
+
+sub err_line {
+    my Client $self = shift;
+    my $err_code = shift;
+    my $err_text = {
+	'unknown_command' => "Unknown server command",
+    }->{$err_code};
+
+    $self->{sock}->print("ERR $err_code " . eurl($err_text) . "\r\n");
+    return 0;
+}
+
+sub eurl
+{
+    my $a = $_[0];
+    $a =~ s/([^a-zA-Z0-9_\,\-.\/\\\: ])/uc sprintf("%%%02x",ord($1))/eg;
+    $a =~ tr/ /+/;
+    return $a;
+}
+
+sub durl
+{
+    my ($a) = @_;
+    $a =~ tr/+/ /;
+    $a =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+    return $a;
+}
+
+sub decode_url_args
+{
+    my $a = shift;
+    my $buffer = ref $a ? $a : \$a;
+    my $ret = {};
+
+    my $pair;
+    my @pairs = split(/&/, $$buffer);
+    my ($name, $value);
+    foreach $pair (@pairs)
+    {
+        ($name, $value) = split(/=/, $pair);
+        $value =~ tr/+/ /;
+        $value =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+        $name =~ tr/+/ /;
+        $name =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+        $ret->{$name} .= $ret->{$name} ? "\0$value" : $value;
+    }
+    return $ret;
+}
+
