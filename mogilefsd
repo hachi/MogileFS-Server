@@ -164,7 +164,8 @@ my $psock;          # IO::Socket::INET connection to parent (undef if parent)
 my $foreground = 1; # 1 if we're running in the foreground
 my %streamcache;    # host -> IO::Socket::INET to mogstored
 my $lastspawntime = 0; # time we last ran spawn_children sub
-my $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid dies.
+our $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid dies.
+our $starttime = time; # time we got going
 
 # [ what we want to be at, what we are at ]
 $jobs{'queryworker'} = [ $query_jobs, 0 ];
@@ -1539,10 +1540,12 @@ sub HandleClientRequest {
         my @out;
         if ($cmd =~ /^stats$/) {
             # print out some stats on the queues
+            my $uptime = time - $Mgd::starttime;
             my $ccount = scalar(@ClientQueue);
             my $wcount = scalar(@QueryWorkerQueue);
             my $ipcount = scalar(keys %Mappings);
-            push @out, "pending_queries $ccount",
+            push @out, "uptime $uptime",
+                       "pending_queries $ccount",
                        "processing_queries $ipcount",
                        "bored_queryworkers $wcount",
                        map { "$_ $Stats{$_}" } sort keys %Stats;
