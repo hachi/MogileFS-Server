@@ -163,6 +163,8 @@ my %jobs   = ();    # jobname -> [ min, current ]
 my $psock;          # IO::Socket::INET connection to parent (undef if parent)
 my $foreground = 1; # 1 if we're running in the foreground
 my %streamcache;    # host -> IO::Socket::INET to mogstored
+my $lastspawntime = 0; # time we last ran spawn_children sub
+my $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid dies.
 
 # [ what we want to be at, what we are at ]
 $jobs{'queryworker'} = [ $query_jobs, 0 ];
@@ -244,8 +246,13 @@ my $waccept_handler = sub {
 
 # thing to keep jobs alive
 my $spawn_children = sub {
+    # run only once per second
+    return 1 unless time > $lastspawntime;
+    $lastspawntime = time();
+    
     # see if anybody has died, but don't hang up on doing so
     my $pid = waitpid -1, WNOHANG;
+    return 1 if $pid <= 0 && $allkidsup;
 
     # when a child dies, figure out what it was doing
     # and note that job has one less worker
@@ -260,6 +267,7 @@ my $spawn_children = sub {
             # and have already decremented the jobstat counter and don't
             # want to do it again
             unless (my $true = delete $todie{$pid}) {
+                # decrement the count of currently running jobs
                 $jobstat->[1]--;
             }
         }
@@ -273,12 +281,15 @@ my $spawn_children = sub {
             for (1..$need) {
                 my $cpid = make_new_child($job);
                 $child{$cpid} = $job;
+
+                # now increase the count of processes currently doing this job
                 $jobstat->[1]++;
             }
         }
     }
 
     # true value keeps us running
+    $allkidsup = 1;
     return 1;
 };
 
