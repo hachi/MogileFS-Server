@@ -1281,19 +1281,28 @@ sub cmd_stats {
     my $dbh = Mgd::get_dbh
         or return $self->err_line('nodb');
 
+    # get names of all domains and classes for use later
+    my %classes;
+    my $rows = $dbh->selectall_arrayref('SELECT class.dmid, namespace, classid, classname ' .
+                                        'FROM domain, class WHERE class.dmid = domain.dmid');
+    foreach my $row (@$rows) {
+        $classes{$row->[0]}->{name} = $row->[1];
+        $classes{$row->[0]}->{classes}->{$row->[2]} = $row->[3];
+    }
+    $classes{$_}->{classes}->{0} = 'default'
+        foreach keys %classes;
+
+    # get host and device information with device status
+    my %devices;
+    my $rows = $dbh->selectall_arrayref('SELECT device.devid, hostname, device.status ' .
+                                        'FROM device, host WHERE device.hostid = host.hostid');
+    foreach my $row (@$rows) {
+        $devices{$row->[0]}->{host} = $row->[1];
+        $devices{$row->[0]}->{status} = $row->[2];
+    }
+
     # if they want replication counts, or didn't specify what they wanted
     if ($args->{replication} || $args->{all}) {
-        # get names of all domains and classes for use later
-        my %classes;
-        my $rows = $dbh->selectall_arrayref('SELECT class.dmid, namespace, classid, classname ' .
-                                            'FROM domain, class WHERE class.dmid = domain.dmid');
-        foreach my $row (@$rows) {
-            $classes{$row->[0]}->{name} = $row->[1];
-            $classes{$row->[0]}->{classes}->{$row->[2]} = $row->[3];
-        }
-        $classes{$_}->{classes}->{0} = 'default'
-            foreach keys %classes;
-    
         # replication stats
         my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, devcount, COUNT(devcount) FROM file GROUP BY 1, 2, 3');
         my $count = 0;
@@ -1305,6 +1314,33 @@ sub cmd_stats {
             $ret->{"replication${count}files"} = $stat->[3];
         }
         $ret->{"replicationcount"} = $count;
+    }
+
+    # file statistics (how many files there are and in what domains/classes)
+    if ($args->{files} || $args->{all}) {
+        my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, COUNT(classid) FROM file GROUP BY 1, 2');
+        my $count = 0;
+        foreach my $stat (@$stats) {
+            $count++;
+            $ret->{"files${count}domain"} = $classes{$stat->[0]}->{name};
+            $ret->{"files${count}class"} = $classes{$stat->[0]}->{classes}->{$stat->[1]};
+            $ret->{"files${count}files"} = $stat->[2];
+        }
+        $ret->{"filescount"} = $count;
+    }
+
+    # device statistics (how many files are on each device)
+    if ($args->{devices} || $args->{all}) {
+        my $stats = $dbh->selectall_arrayref('SELECT devid, COUNT(devid) FROM file_on GROUP BY 1');
+        my $count = 0;
+        foreach my $stat (@$stats) {
+            $count++;
+            $ret->{"devices${count}id"} = $stat->[0];
+            $ret->{"devices${count}host"} = $devices{$stat->[0]}->{host};
+            $ret->{"devices${count}status"} = $devices{$stat->[0]}->{status};
+            $ret->{"devices${count}files"} = $stat->[1];
+        }
+        $ret->{"devicescount"} = $count;
     }
 
     # FIXME: DO! add other stats
