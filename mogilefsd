@@ -50,11 +50,12 @@ my (
     $db_user,
     $db_pass,
     $conf_port,
-    $listener_jobs,
+    $worker_jobs,
     $delete_jobs,
     $replicate_jobs,
     $mog_root,
     $default_mindevcount,
+    $worker_port,
    );
 
 # Command-line options will override
@@ -69,8 +70,9 @@ Getopt::Long::GetOptions(
     'dbpass=s'      => \$cmdline{db_pass},
     'r|mogroot=s'   => \$cmdline{mog_root},
     'p|confport=i'  => \$cmdline{conf_port},
-    'l|listeners=i' => \$cmdline{listener_jobs},
+    'w|workers=i'   => \$cmdline{worker_jobs},
     'no_http'       => \$cmdline{no_http},
+    'workerport=i'  => \$cmdline{worker_port},
     'default_mindevcount=i' => \$cmdline{default_mindevcount},
 );
 
@@ -127,9 +129,10 @@ $db_user        = choose_value( 'db_user', "mogile" );
 $db_pass        = choose_value( 'db_pass', "", 1 );
 $conf_port      = choose_value( 'conf_port', 7001 );
 $MOG_ROOT       = choose_value( 'mog_root', $DEFAULT_MOG_ROOT );
-$listener_jobs  = choose_value( 'listener_jobs', 20 );
+$worker_jobs    = choose_value( 'worker_jobs', 20 );
 $delete_jobs    = choose_value( 'delete_jobs', 1 );
 $replicate_jobs = choose_value( 'replicate_jobs', 1 );
+$worker_port    = choose_value( 'worker_port', 7200 );
 $DEBUG          = choose_value( 'debug', 0, 1 );
 $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
 $default_mindevcount = choose_value( 'default_mindevcount', 2 );
@@ -141,23 +144,14 @@ $default_mindevcount = choose_value( 'default_mindevcount', 2 );
 
 daemonize() if $daemonize;
 
-# establish SERVER socket, bind and listen.
-my $server = IO::Socket::INET->new(LocalPort => $conf_port,
-                                   Type      => SOCK_STREAM,
-                                   Proto     => 'tcp',
-                                   Blocking  => 1,
-                                   Reuse     => 1,
-                                   Listen    => 10 )
-    or die "Error creating socket: $@\n";
-
 # keep track of what all child pids are doing, and what jobs are being
 # satisifed.
 my %child  = ();    # pids -> job
 my %jobs   = ();    # jobname -> [ min, current ]
 
-# FIXME: make these configurable (and client_listen will use IO::Epoll or
-# something in the future, maybe IO::Multiplex)
-$jobs{'client_listen'} = [ $listener_jobs, 0 ];
+# FIXME: make these configurable
+$jobs{'frontend'} = [ 1, 0 ]; # only one frontend job
+$jobs{'worker'} = [ $worker_jobs, 0 ];
 $jobs{'delete'} = [ $delete_jobs, 0 ];
 $jobs{'replicate'} = [ $replicate_jobs, 0 ];
 
@@ -600,27 +594,74 @@ sub job_replicate {
     }
 }
 
-sub job_client_listen {
-    Client->DebugLevel( 3 );
+sub job_frontend {
+    # setup server socket to listen for client connections
+    my $server = IO::Socket::INET->new(LocalPort => $conf_port,
+                                       Type      => SOCK_STREAM,
+                                       Proto     => 'tcp',
+                                       Blocking  => 0,
+                                       Reuse     => 1,
+                                       Listen    => 10 )
+        or die "Error creating socket: $@\n";
 
+    # accept handler for new clients
     my $accept_handler = sub {
         my $csock = $server->accept();
         printf( "Listen child making a Client for %d.\n", fileno($csock) )
             if $DEBUG >= 2;
-        validate_dbh();
         my $client = Client->new($csock);
         printf( "Client is %s\n", $client ) if $DEBUG >= 2;
         $client->watch_read(1);
     };
 
-    Client->OtherFds( fileno($server) => $accept_handler );
+    # now setup socket for workers to connect to
+    my $wserver = IO::Socket::INET->new(LocalPort => $worker_port,
+                                        Type      => SOCK_STREAM,
+                                        Proto     => 'tcp',
+                                        Blocking  => 0,
+                                        Reuse     => 1,
+                                        Listen    => 10 )
+        or die "Error creating socket: $@\n";
 
+    # accept handler for new workers
+    my $waccept_handler = sub {
+        my $csock = $wserver->accept();
+        printf( "Listen child making a Client for %d.\n", fileno($csock) )
+            if $DEBUG >= 2;
+        my $client = Client->new($csock);
+        printf( "Worker is %s\n", $client ) if $DEBUG >= 2;
+        Frontend->RegisterWorker($client);
+    };
+    
+    # setup Danga::Socket to start handling connections
+    Client->DebugLevel( 3 );
+    Client->OtherFds( fileno($server)  => $accept_handler,
+                      fileno($wserver) => $waccept_handler, );
+
+    # and now, actually start listening for events
     eval {
-        print( "Starting event loop for client_listen job on pid $$.\n" ) if $DEBUG;
+        print( "Starting event loop for frontend job on pid $$.\n" ) if $DEBUG;
         Client->EventLoop();
     };
 
     if ( $@ ) { print STDERR "ERR: client_listen: $@\n" }
+}
+
+sub job_worker {
+    # connect to master
+    my $msock = IO::Socket::INET->new(PeerAddr => "127.0.0.1",
+                                      PeerPort => $worker_port,
+                                      Type     => SOCK_STREAM,
+                                      Proto    => 'tcp',)
+        or die "Error creating socket to master: $@\n";
+
+    # process lines of input, blocking.
+    my $worker = Worker->new($msock);
+    while (defined (my $line = <$msock>)) {
+        $line =~ s/[\r\n]+$//;
+        validate_dbh();
+        $worker->process_line(\$line);
+    }
 }
 
 
@@ -854,21 +895,131 @@ sub randlist
     return @rlist;
 }
 
+#####################################################################
+### F R O N T E N D  C L A S S
+### This class handles keeping lists of workers and clients and
+### assigning them to eachother when things happen.  This is a purely
+### event driven class.
+#####################################################################
+package Client; # define it so that "my Client" works
+package Frontend;
+
+# Mappings: fd => [ clientref, jobstring ]
+# queues are just lists of Client class objects
+our (@WorkerQueue, @ClientQueue, %Mappings);
+
+# take a new worker and note that it's a worker and ready to be used
+# for commands.  this is called when workers connect to the frontend.
+sub RegisterWorker {
+    # basically take the worker, mark it as a worker, enqueue it,
+    # and then try to process the outstanding queues
+    my Client $worker = $_[1];
+    $worker->isWorker(1);
+    Frontend->EnqueueWorker($worker);
+}
+
+# puts a worker back in the queue, deleting any outstanding jobs in
+# the mapping list for this fd.
+sub EnqueueWorker {
+    # first arg is class, second is worker
+    my Client $worker = $_[1];
+    delete $Mappings{$worker->{fd}};
+    push @WorkerQueue, $worker;
+    Frontend->ProcessQueues;
+}
+
+# called when we get a response from a worker.  this reenqueues the
+# worker so it can handle another response as well as passes the answer
+# back on to the client.
+sub HandleWorkerResponse {
+    # got a response from a worker
+    my Client $worker = $_[1];
+    return unless $worker;
+
+    # get client; fail if we don't have one or it's closed
+    my Client $client = $Mappings{$worker->{fd}}->[0];
+    return Frontend->EnqueueWorker($worker) if !$client || $client->{closed};
+
+    # send text to client, put worker back in queue
+    $client->write($_[2] . "\r\n");
+    Frontend->EnqueueWorker($worker);
+}
+
+# called from various spots to empty the queues of available pairs.
+sub ProcessQueues {
+    # try to match up a client with a worker
+    while (@WorkerQueue && @ClientQueue) {
+        # get client that isn't closed
+        my $clref;
+        while (@ClientQueue) {
+            $clref = shift @ClientQueue;
+            if (!defined $clref || $clref->[0]->{closed}) {
+                $clref = undef;
+                next;
+            }
+
+            # if we get here the client is valid
+            last;
+        }
+        
+        # get worker and make sure it's not closed already
+        my Client $worker = shift @WorkerQueue;
+        if (!defined $worker || $worker->{closed}) {
+            unshift @ClientQueue, $clref;
+            next;
+        }
+
+        # put in mapping and send data to worker
+        $Mappings{$worker->{fd}} = $clref;
+        $worker->write($clref->[1] . "\r\n");
+        $worker->watch_read(1);
+    }
+}
+
+# called when a client sends us text.  we just create a job for
+# it and then call ProcessQueues.
+sub HandleClientRequest {
+    # just push the input onto the client queue
+    push @ClientQueue, [ $_[1], $_[2] ];
+    Frontend->ProcessQueues;
+}
+
+# called when we notice that a client has died.  we may need to
+# replay their request at another backend.
+sub NoteDeadClient {
+    my Client $client = $_[1];
+    return unless $client->isWorker;
+
+    # if there's a mapping for this worker's fd, they had a job that didn't get done
+    if ($Mappings{$client->{fd}}) {
+        # unshift, since this one already went through the queue once
+        unshift @ClientQueue, $Mappings{$client->{fd}};
+        delete $Mappings{$client->{fd}};
+        Frontend->ProcessQueues;
+    }
+}
 
 #####################################################################
 ### C L I E N T   C L A S S
+### Workers and users are both clients.  We keep track of which we
+### are with a flag, though, and we use that to determine how we
+### should handle input.  This class is just a connection to the
+### client or worker.
 #####################################################################
 package Client;
 
 use Danga::Socket ();
 use base qw{Danga::Socket};
 
-use fields qw{read_buf};
+use fields qw{read_buf is_worker};
 
 sub new {
     my Client $self = shift;
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new( @_ );
+
+    # mark as not a worker by default
+    $self->{is_worker} = 0;
 
     $self->debugmsg( 3, "New client for %d running.", $self->{fd} );
     return $self;
@@ -876,7 +1027,7 @@ sub new {
 
 # Client
 sub event_read {
-    my $self = shift;
+    my Client $self = shift;
     $self->debugmsg( 3, "Read event on %d.", $self->{fd} );
 
     my $bref = $self->read(1024);
@@ -884,21 +1035,54 @@ sub event_read {
     $self->{read_buf} .= $$bref;
 
     if ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
-        my $line = $1;
-        $self->process_line( $line );
+        if ($self->isWorker) {
+            Frontend->HandleWorkerResponse($self, $1);
+        } else {
+            Frontend->HandleClientRequest($self, $1);
+        }
     }
+}
+
+sub isWorker {
+    my Client $self = shift;
+    return $self->{is_worker} unless @_;
+    return $self->{is_worker} = shift;
 }
 
 # Client
 sub event_err {  my $self = shift; $self->close; }
 sub event_hup {  my $self = shift; $self->close; }
 
+sub close {
+    # mark us as being dead
+    my Client $self = shift;
+    Frontend->NoteDeadClient($self);
+    $self->SUPER::close(@_);
+}
+
+
+#####################################################################
+### W O R K E R   C L A S S
+### Class that handles all of the actions that a worker can take.
+#####################################################################
+package Worker;
+
+use fields qw{sock};
+
+sub new {
+    my Worker $self = shift;
+
+    $self = fields::new($self) unless ref $self;
+    $self->{sock} = shift;
+
+    return $self;
+}
 
 sub process_line {
-    my Client $self = shift;
-    my $line = shift;
+    my Worker $self = shift;
+    my $lineref = shift;
 
-    if ($line =~ /^(\w+)\s*(.*)/) {
+    if ($$lineref =~ /^(\w+)\s*(.*)/) {
         my ($cmd, $args) = ($1, $2);
         $cmd = lc($cmd);
 
@@ -916,7 +1100,7 @@ sub process_line {
 
 # returns 0 on error, or dmid of domain
 sub check_domain {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     return $self->err_line("no_domain") unless length($args->{domain});
@@ -928,8 +1112,15 @@ sub check_domain {
     return $dmid;
 }
 
+sub cmd_sleep {
+    my Worker $self = shift;
+    my $args = shift;
+    sleep($args->{duration} || 10);
+    return $self->ok_line;
+}
+
 sub cmd_create_open {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -987,7 +1178,7 @@ sub cmd_create_open {
 }
 
 sub cmd_create_close {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -1055,7 +1246,7 @@ sub cmd_create_close {
 }
 
 sub cmd_delete {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -1080,7 +1271,7 @@ sub cmd_delete {
 }
 
 sub cmd_rename {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     # validate parameters
@@ -1102,7 +1293,7 @@ sub cmd_rename {
 }
 
 sub cmd_get_hosts {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1124,7 +1315,7 @@ sub cmd_get_hosts {
 }
 
 sub cmd_get_devices {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1146,7 +1337,7 @@ sub cmd_get_devices {
 }
 
 sub cmd_create_domain {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1171,7 +1362,7 @@ sub cmd_create_domain {
 }
 
 sub cmd_create_class {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1215,7 +1406,7 @@ sub cmd_create_class {
 }
 
 sub cmd_update_class {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     # simply passes through to create_class with update set
@@ -1223,7 +1414,7 @@ sub cmd_update_class {
 }
 
 sub cmd_get_domains {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     my $dbh = Mgd::get_dbh()
@@ -1257,7 +1448,7 @@ sub cmd_get_domains {
 }
 
 sub cmd_get_paths {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     my $key = $args->{key};
@@ -1299,7 +1490,7 @@ sub cmd_get_paths {
 }
 
 sub cmd_set_state {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     # get database handle
@@ -1335,7 +1526,7 @@ sub cmd_set_state {
 }
 
 sub cmd_stats {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
 
     # get database handle
@@ -1411,15 +1602,15 @@ sub cmd_stats {
 }
 
 sub ok_line {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $args = shift;
     my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
-    $self->write("OK $argline\r\n");
+    $self->{sock}->print("OK $argline\r\n");
     return 1;
 }
 
 sub err_line {
-    my Client $self = shift;
+    my Worker $self = shift;
     my $err_code = shift;
     my $err_text = {
         'unknown_command' => "Unknown server command",
@@ -1435,7 +1626,7 @@ sub err_line {
         'key_exists' => "Target key name already exists; can't overwrite.",
     }->{$err_code};
 
-    $self->write("ERR $err_code " . eurl($err_text) . "\r\n");
+    $self->{sock}->print("ERR $err_code " . eurl($err_text) . "\r\n");
     return 0;
 }
 
@@ -1444,14 +1635,6 @@ sub eurl
     my $a = $_[0];
     $a =~ s/([^a-zA-Z0-9_\,\-.\/\\\: ])/uc sprintf("%%%02x",ord($1))/eg;
     $a =~ tr/ /+/;
-    return $a;
-}
-
-sub durl
-{
-    my ($a) = @_;
-    $a =~ tr/+/ /;
-    $a =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
     return $a;
 }
 
