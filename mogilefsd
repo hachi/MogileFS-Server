@@ -1012,7 +1012,7 @@ sub domain_id {
 
 sub class_name {
     my ($dmid, $classid) = @_;
-    return undef unless $dmid > 0 && length $class;
+    return undef unless $dmid > 0 && length $classid;
     # FIXME: cache this
 
     # lookup class
