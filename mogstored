@@ -1,0 +1,60 @@
+#!/usr/bin/perl -w
+#
+# MogileFS storage node daemon
+#  (perlbal front-end)
+#
+# (c) 2004, Brad Fitzpatrick, <brad@danga.com>
+
+use strict;
+use lib 'lib';
+use Perlbal;
+use Linux::AIO '1.3';
+
+my $opt_daemonize;
+my $opt_config;
+exit 1 unless
+    Getopt::Long::GetOptions(
+               'daemon' => \$opt_daemonize,
+               'config=s' => \$opt_config,
+               );
+
+my $default_config = "/etc/mogilefs/mogstored.conf";
+$opt_config = $default_config if ! $opt_config && -e $default_config;
+
+my $out = sub { print STDOUT join("\n", map { ref $_ eq 'ARRAY' ? @$_ : $_ } @_) . "\n"; };
+
+my $path = "/var/mogdata";
+my $listen = "0.0.0.0:8090";
+
+my $conf = "
+SERVER max_connections = 10000
+CREATE SERVICE mogstored
+SET mogstored.role = web_server
+SET mogstored.listen = $listen
+SET mogstored.docroot = $path
+SET mogstored.dirindexing = 0
+SET mogstored.enable_put = 1
+SET mogstored.enable_delete = 1
+SET mogstored.min_put_directory = 1
+ENABLE mogstored
+";
+
+Perlbal::run_manage_command($_, $out) foreach split(/\n/, $conf);
+
+unless (Perlbal::Socket->WatchedSockets() > 0) {
+    die "Invalid configuration.  (shouldn't happen?)  Stopping.\n";
+}
+
+if ($opt_daemonize) {
+    Perlbal::daemonize();
+} else {
+    print "Running.\n";
+}
+
+Perlbal::run();
+
+# Local Variables:
+# mode: perl
+# c-basic-indent: 4
+# indent-tabs-mode: nil
+# End:
