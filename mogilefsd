@@ -729,6 +729,7 @@ sub get_mindevcounts {
     
     # find the classes for each domainid (including domains without explict classes)
     my %min; # dmid -> classid -> mindevcount
+    validate_dbh();
     my $dbh = get_dbh();
     my $sth = $dbh->prepare("SELECT d.dmid, c.classid, c.mindevcount ".
                             "FROM domain d LEFT JOIN class c ON d.dmid=c.dmid");
@@ -1544,6 +1545,7 @@ sub HandleClientRequest {
                        map { "$_ $Stats{$_}" } sort keys %Stats;
 
         } elsif ($cmd =~ /^repl/) {
+            Mgd::validate_dbh();
             my $dbh = Mgd::get_dbh();
             my $mdcs = Mgd::get_mindevcounts();
             foreach my $dmid (sort keys %$mdcs) {
@@ -1587,6 +1589,7 @@ sub HandleClientRequest {
                 # now make sure it's a real job
                 if (defined $jobs{$job}) {
                     $jobs{$job}->[0] = $count;
+                    $Mgd::allkidsup = 0;
                     push @out, "Now desiring $count children doing '$job'.";
 
                     # try to clean out the queryworkers (if that's what we're doing?)
