@@ -1752,7 +1752,7 @@ package WorkerConn;
 use Danga::Socket ();
 use base qw{Danga::Socket};
 
-use fields qw{read_buf job pid cmd_buf};
+use fields qw{read_buf job pid cmd_buf reqid};
 
 sub new {
     my WorkerConn $self = shift;
@@ -1761,6 +1761,7 @@ sub new {
 
     # mark as not a worker by default
     $self->{pid} = 0;
+    $self->{reqid} = 0;
     $self->{job} = undef;
     $self->{cmd_buf} = [];
 
@@ -1951,25 +1952,38 @@ sub HandleQueryWorkerResponse {
     my WorkerConn $worker = $_[1];
     return unless $worker && $Mappings{$worker->{fd}};
 
-    # parse out the query time
-    my ($time, $res);
-    if ($_[2] =~ /^(\d+\.\d+)\s(.+)$/) {
+    # get the client we're working with (if any)
+    my Client $client = $Mappings{$worker->{fd}}->[0];
+
+    # if we have no client, then we just got a standard message from
+    # the queryworker and need to pass it up the line
+    return Frontend->HandleChildRequest($worker, $_[2]) if !$client;
+
+    # at this point it was a command response, but if the client has gone
+    # away, just reenqueue this query worker
+    return Frontend->EnqueueQueryWorker($worker) if $client->{closed};
+
+    # <numeric id> [client-side time to complete] <response>
+    my ($time, $id, $res);
+    if ($_[2] =~ /^(\d+)\s+(\d+\.\d+)\s+(.+)$/) {
         # save time and response for use later
-        ($time, $res) = ($1, $2);
-    } else {
+        ($id, $time, $res) = ($1, $2, $3);
+    } elsif ($_[2] =~ /^(\d+)\s(.+)$/) {
         # didn't match, must be in a different format?
-        ($time, $res) = ('undef', $_[2]);
+        ($id, $time, $res) = ($1, 'undef', $2);
+    }
+
+    # now, if it doesn't match
+    unless ($id == $worker->{reqid}) {
+        Mgd::error("Worker responded with id $id, expected $worker->{reqid}, killing");
+        $client->close('worker_mismatch');
+        return Frontend->AskWorkerToDie($worker);
     }
 
     # now time this interval and add to @RecentQueries
     my $tinterval = Time::HiRes::tv_interval([$Mappings{$worker->{fd}}->[2]]);
     push @RecentQueries, sprintf("%s %.4f %s", $Mappings{$worker->{fd}}->[1], $tinterval, $time);
     shift @RecentQueries if scalar(@RecentQueries) > 50;
-
-    # get client; fail if we don't have one or it's closed
-    my Client $client = $Mappings{$worker->{fd}}->[0];
-    return Frontend->HandleChildRequest($worker, $res) if !$client;
-    return Frontend->EnqueueQueryWorker($worker) if $client->{closed};
 
     # send text to client, put worker back in queue
     $client->write("$res\r\n");
@@ -2006,7 +2020,11 @@ sub ProcessQueues {
         # put in mapping and send data to worker
         push @$clref, Time::HiRes::gettimeofday();
         $Mappings{$worker->{fd}} = $clref;
-        $worker->write($clref->[1] . "\r\n");
+
+        # increment our counter so we know what request counter this is going out
+        $worker->{reqid}++;
+
+        $worker->write($worker->{reqid} . " " . $clref->[1] . "\r\n");
         $worker->watch_read(1);
     }
 }
@@ -2300,7 +2318,7 @@ sub NoteDeadWorkerConn {
 #####################################################################
 package QueryWorker;
 
-use fields qw{sock querystarttime};
+use fields qw{sock querystarttime reqid};
 
 sub new {
     my QueryWorker $self = shift;
@@ -2308,6 +2326,7 @@ sub new {
     $self = fields::new($self) unless ref $self;
     $self->{sock} = shift;
     $self->{querystarttime} = undef;
+    $self->{reqid} = undef;
 
     return $self;
 }
@@ -2318,11 +2337,12 @@ sub process_line {
 
     # see what kind of command this is
     return $self->err_line('unknown_command')
-        unless $$lineref =~ /^(\S+)\s+(\S+)\s*(.*)/;
-    my ($cmd, $line) = ($1, $3);
+        unless $$lineref =~ /^(\d*)\s*(\S+)\s+(\S+)\s*(.*)/;
+    $self->{reqid} = $1 || undef;
+    my ($cmd, $line) = ($2, $4);
 
     # set global variables for zone determination
-    $client_ip = $2;
+    $client_ip = $3;
     $force_alt_zone = 0;
 
     # some basic commands we support
@@ -2929,15 +2949,17 @@ sub cmd_stats {
 sub ok_line {
     my QueryWorker $self = shift;
 
-    my $delay;
+    my $delay = '';
     if ($self->{querystarttime}) {
         $delay = sprintf("%.4f ", Time::HiRes::tv_interval([ $self->{querystarttime} ]));
         $self->{querystarttime} = undef;
     }
 
+    my $id = defined $self->{reqid} ? "$self->{reqid} " : '';
+
     my $args = shift;
     my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
-    $self->{sock}->write("${delay}OK $argline\r\n");
+    $self->{sock}->write("${id}${delay}OK $argline\r\n");
     return 1;
 }
 
@@ -2964,13 +2986,15 @@ sub err_line {
         'invalid_chars' => "Patterns must not contain backslashes (\\) or percent signs (%).",
     }->{$err_code};
 
-    my $delay;
+    my $delay = '';
     if ($self->{querystarttime}) {
         $delay = sprintf("%.4f ", Time::HiRes::tv_interval([ $self->{querystarttime} ]));
         $self->{querystarttime} = undef;
     }
 
-    $self->{sock}->write("${delay}ERR $err_code " . eurl($err_text) . "\r\n");
+    my $id = defined $self->{reqid} ? $self->{reqid} : '';
+
+    $self->{sock}->write("${id}${delay}ERR $err_code " . eurl($err_text) . "\r\n");
     return 0;
 }
 
