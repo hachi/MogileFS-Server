@@ -513,6 +513,10 @@ sub make_new_child {
         return $pid;
     }
 
+    # as a child, we want to close these and ignore them
+    close($server);
+    close($wserver);
+
     $SIG{INT} = 'DEFAULT';
     $SIG{TERM} = 'DEFAULT';
     $0 .= " [$job]";
