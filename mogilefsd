@@ -2991,7 +2991,7 @@ sub err_line {
         $self->{querystarttime} = undef;
     }
 
-    my $id = defined $self->{reqid} ? $self->{reqid} : '';
+    my $id = defined $self->{reqid} ? "$self->{reqid} " : '';
 
     $self->{sock}->write("${id}${delay}ERR $err_code " . eurl($err_text) . "\r\n");
     return 0;
