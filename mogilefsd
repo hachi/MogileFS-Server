@@ -24,8 +24,17 @@ use File::Copy ();
 
 use vars qw($dbh);
 
+sub validate_dbh {
+    return unless $dbh;
+    my $id = $dbh->selectrow_array("SELECT CONNECTION_ID()");
+    if (! $id) {
+	# handle's dead.  don't use it.  (MySQL-ism above)
+	undef $dbh;
+    }
+}
+
 sub get_dbh {
-    return $::dbh ||= DBI->connect("DBI:mysql:mogilefs", "mogile", "");
+    return $dbh ||= DBI->connect("DBI:mysql:mogilefs", "mogile", "");
 }
 
 use vars qw($MOG_ROOT);
@@ -128,11 +137,11 @@ sub make_new_child {
 
 sub job_delete {
 
-    my $dbh = get_dbh();
-
   PASS:
     while (1) {
 	sleep 10;
+	validate_dbh();
+	my $dbh = get_dbh();
 
 	my %dev_down;  # devid -> 1 (when device times out due to EIO)
 
@@ -265,7 +274,7 @@ sub replicate {
 sub job_replicate {
     while (1) {
 	sleep 2;
-
+	validate_dbh();
 	my $dbh = get_dbh() or return 0;
 
 	# find the classes for each domainid (including domains without explict classes)
@@ -321,9 +330,9 @@ sub job_replicate {
 sub job_client_listen {
     while (my $csock = $server->accept()) {
 	my $client = Client->new($csock);
-
 	while (my $line = <$csock>) {
 	    $line =~ s/[\r\n]+$//;
+	    validate_dbh();
 	    $client->process_line($line);
 	}
     }
