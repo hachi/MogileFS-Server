@@ -135,20 +135,21 @@ foreach my $line (@mount_res) {
 @$devices = grep { $dev_by_devid{$_->{devid}} } @$devices;
 
 # if our goal is just to umount all devices, that should be done at this point
-if ($verbose) {
-
-    # don't proceed further if our goal was just to unmount
-    if ($unmount) {
+if ($unmount) {
+    if ($verbose) {
         die "\n$did_umount devices unmounted.  Done\n" if $did_umount;
         die "No devices to unmount.  Done\n";
     }
+    exit 0;
+}
 
-    # separator between unmounts and mounts
-    print "\n" if $remount;
+# separator between unmounts and mounts
+print "\n" if $verbose && $remount;
 
-    # is there anything to do?
-    die "All devices already mounted. Nothing to do.\n"
-        if ! @$devices;
+# is there anything to do?
+if (! @$devices) {
+    die "All devices already mounted. Nothing to do.\n" if $verbose;
+    exit 0;
 }
 
 # mount all devices
