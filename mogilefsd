@@ -641,7 +641,7 @@ sub get_device_summary {
     # learn devices
     my %dev;  #
     my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
-    my $sth = $dbh->prepare("SELECT devid, hostid, mb_total, mb_used, status ".
+    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, mb_used, status ".
                             "FROM device ".
                             "WHERE status IN ('alive', 'down')");
     $sth->execute;
@@ -657,7 +657,7 @@ sub check_host_cache {
 
     %cache_host = ();
     my $dbh = get_dbh();
-    my $sth = $dbh->prepare("SELECT hostid, status, hostname, hostip, http_port, remoteroot FROM host");
+    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, hostip, http_port, remoteroot FROM host");
     $sth->execute;
     $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
     $cache_host_time = $now;
