@@ -1128,14 +1128,140 @@ sub randlist
     return @rlist;
 }
 
+
+#####################################################################
+### C L I E N T   C L A S S
+### A client is a user connection for sending requests to us.  Requests
+### can either be normal user requests to be sent to a QueryWorker
+### or management requests that start with a !.
+#####################################################################
+package Client;
+
+use Danga::Socket ();
+use base qw{Danga::Socket};
+
+use fields qw{read_buf};
+
+sub new {
+    my Client $self = shift;
+    $self = fields::new($self) unless ref $self;
+    $self->SUPER::new( @_ );
+    return $self;
+}
+
+# Client
+sub event_read {
+    my Client $self = shift;
+
+    my $bref = $self->read(1024);
+    return $self->close() unless defined $bref;
+    $self->{read_buf} .= $$bref;
+
+    while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
+        next unless length $1;
+        Frontend->HandleClientRequest($self, $1);
+    }
+}
+
+# Client
+sub event_err { my $self = shift; $self->close; }
+sub event_hup { my $self = shift; $self->close; }
+
+# just note that we've died
+sub close {
+    # mark us as being dead
+    my Client $self = shift;
+    Frontend->NoteDeadClient($self);
+    $self->SUPER::close(@_);
+}
+
+
+#####################################################################
+### W O R K E R C O N N   C L A S S
+### This class maintains a connection to one of our various classes
+### of workers.
+#####################################################################
+package WorkerConn;
+
+use Danga::Socket ();
+use base qw{Danga::Socket};
+
+use fields qw{read_buf job pid cmd_buf};
+
+sub new {
+    my WorkerConn $self = shift;
+    $self = fields::new($self) unless ref $self;
+    $self->SUPER::new( @_ );
+
+    # mark as not a worker by default
+    $self->{pid} = 0;
+    $self->{job} = undef;
+    $self->{cmd_buf} = [];
+
+    return $self;
+}
+
+sub event_read {
+    my WorkerConn $self = shift;
+
+    my $bref = $self->read(1024);
+    return $self->close() unless defined $bref;
+    $self->{read_buf} .= $$bref;
+
+    while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
+        my $line = $1;
+        if ($self->job eq 'queryworker' && (substr($line, 0, 5) ne 'error')) {
+            Frontend->HandleQueryWorkerResponse($self, $line);
+        } else {
+            Frontend->HandleChildRequest($self, $line);
+        }
+    }
+}
+
+sub job {
+    my WorkerConn $self = shift;
+    return $self->{job} unless @_;
+    return $self->{job} = shift;
+}
+
+sub pid {
+    my WorkerConn $self = shift;
+    return $self->{pid} unless @_;
+    return $self->{pid} = shift;
+}
+
+sub event_hup { my $self = shift; $self->close; }
+
+sub close {
+    # mark us as being dead
+    my WorkerConn $self = shift;
+    Frontend->NoteDeadWorkerConn($self);
+    $self->SUPER::close(@_);
+}
+
+sub enqueue_line {
+    my WorkerConn $self = $_[0];
+    return if $self->job eq 'queryworker'; # they don't use this queueing
+    my $msg = "$_[1]\r\n";
+    push @{$self->{cmd_buf}}, $msg;
+}
+
+sub drain_queue {
+    my WorkerConn $worker = $_[0];
+    foreach my $cmd (@{$worker->{cmd_buf}}) {
+        $worker->write($cmd);
+    }
+    $worker->write(".\r\n");
+    $worker->{cmd_buf} = [];
+}
+
+
 #####################################################################
 ### F R O N T E N D  C L A S S
 ### This class handles keeping lists of workers and clients and
 ### assigning them to eachother when things happen.  This is a purely
 ### event driven class.
 #####################################################################
-package Client; # define it so that "my Client" works
-package WorkerConn;
 package Frontend;
 
 # Mappings: fd => [ clientref, jobstring, starttime ]
@@ -1560,131 +1686,6 @@ sub NoteDeadWorkerConn {
         # now try to get it processing again
         Frontend->ProcessQueues;
     }
-}
-
-#####################################################################
-### C L I E N T   C L A S S
-### A client is a user connection for sending requests to us.  Requests
-### can either be normal user requests to be sent to a QueryWorker
-### or management requests that start with a !.
-#####################################################################
-package Client;
-
-use Danga::Socket ();
-use base qw{Danga::Socket};
-
-use fields qw{read_buf};
-
-sub new {
-    my Client $self = shift;
-    $self = fields::new($self) unless ref $self;
-    $self->SUPER::new( @_ );
-    return $self;
-}
-
-# Client
-sub event_read {
-    my Client $self = shift;
-
-    my $bref = $self->read(1024);
-    return $self->close() unless defined $bref;
-    $self->{read_buf} .= $$bref;
-
-    while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
-        next unless length $1;
-        Frontend->HandleClientRequest($self, $1);
-    }
-}
-
-# Client
-sub event_err { my $self = shift; $self->close; }
-sub event_hup { my $self = shift; $self->close; }
-
-# just note that we've died
-sub close {
-    # mark us as being dead
-    my Client $self = shift;
-    Frontend->NoteDeadClient($self);
-    $self->SUPER::close(@_);
-}
-
-#####################################################################
-### W O R K E R C O N N   C L A S S
-### This class maintains a connection to one of our various classes
-### of workers.
-#####################################################################
-package WorkerConn;
-
-use Danga::Socket ();
-use base qw{Danga::Socket};
-
-use fields qw{read_buf job pid cmd_buf};
-
-sub new {
-    my WorkerConn $self = shift;
-    $self = fields::new($self) unless ref $self;
-    $self->SUPER::new( @_ );
-
-    # mark as not a worker by default
-    $self->{pid} = 0;
-    $self->{job} = undef;
-    $self->{cmd_buf} = [];
-
-    return $self;
-}
-
-sub event_read {
-    my WorkerConn $self = shift;
-
-    my $bref = $self->read(1024);
-    return $self->close() unless defined $bref;
-    $self->{read_buf} .= $$bref;
-
-    while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
-        my $line = $1;
-        if ($self->job eq 'queryworker' && (substr($line, 0, 5) ne 'error')) {
-            Frontend->HandleQueryWorkerResponse($self, $line);
-        } else {
-            Frontend->HandleChildRequest($self, $line);
-        }
-    }
-}
-
-sub job {
-    my WorkerConn $self = shift;
-    return $self->{job} unless @_;
-    return $self->{job} = shift;
-}
-
-sub pid {
-    my WorkerConn $self = shift;
-    return $self->{pid} unless @_;
-    return $self->{pid} = shift;
-}
-
-sub event_hup { my $self = shift; $self->close; }
-
-sub close {
-    # mark us as being dead
-    my WorkerConn $self = shift;
-    Frontend->NoteDeadWorkerConn($self);
-    $self->SUPER::close(@_);
-}
-
-sub enqueue_line {
-    my WorkerConn $self = $_[0];
-    return if $self->job eq 'queryworker'; # they don't use this queueing
-    my $msg = "$_[1]\r\n";
-    push @{$self->{cmd_buf}}, $msg;
-}
-
-sub drain_queue {
-    my WorkerConn $worker = $_[0];
-    foreach my $cmd (@{$worker->{cmd_buf}}) {
-        $worker->write($cmd);
-    }
-    $worker->write(".\r\n");
-    $worker->{cmd_buf} = [];
 }
 
 
