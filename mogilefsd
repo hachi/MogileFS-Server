@@ -1532,14 +1532,18 @@ sub cmd_get_paths {
     my $fid = $filerow->{fid};
     my $dsum = Mgd::get_device_summary();
 
-    # is this fid still owned by this key?
-    my $devids = $dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
-                                          undef, $fid);
-
     my $ret = {
         paths => 0,
     };
-    foreach my $devid (@{$devids || []}) {
+
+    # is this fid still owned by this key?
+    my $devids = $dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
+                                          undef, $fid) || [];
+    my $devcount = scalar(@$devids);
+    my $idx = int(rand() * $devcount);
+
+    for (1..$devcount) {
+        my $devid = $devids->[($_+$idx) % $devcount];
         my $dev = $dsum->{$devid};
         next unless $dev && $dev->{status} eq "alive";
         my $path = Mgd::make_path($devid, $fid);
