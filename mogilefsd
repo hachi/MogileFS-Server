@@ -13,6 +13,10 @@
 
 package Mgd;
 
+# don't run as root
+die "mogilefsd cannot be run as root\n"
+    if $< == 0;
+
 use strict;
 use Getopt::Long;
 use IO::Socket;
