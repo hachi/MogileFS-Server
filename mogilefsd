@@ -292,22 +292,21 @@ sub job_delete {
 
   PASS:
     while (1) {
-        sleep 9;
+        sleep 10;
         validate_dbh();
         my $dbh = get_dbh();
 
+        my %dev_down;  # devid -> 1 (when device times out due to EIO)
+
         my $LIMIT = 500;
         while (1) {
-            sleep 1;
             my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
-                                                  "FROM file_to_delete fd ".
-                                                  "LEFT JOIN file_on fo ON fd.fid=fo.fid ".
-                                                  "LIMIT $LIMIT");
+                                                  "FROM file_to_delete fd LEFT JOIN file_on fo ON fd.fid=fo.fid ".
+                                                  "LIMIT $LIMIT ");
             my $count = $delmap ? scalar @$delmap : 0;
             next PASS unless $count;
 
             my %done;  # fid -> 1 (when fid is deleted from all devices)
-            my %dev_down;  # devid -> 1 (when device times out due to EIO)
 
             foreach my $dm (@$delmap) {
                 my ($fid, $devid) = @$dm;
@@ -336,7 +335,7 @@ sub job_delete {
                         $dev_down{$devid} = 1;
                         next;
                     }
-
+                    
                     # send delete request
                     print "Sending delete for $path\n" if $Mgd::DEBUG >= 2;
                     print $sock "DELETE $urlref->[2] HTTP/1.0\r\n\r\n";
@@ -357,23 +356,21 @@ sub job_delete {
                 } else {
                     # do normal unlink
                     $rv = unlink "$Mgd::MOG_ROOT/$path";
+                }
 
-                    # device is timing out.  take note of it and
-                    # continue dealing with other deletes
-                    if (! $rv) {
-                        if ($! == EIO) {
-                            $dev_down{$devid} = 1;
-                            next;
-                        } elsif ($! == ENOENT) {
-                            $rv = 1;  # count non-existent file as deleted
-                        }
-                    }
+                # device is timing out.  take note of it and
+                # continue dealing with other deletes
+                if (! $rv && $! == EIO) {
+                    $dev_down{$devid} = 1;
+                    next;
                 }
 
                 # if we deleted it, or it didn't exist, consider it
                 # deleted.
-                $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
-                         undef, $fid, $devid) if $rv;
+                if ($rv || $! == ENOENT) {
+                    $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
+                             undef, $fid, $devid);
+                }
             }
 
             if (%done) {
@@ -641,7 +638,7 @@ sub get_device_summary {
     # learn devices
     my %dev;  #
     my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, mb_used, status ".
+    my $sth = $dbh->prepare("SELECT devid, hostid, mb_total, mb_used, status ".
                             "FROM device ".
                             "WHERE status IN ('alive', 'down')");
     $sth->execute;
@@ -653,14 +650,13 @@ sub get_device_summary {
 
 sub check_host_cache {
     my $now = time;
-    return if $cache_host_time > $now - 2;
+    return if $cache_host_time > $now - 10;
 
     %cache_host = ();
     my $dbh = get_dbh();
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, hostip, http_port, remoteroot FROM host");
+    my $sth = $dbh->prepare("SELECT hostid, status, hostname, hostip, http_port, remoteroot FROM host");
     $sth->execute;
     $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
-    $cache_host_time = $now;
 }
 
 sub key_filerow {
@@ -1079,6 +1075,37 @@ sub cmd_delete {
 
 }
 
+sub cmd_rename {
+    my Client $self = shift;
+    my $args = shift;
+
+    # validate parameters
+    my $dmid = $self->check_domain($args) or return 0;
+    my ($fkey, $tkey) = ($args->{from_key}, $args->{to_key});
+    return $self->err_line("no_key") unless $fkey && $tkey;
+
+    # get DB handle
+    my $dbh = Mgd::get_dbh or
+        return $self->err_line("nodb");
+
+    # is this fid still owned by this key?
+    my $fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
+                                    undef, $dmid, $fkey);
+    return $self->err_line("unknown_key") unless $fid;
+
+    # get fid of target key name
+    my $tfid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
+                                     undef, $dmid, $tkey);
+    return $self->err_line("key_exists") unless $fid;
+
+    # now, rename it!
+    $dbh->do('UPDATE file SET dkey = ? WHERE dmid = ? AND fid = ?',
+             undef, $tkey, $dmid, $fid);
+    return $self->err_line("failure") if $dbh->err;
+
+    return $self->ok_line();
+}
+
 sub cmd_get_hosts {
     my Client $self = shift;
     my $args = shift;
@@ -1410,6 +1437,7 @@ sub err_line {
         'host_mismatch' => "The device specified doesn't belong to the host specified",
         'state_too_high' => "Status cannot go from dead to alive; must use down",
         'failure' => "Operation failed",
+        'key_exists' => "Target key name already exists; can't overwrite.",
     }->{$err_code};
 
     $self->write("ERR $err_code " . eurl($err_text) . "\r\n");
