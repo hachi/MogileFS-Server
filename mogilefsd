@@ -40,6 +40,8 @@ $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $DEFAULT_MOG_ROOT = "/mnt/mogilefs";
 $DEBUG = 0;
 
+use constant USE_HTTP => 1;
+
 my (
     %cmdline,
     %cfgfile,
@@ -319,7 +321,39 @@ sub job_delete {
                 next if $dev_down{$devid};
 
                 my $path = make_path($devid, $fid);
-                my $rv = unlink "$Mgd::MOG_ROOT/$path";
+                my $rv = 0;
+                if (my $urlref = Mgd::is_url($path)) {
+                    # hit up the server and delete it
+                    my $sock = IO::Socket::INET->new(PeerAddr => $urlref->[0],
+                                                     PeerPort => $urlref->[1],
+                                                     Timeout => 2);
+                    unless ($sock) {
+                        # timeout or something, mark this device as down for now and move on
+                        $dev_down{$devid} = 1;
+                        next;
+                    }
+                    
+                    # send delete request
+                    print "Sending delete for $path\n" if $Mgd::DEBUG >= 2;
+                    print $sock "DELETE $urlref->[2] HTTP/1.0\r\n\r\n";
+                    my $response = <$sock>;
+                    if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
+                        if (($1 >= 200 && $1 <= 299) || $1 == 404) {
+                            # effectively means all went well
+                            $rv = 1;
+                        } else {
+                            # remote file system error?  mark node as down
+                            warn "Error: unlink failure: $path: $1\n";
+                            $dev_down{$devid} = 1;
+                            next;
+                        }
+                    } else {
+                        warn "Error: unknown response line: $response\n";
+                    }
+                } else {
+                    # do normal unlink
+                    $rv = unlink "$Mgd::MOG_ROOT/$path";
+                }
 
                 # device is timing out.  take note of it and
                 # continue dealing with other deletes
@@ -345,6 +379,79 @@ sub job_delete {
         }
 
     }
+}
+
+# copies a file from one Perlbal to another utilizing HTTP
+sub http_copy {
+    my ($sdevid, $ddevid, $fid) = @_;
+
+    # get some information we'll need
+    my $devs = Mgd::get_device_summary();
+    my ($sdev, $ddev) = ($devs->{$sdevid}, $devs->{$ddevid});
+    unless (ref $sdev && ref $ddev) {
+        warn "Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid\n";
+        return 0;
+    }
+    my ($spath, $dpath) = (Mgd::make_http_path($sdevid, $fid),
+                           Mgd::make_http_path($ddevid, $fid));
+    my ($shost, $sport) = (Mgd::hostid_ip($sdev->{hostid}), Mgd::hostid_http_port($sdev->{hostid}));
+    my ($dhost, $dport) = (Mgd::hostid_ip($ddev->{hostid}), Mgd::hostid_http_port($ddev->{hostid}));
+    unless (defined $spath && defined $dpath && defined $shost && defined $dhost && $sport && $dport) {
+        # show detailed information to find out what's not configured right
+        warn "Error: unable to replicate file fid=$fid from device id $sdevid to device id $ddevid\n";
+        warn "       http://$shost:$sport$spath -> http://$dhost:$dport$dpath\n";
+        return 0;
+    }
+    print "http://$shost:$sport$spath -> http://$dhost:$dport$dpath\n" if $Mgd::DEBUG >= 2;
+
+    # setup our pipe error handler, in case we get closed on
+    my $pipe_closed = 0;
+    local $SIG{PIPE} = sub { $pipe_closed = 1; };
+
+    # okay, now get the file
+    my $sock = IO::Socket::INET->new(PeerAddr => $shost, PeerPort => $sport, Timeout => 2)
+        or return 0;
+    print $sock "GET $spath HTTP/1.0\r\n\r\n";
+    return 0 if $pipe_closed;
+
+    # we just want a content length
+    my $clen;
+    while (defined (my $line = <$sock>)) {
+        $line =~ s/[\s\r\n]+$//;
+        last unless length $line;
+        if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
+            # make sure we get a good response
+            unless ($1 >= 200 && $1 <= 299) {
+                warn "Error: Resource http://$shost:$sport$spath failed: HTTP $1\n";
+                return 0;
+            }
+        }
+        next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
+        $clen = $1;
+    }
+    return 0 unless $clen;
+
+    # open target for put
+    my $dsock = IO::Socket::INET->new(PeerAddr => $dhost, PeerPort => $dport, Timeout => 2) or return 0;
+    $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen\r\n\r\n") or return 0;
+    return 0 if $pipe_closed;
+
+    # now read data and print while we're reading
+    my ($data, $read) = ('', 0);
+    while (!$pipe_closed && (my $bytes = read($sock, $data, $clen - $read))) {
+        $read += $bytes;
+        last unless $dsock->write($data);
+    }
+
+    # now read in the response line (should be first line)
+    my $line = <$dsock>;
+    if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
+        return 1 if $1 >= 200 && $1 <= 299;
+        warn "Error: got a 404 in put: device not on host?: http://$dhost:$dport$dpath" if $1 == 404;
+    } else {
+        warn "Error: HTTP response line not recognized: $line";
+    }
+    return 0;
 }
 
 # replicates $fid if its devcount is less than $min.
@@ -407,9 +514,14 @@ sub replicate {
         my $ddevid = shift @good_devids;
         $sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
 
-        my $dst_path = $MOG_ROOT . "/" . make_path($ddevid, $fid);
-        my $src_path = $MOG_ROOT . "/" . make_path($sdevid, $fid);
-        my $rv = File::Copy::copy($src_path, $dst_path);
+        my $rv = undef;
+        if (Mgd::USE_HTTP) {
+            $rv = http_copy($sdevid, $ddevid, $fid);
+        } else {
+            my $dst_path = $MOG_ROOT . "/" . make_path($ddevid, $fid);
+            my $src_path = $MOG_ROOT . "/" . make_path($sdevid, $fid);
+            $rv = File::Copy::copy($src_path, $dst_path);
+        }
 
         return $retunlock->(0) unless $rv;
         add_file_on($fid, $ddevid, 1);
@@ -535,7 +647,7 @@ sub check_host_cache {
 
     %cache_host = ();
     my $dbh = get_dbh();
-    my $sth = $dbh->prepare("SELECT hostid, status, hostname, hostip, remoteroot FROM host");
+    my $sth = $dbh->prepare("SELECT hostid, status, hostname, hostip, http_port, remoteroot FROM host");
     $sth->execute;
     $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
 }
@@ -546,6 +658,29 @@ sub key_filerow {
                                       "FROM file WHERE dmid=? AND dkey=?",
                                       undef, $dmid, $key);
     return $row;
+}
+
+# get size of file, return 0 on error
+sub get_file_size {
+    my $path = shift;
+
+    # quick case -- just a file on disk
+    unless ($path =~ m!^http://(.+?)(/.+)$!) {
+        return -s "$Mgd::MOG_ROOT/$path"
+    }
+
+    # URL; use a HEAD request to get the size of the file
+    my $sock = IO::Socket::INET->new(PeerAddr => $1, Timeout => 2)
+        or return 0;
+    print $sock "HEAD $2 HTTP/1.0\r\n\r\n";
+    while (defined (my $line = <$sock>)) {
+        if ($line =~ /^Content-length: (\d+)/i) {
+            return $1+0;
+        }
+    }
+
+    # no content length found?
+    return 0;
 }
 
 sub domain_id {
@@ -566,7 +701,60 @@ sub hostid_name {
     return $h ? $h->{hostname} : undef;
 }
 
+sub hostid_ip {
+    my $hostid = shift;
+    check_host_cache();
+    my $h = $cache_host{$hostid};
+    return $h ? $h->{hostip} : undef;
+}
+
+sub hostid_http_port {
+    my $hostid = shift;
+    check_host_cache();
+    my $h = $cache_host{$hostid};
+    return $h ? $h->{http_port} : undef;
+}
+
+sub make_http_path {
+    my ($devid, $fid) = @_;
+
+    my $dsum = get_device_summary();
+    my $dinfo = $dsum->{$devid};
+    return undef unless $dinfo;
+    my $hostname = hostid_name($dinfo->{hostid});
+
+    my $nfid = sprintf '%010d', $fid;
+    my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
+
+    return "/dev$devid/$b/$mmm/$ttt/$nfid.fid";
+}
+
+sub make_full_url {
+    my ($devid, $fid) = @_;
+
+    # get some information we'll need
+    my $devs = Mgd::get_device_summary();
+    my $dev = $devs->{$devid} or return undef;
+    my $path = Mgd::make_http_path($devid, $fid) or return undef;
+    my $host = Mgd::hostid_ip($dev->{hostid}) or return undef;
+    my $port = Mgd::hostid_http_port($dev->{hostid}) or return undef;
+    return "http://$host:$port$path";
+}
+
+# if given an HTTP URL, break it down into [ host, port, URI ], else
+# returns undef
+sub is_url {
+    my $path = shift;
+    if ($path =~ m!^http://(.+?)(?::(\d+))?(/.+)$!) {
+        return [ $1, $2 || 80, $3 ];
+    }
+    return undef;
+}
+
 sub make_path {
+    # jump out if we should be using HTTP stuff
+    return Mgd::make_full_url(@_) if Mgd::USE_HTTP;
+    
     my ($devid, $fid) = @_;
 
     my $dsum = get_device_summary();
@@ -818,7 +1006,10 @@ sub cmd_create_close {
         $dbh->do("DELETE FROM file WHERE fid=?", undef, $old_file->{fid});
     }
 
-    my $size = -s "$Mgd::MOG_ROOT/$path";
+    # get size of file and verify that it matches what we were given, if anything
+    my $size = Mgd::get_file_size($path);
+    return $self->err_line("size_mismatch")
+        if $args->{size} && ($args->{size} != $size);
 
     # TODO: check for EIO?
     return $self->err_line("empty_file") unless $size;
@@ -914,6 +1105,7 @@ sub cmd_get_paths {
     my $args = shift;
 
     my $key = $args->{key};
+
     return $self->err_line("no_key") unless length($key);
 
     # validate domain
@@ -922,7 +1114,7 @@ sub cmd_get_paths {
     # get DB handle
     my $dbh = Mgd::get_dbh or
         return $self->err_line("nodb");
-
+    
     my $filerow = Mgd::key_filerow($dbh, $dmid, $key);
     return $self->err_line("unknown_key") unless $filerow;
 
@@ -940,11 +1132,12 @@ sub cmd_get_paths {
         my $dev = $dsum->{$devid};
         next unless $dev && $dev->{status} eq "alive";
         my $path = Mgd::make_path($devid, $fid);
-        next unless $ret->{paths} || (-s "$Mgd::MOG_ROOT/$path" == $filerow->{length});
+        next unless $ret->{paths} || (Mgd::get_file_size($path) == $filerow->{length});
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;
         last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
     }
+
     return $self->ok_line($ret);
 }
 

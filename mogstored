@@ -24,7 +24,7 @@ $opt_config = $default_config if ! $opt_config && -e $default_config;
 my $out = sub { print STDOUT join("\n", map { ref $_ eq 'ARRAY' ? @$_ : $_ } @_) . "\n"; };
 
 my $path = "/var/mogdata";
-my $listen = "0.0.0.0:8090";
+my $listen = "0.0.0.0:7500";
 
 my $conf = "
 SERVER max_connections = 10000
