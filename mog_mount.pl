@@ -12,7 +12,7 @@ die "Must be run as root\n" if $<;
 
 my $opt = { host => [] }; # host can be multiple options
 GetOptions($opt, 
-           qw(host|h=s port|p=i type|t=s at|a=s opts|o=s verbose help));
+           qw(host|h=s port|p=i type|t=s at|a=s opts|o=s no-mount verbose help));
 
 if ($opt->{help}) {
     pod2usage($0);
@@ -24,6 +24,7 @@ my $mog_port   = $opt->{port} || 7001;
 my $mount_at   = $opt->{at}   || "/mnt/mogilefs";
 my $mount_opts = $opt->{opts} || "defaults,noatime,timeo=1,retrans=1,soft";
 my $mount_type = $opt->{type} || "nfs";
+my $no_mount   = $opt->{'no-mount'};
 my $verbose    = $opt->{verbose};
 
 die "Mount root '$mount_at' does not exist\n"
@@ -81,11 +82,11 @@ foreach my $line (@mount_res) {
     # - not all of these variables are used
     next unless my ($ip, $export, $mnt, $type, $opts) = 
         $line =~ /
-            ^(\d{1,3}.\d{1,3}.\d{1,3}.\d{1,3}): # ip address, colon
-            ([\w\/]+)\s+                        # remote export, space
-            on\s+([\w\/]+)\s+                   # local mount point, space
-            type\s+(\w+)\s+                     # mount type, space
-            \((.+)\)                            # extra options
+            ^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}): # ip address, colon
+            ([\w\/]+)\s+                           # remote export, space
+            on\s+([\w\/]+)\s+                      # local mount point, space
+            type\s+(\w+)\s+                        # mount type, space
+            \((.+)\)                               # extra options
         /x;
 
     # valid host?
@@ -115,14 +116,15 @@ my $did_mount = 0;
 foreach my $dev (@$devices) {
 
     # calculate source/destination paths
-    my $host = $host_by_id{$dev->{hostid}};
-    my $hostname = $host->{hostname};
-    my $hostip   = $host->{hostip};
+    my $host       = $host_by_id{$dev->{hostid}};
+    my $hostname   = $host->{hostname};
+    my $hostip     = $host->{hostip};
     my $remoteroot = $host->{remoteroot};
-    my $devid = $dev->{devid};
+    my $devid      = $dev->{devid};
 
-    my $src  = "$hostip:$remoteroot/dev$devid";
-    my $dest = "$mount_at/$hostname/dev$devid";
+    my $src        = "$hostip:$remoteroot/dev$devid";
+    my $host_dest  = "$mount_at/$hostname";
+    my $dest       = "$host_dest/dev$devid";
 
     my $doing = " - mounting $src => $dest ...";
 
@@ -141,13 +143,18 @@ foreach my $dev (@$devices) {
     # if the destination is already a symlink, then we presume that is the 
     # current machine, with the directory already symlinked... so no actual
     # mounting should be done.
-    $ok->() if -l $dest;
+    $ok->() if -l $host_dest; # host   is a symlink
+    $ok->() if -l $dest;      # device is a symlink
 
     # create directory if necessary
     unless (-d _) {
         eval { mkpath($dest) };
         $fail->("error creating $dest: $@") if $@;
     }
+
+    # don't actually mount the device if this is a dry run,
+    # just make directories.
+    $ok->() if $no_mount;
 
     # actually attempt to mount device
     my $res = `mount -t $mount_type -o $mount_opts $src $dest 2>&1`;
@@ -225,6 +232,10 @@ Vfstype to pass to 'mount'.  Default is 'nfs'.
 Comma separated list of vfs options to pass to 'mount'.  Available options vary depending on the vfstype in use.
 
 Default is 'defaults,noatime,timeo=1,retrans=1,soft'.
+
+=item -n, --no-mount
+
+Don't actually do any mounting, only create destination directories
 
 =item -v, --verbose
 
