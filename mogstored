@@ -94,7 +94,7 @@ my $accept_handler = sub {
     my $csock = $server->accept()
         or return;
     IO::Handle::blocking($csock, 0);
-    my $client = Client->new($csock);
+    my $client = SideChannelClient->new($csock);
     $client->watch_read(1);
     # ... that's it.  Client->new adds to event loop.
 };
@@ -107,24 +107,24 @@ Perlbal::run();
 
 #############################################################################
 ### simple package for handling the stream request port
-package Client;
+package SideChannelClient;
 
 use Danga::Socket ();
-use base qw{Danga::Socket};
-use fields qw{read_buf};
+use base qw{Perlbal::Socket};
 
 # needed since we're pretending to be a Perlbal::Socket... never idle out
 sub max_idle_time { return 0; }
 
 sub new {
-    my Client $self = shift;
+    my SideChannelClient $self = shift;
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new(@_);
+    $self->state('side_channel');
     return $self;
 }
 
 sub event_read {
-    my Client $self = shift;
+    my SideChannelClient $self = shift;
 
     my $bref = $self->read(1024);
     return $self->close() unless defined $bref;
