@@ -28,8 +28,8 @@ sub validate_dbh {
     return unless $dbh;
     my $id = $dbh->selectrow_array("SELECT CONNECTION_ID()");
     if (! $id) {
-	# handle's dead.  don't use it.  (MySQL-ism above)
-	undef $dbh;
+        # handle's dead.  don't use it.  (MySQL-ism above)
+        undef $dbh;
     }
 }
 
@@ -41,7 +41,7 @@ use vars qw($MOG_ROOT);
 $MOG_ROOT = "/mnt/mogilefs";
 
 use vars qw($DEBUG);
-$DEBUG = 0;
+$DEBUG = 1;
 
 my $conf_port = 7001;
 
@@ -49,11 +49,11 @@ my $conf_port = 7001;
 
 # establish SERVER socket, bind and listen.
 my $server = IO::Socket::INET->new(LocalPort => $conf_port,
-				   Type      => SOCK_STREAM,
-				   Proto     => 'tcp',
-				   Blocking  => 1,
-				   Reuse     => 1,
-				   Listen    => 10 )
+                                   Type      => SOCK_STREAM,
+                                   Proto     => 'tcp',
+                                   Blocking  => 1,
+                                   Reuse     => 1,
+                                   Listen    => 10 )
     or die "Error creating socket: $@\n";
 
 # keep track of what all child pids are doing, and what jobs are being
@@ -66,12 +66,12 @@ my %jobs   = ();    # jobname -> [ min, current ]
 $jobs{'client_listen'} = [ 20, 0 ];
 $jobs{'delete'} = [ 1, 0 ];
 $jobs{'replicate'} = [ 1, 0 ];
-    
+
 
 # Install signal handlers.
 $SIG{INT}  = sub {
     kill 'INT' => keys %child;
-    exit 0;         
+    exit 0;
 };
 
 
@@ -83,23 +83,25 @@ while (1) {
     # and note that job has one less worker
     my $job;
     if ($pid > -1 && ($job = delete $child{$pid})) {
-	if (my $jobstat = $jobs{$job}) {
-	    $jobstat->[1]--;
-	}
+        print "Child $pid died: $?\n";
+
+        if (my $jobstat = $jobs{$job}) {
+            $jobstat->[1]--;
+        }
     }
 
     # foreach job, fork enough children
     while (my ($job, $jobstat) = each %jobs) {
-	my $need = $jobstat->[0] - $jobstat->[1];
-	if ($need > 0) {
-	    print "Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.\n"
-		if $DEBUG;
-	    for (1..$need) {
-		my $cpid = make_new_child($job);
-		$child{$cpid} = $job;
-		$jobstat->[1]++;
-	    }
-	}
+        my $need = $jobstat->[0] - $jobstat->[1];
+        if ($need > 0) {
+            print "Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.\n"
+                if $DEBUG;
+            for (1..$need) {
+                my $cpid = make_new_child($job);
+                $child{$cpid} = $job;
+                $jobstat->[1]++;
+            }
+        }
     }
 
 }
@@ -109,14 +111,14 @@ sub make_new_child {
 
     my $pid;
     my $sigset;
-    
+
     # block signal for fork
     $sigset = POSIX::SigSet->new(SIGINT);
     sigprocmask(SIG_BLOCK, $sigset)
         or die "Can't block SIGINT for fork: $!\n";
-    
+
     die "fork: $!" unless defined ($pid = fork);
-    
+
     if ($pid) {
         sigprocmask(SIG_UNBLOCK, $sigset)
             or die "Can't unblock SIGINT for fork: $!\n";
@@ -124,14 +126,14 @@ sub make_new_child {
     }
 
     $SIG{INT} = 'DEFAULT';
-    
+
     # unblock signals
     sigprocmask(SIG_UNBLOCK, $sigset)
-	or die "Can't unblock SIGINT for fork: $!\n";
+        or die "Can't unblock SIGINT for fork: $!\n";
 
     no strict 'refs';
-    my $job = *{"job_$job"}{CODE};
-    $job->($$);
+    my $job_handler = *{"job_$job"}{CODE};
+    $job_handler->($$);
     exit;
 }
 
@@ -139,62 +141,62 @@ sub job_delete {
 
   PASS:
     while (1) {
-	sleep 10;
-	validate_dbh();
-	my $dbh = get_dbh();
+        sleep 10;
+        validate_dbh();
+        my $dbh = get_dbh();
 
-	my %dev_down;  # devid -> 1 (when device times out due to EIO)
+        my %dev_down;  # devid -> 1 (when device times out due to EIO)
 
-	my $LIMIT = 500;
-	while (1) {
-	    my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
-						  "FROM file_to_delete fd LEFT JOIN file_on fo ON fd.fid=fo.fid ".
-						  "LIMIT $LIMIT ");
-	    my $count = $delmap ? scalar @$delmap : 0;
-	    next PASS unless $count;
-	    
-	    my %done;  # fid -> 1 (when fid is deleted from all devices)
-	    
-	    foreach my $dm (@$delmap) {
-		my ($fid, $devid) = @$dm;
+        my $LIMIT = 500;
+        while (1) {
+            my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
+                                                  "FROM file_to_delete fd LEFT JOIN file_on fo ON fd.fid=fo.fid ".
+                                                  "LIMIT $LIMIT ");
+            my $count = $delmap ? scalar @$delmap : 0;
+            next PASS unless $count;
 
-		# if no device is returned from the query above, that
-		# means there are no file_on rows for it, and we can consider
-		# it now deleted.
-		unless ($devid) {
-		    $done{$fid} = 1;
-		    next;
-		}
+            my %done;  # fid -> 1 (when fid is deleted from all devices)
 
-		# don't try to delete from this device if we earlier
-		# found it to be timing out with EIO
-		next if $dev_down{$devid};
+            foreach my $dm (@$delmap) {
+                my ($fid, $devid) = @$dm;
 
-		my $path = make_path($devid, $fid);
-		my $rv = unlink "$Mgd::MOG_ROOT/$path";
-		
-		# device is timing out.  take note of it and
-		# continue dealing with other deletes
-		if (! $rv && $! == EIO) {
-		    $dev_down{$devid} = 1;
-		    next;
-		}
+                # if no device is returned from the query above, that
+                # means there are no file_on rows for it, and we can consider
+                # it now deleted.
+                unless ($devid) {
+                    $done{$fid} = 1;
+                    next;
+                }
 
-		# if we deleted it, or it didn't exist, consider it
-		# deleted.
-		if ($rv || $! == ENOENT) {
-		    $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
-			     undef, $fid, $devid);
-		}
-	    }
+                # don't try to delete from this device if we earlier
+                # found it to be timing out with EIO
+                next if $dev_down{$devid};
 
-	    if (%done) {
-		my $in = join(',', keys %done);
-		$dbh->do("DELETE FROM file_to_delete WHERE fid IN ($in)");
-	    }
-	    
-	    next PASS if $count < $LIMIT;
-	}
+                my $path = make_path($devid, $fid);
+                my $rv = unlink "$Mgd::MOG_ROOT/$path";
+
+                # device is timing out.  take note of it and
+                # continue dealing with other deletes
+                if (! $rv && $! == EIO) {
+                    $dev_down{$devid} = 1;
+                    next;
+                }
+
+                # if we deleted it, or it didn't exist, consider it
+                # deleted.
+                if ($rv || $! == ENOENT) {
+                    $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
+                             undef, $fid, $devid);
+                }
+            }
+
+            if (%done) {
+                my $in = join(',', keys %done);
+                $dbh->do("DELETE FROM file_to_delete WHERE fid IN ($in)");
+            }
+
+            next PASS if $count < $LIMIT;
+        }
 
     }
 }
@@ -207,7 +209,7 @@ sub replicate {
 
     my $lockname = "mgfs:fid:$fid:replicate";
     my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 1)", undef,
-				     $lockname);
+                                     $lockname);
     return 0 unless $lock;
 
     # hashref of devid -> $device_row_href  (where devid is alive)
@@ -224,20 +226,20 @@ sub replicate {
     $sth->execute($fid);
     die $dbh->errstr if $dbh->err;
     while (my ($devid) = $sth->fetchrow_array) {
-	my $d = $devs->{$devid};
-	unless ($d) {
-	    push @dead_devid, $devid;
-	    next;
-	}
-	$on_host{$d->{hostid}} = 1;
-	$on_count++;
-	push @exist_devid, $devid;
+        my $d = $devs->{$devid};
+        unless ($d) {
+            push @dead_devid, $devid;
+            next;
+        }
+        $on_host{$d->{hostid}} = 1;
+        $on_count++;
+        push @exist_devid, $devid;
     }
 
     my $retunlock = sub {
-	my $rv = shift;
-	$dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
-	return $rv;
+        my $rv = shift;
+        $dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+        return $rv;
     };
 
     return $retunlock->(1) if $on_count >= $min;
@@ -245,27 +247,27 @@ sub replicate {
     return $retunlock->(0) if @exist_devid == 0;
 
     my $sdevid;
-    
+
     while ($on_count < $min) {
-	my $need = $min - $on_count;
+        my $need = $min - $on_count;
 
-	my @good_devids = randlist(grep {
-	    $devs->{$_}{status} eq 'alive' && ! $on_host{$devs->{$_}{hostid}}
-	} keys %$devs);
+        my @good_devids = randlist(grep {
+            $devs->{$_}{status} eq 'alive' && ! $on_host{$devs->{$_}{hostid}}
+        } keys %$devs);
 
-	# wasn't able to replicate enough?
-	last unless @good_devids;
+        # wasn't able to replicate enough?
+        last unless @good_devids;
 
-	my $ddevid = shift @good_devids;
-	$sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
+        my $ddevid = shift @good_devids;
+        $sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
 
-	my $dst_path = $MOG_ROOT . "/" . make_path($ddevid, $fid);
-	my $src_path = $MOG_ROOT . "/" . make_path($sdevid, $fid);
-	my $rv = File::Copy::copy($src_path, $dst_path);
+        my $dst_path = $MOG_ROOT . "/" . make_path($ddevid, $fid);
+        my $src_path = $MOG_ROOT . "/" . make_path($sdevid, $fid);
+        my $rv = File::Copy::copy($src_path, $dst_path);
 
-	return $retunlock->(0) unless $rv;
-	add_file_on($fid, $ddevid, 1);
-	$on_count++;
+        return $retunlock->(0) unless $rv;
+        add_file_on($fid, $ddevid, 1);
+        $on_count++;
     }
 
     return $retunlock->(1);
@@ -273,70 +275,83 @@ sub replicate {
 
 sub job_replicate {
     while (1) {
-	sleep 2;
-	validate_dbh();
-	my $dbh = get_dbh() or return 0;
+        sleep 2;
+        validate_dbh();
+        my $dbh = get_dbh() or return 0;
 
-	# find the classes for each domainid (including domains without explict classes)
-	my %min; # dmid -> classid -> mindevcount
-	my $sth = $dbh->prepare("SELECT d.dmid, c.classid, c.mindevcount ".
-				"FROM domain d LEFT JOIN class c ON d.dmid=c.dmid");
-	$sth->execute;
-	while (my ($dmid, $classid, $mct) = $sth->fetchrow_array) {
-	    $min{$dmid} ||= {};  # note the existence of this dmid
+        # find the classes for each domainid (including domains without explict classes)
+        my %min; # dmid -> classid -> mindevcount
+        my $sth = $dbh->prepare("SELECT d.dmid, c.classid, c.mindevcount ".
+                                "FROM domain d LEFT JOIN class c ON d.dmid=c.dmid");
+        $sth->execute;
+        while (my ($dmid, $classid, $mct) = $sth->fetchrow_array) {
+            $min{$dmid} ||= {};  # note the existence of this dmid
 
-	    # classid may be NULL (undef), in which case there are no classes defined
-	    # and we don't note the mindevcount (yet)
-	    $min{$dmid}{$classid} = int($mct) if defined $classid;
-	}
+            # classid may be NULL (undef), in which case there are no classes defined
+            # and we don't note the mindevcount (yet)
+            $min{$dmid}{$classid} = int($mct) if defined $classid;
+        }
 
-	# iterate through each domain, replicating its contents
-	foreach my $dmid (keys %min) {
-	    # each domain's classid=0, if not defined, has an implied mindevcount of 2,
-	    # which most people will probably use.
-	    $min{$dmid}{0} = 2 unless exists $min{$dmid}{0};
+        # iterate through each domain, replicating its contents
+        foreach my $dmid (keys %min) {
+            # each domain's classid=0, if not defined, has an implied mindevcount of 2,
+            # which most people will probably use.
+            $min{$dmid}{0} = 2 unless exists $min{$dmid}{0};
 
-	    # iterate through each class, including the implicit class 0
-	    foreach my $classid (keys %{$min{$dmid}}) {
-		my $min = $min{$dmid}{$classid};
+            # iterate through each class, including the implicit class 0
+            foreach my $classid (keys %{$min{$dmid}}) {
+                my $min = $min{$dmid}{$classid};
 
-		my $LIMIT = 1000;
-		while (1) {
-		    my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
-							"AND devcount<? AND length IS NOT NULL LIMIT $LIMIT",
-							undef, $dmid, $classid, $min);
-		    my $count = $fids ? scalar @$fids : 0;
-		    last unless $count;
-		    my $fixed = 0;
+                my $LIMIT = 1000;
+                while (1) {
+                    my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
+                                                        "AND devcount<? AND length IS NOT NULL LIMIT $LIMIT",
+                                                        undef, $dmid, $classid, $min);
+                    my $count = $fids ? scalar @$fids : 0;
+                    last unless $count;
+                    my $fixed = 0;
 
-		    # randomize the list so multiple daemons/threads working on
-		    # replicate at the same time don't all fight over the
-		    # same fids to move
-		    my @rand_finds = randlist(@$fids);
+                    # randomize the list so multiple daemons/threads working on
+                    # replicate at the same time don't all fight over the
+                    # same fids to move
+                    my @rand_finds = randlist(@$fids);
 
-		    print "Need to replicate: $dmid/$classid: @$fids\n" if $Mgd::DEBUG >= 1;
-		    foreach my $fid (@$fids) {
-			$fixed++ if replicate($dbh, $fid, $min);
-		    }
-		    
-		    last unless $count == $LIMIT || $fixed != $count;
-		}
-		
-	    }
-	}
+                    print "Need to replicate: $dmid/$classid: @$fids\n" if $Mgd::DEBUG >= 1;
+                    foreach my $fid (@$fids) {
+                        $fixed++ if replicate($dbh, $fid, $min);
+                    }
+
+                    last unless $count == $LIMIT || $fixed != $count;
+                }
+
+            }
+        }
     }
 }
 
 sub job_client_listen {
-    while (my $csock = $server->accept()) {
-	my $client = Client->new($csock);
-	while (my $line = <$csock>) {
-	    $line =~ s/[\r\n]+$//;
-	    validate_dbh();
-	    $client->process_line($line);
-	}
-    }
+    Client->DebugLevel( 3 );
+
+    my $accept_handler = sub {
+        my $csock = $server->accept();
+        printf( "Listen child making a Client for %d.\n", fileno($csock) )
+            if $DEBUG;
+        validate_dbh();
+        my $client = Client->new($csock);
+        printf( "Client is %s\n", $client ) if $DEBUG;
+        $client->watch_read(1);
+    };
+
+    Client->OtherFds( fileno($server) => $accept_handler );
+
+    eval {
+        print( "Starting event loop for client_listen job on pid $$.\n" ) if $DEBUG;
+        Client->EventLoop();
+    };
+
+    if ( $@ ) { print STDERR "ERR: client_listen: $@\n" }
 }
+
 
 # returns hashref of devid -> $device_row_href  (where devid is alive/down, but not dead)
 # cached for 15 seconds.
@@ -349,11 +364,11 @@ sub get_device_summary {
     my $dbh = get_dbh();
 
     # learn devices
-    my %dev;  # 
+    my %dev;  #
     my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
     my $sth = $dbh->prepare("SELECT devid, hostid, mb_total, mb_used, status ".
-			    "FROM device ".
-			    "WHERE status IN ('alive', 'down')");
+                            "FROM device ".
+                            "WHERE status IN ('alive', 'down')");
     $sth->execute;
     $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
 
@@ -376,8 +391,8 @@ sub check_host_cache {
 sub key_filerow {
     my ($dbh, $dmid, $key) = @_;
     my $row = $dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
-				      "FROM file WHERE dmid=? AND dkey=?",
-				      undef, $dmid, $key);
+                                      "FROM file WHERE dmid=? AND dkey=?",
+                                      undef, $dmid, $key);
     return $row;
 }
 
@@ -388,7 +403,7 @@ sub domain_id {
     my $dbh = Mgd::get_dbh;
     # lookup domain
     my $dmid = $dbh->selectrow_array("SELECT dmid FROM domain WHERE namespace=?",
-				     undef, $domain);
+                                     undef, $domain);
     return $dmid;
 }
 
@@ -413,16 +428,16 @@ sub make_path {
 
 sub add_file_on {
     my ($fid, $devid, $no_lock) = @_;
-    
+
     my $dbh = get_dbh() or return 0;
 
     my $rv = $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
-		      undef, $fid, $devid);
+                      undef, $fid, $devid);
     if ($rv > 0) {
-	return update_fid_devcount($fid, $no_lock);
+        return update_fid_devcount($fid, $no_lock);
     } else {
-	# was already on that device
-	return 1;
+        # was already on that device
+        return 1;
     }
 }
 
@@ -433,20 +448,20 @@ sub update_fid_devcount {
 
     my $lockname = "mgfs:fid:$fid";
     unless ($no_lock) {
-	my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 10)", undef,
-					 $lockname);
-	return 0 unless $lock;
+        my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 10)", undef,
+                                         $lockname);
+        return 0 unless $lock;
     }
     my $ct = $dbh->selectrow_array("SELECT COUNT(*) FROM file_on WHERE fid=?",
-				   undef, $fid);
+                                   undef, $fid);
 
     $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
-	     $ct, $fid);
+             $ct, $fid);
 
     unless ($no_lock) {
-	$dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+        $dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
     }
-	
+
     return 1;
 }
 
@@ -454,7 +469,7 @@ sub randlist
 {
     my @rlist = @_;
     my $size = scalar(@rlist);
-    
+
     my $i;
     for ($i=0; $i<$size; $i++)
     {
@@ -463,35 +478,59 @@ sub randlist
     return @rlist;
 }
 
+
+#####################################################################
+###	C L I E N T   C L A S S
+#####################################################################
 package Client;
 
-use fields qw(sock);
+use Danga::Socket ();
+use base qw{Danga::Socket};
 
 sub new {
     my Client $self = shift;
     $self = fields::new($self) unless ref $self;
+    $self->SUPER::new( @_ );
 
-    my $sock = shift;
-    $self->{sock} = $sock;
-
+    $self->debugmsg( 3, "New client for %d running.", $self->{fd} );
     return $self;
 }
+
+# Client
+sub event_read {
+    my $self = shift;
+    $self->debugmsg( 3, "Read event on %d.", $self->{fd} );
+
+    my $bref = $self->read(1024);
+    return $self->close() unless defined $bref;
+    $self->{read_buf} .= $$bref;
+
+    if ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
+        my $line = $1;
+        $self->process_line( $line );
+    }
+}
+
+# Client
+sub event_err {  my $self = shift; $self->close; }
+sub event_hup {  my $self = shift; $self->close; }
+
 
 sub process_line {
     my Client $self = shift;
     my $line = shift;
 
     if ($line =~ /^(\w+)\s*(.*)/) {
-	my ($cmd, $args) = ($1, $2);
-	$cmd = lc($cmd);
+        my ($cmd, $args) = ($1, $2);
+        $cmd = lc($cmd);
 
-	no strict 'refs';
-	my $cmd = *{"cmd_$cmd"}{CODE};
-	if ($cmd) {
-	    my $args = decode_url_args(\$args);
-	    $cmd->($self, $args);
-	    next;
-	}
+        no strict 'refs';
+        my $cmd_handler = *{"cmd_$cmd"}{CODE};
+        if ($cmd_handler) {
+            my $args = decode_url_args(\$args);
+            $cmd_handler->($self, $args);
+            next;
+        }
     }
 
     return $self->err_line('unknown_command');
@@ -509,33 +548,33 @@ sub cmd_create_open {
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
-	return $self->err_line("nodb");
+        return $self->err_line("nodb");
 
     # figure out what classid this file is for
     my $class = $args->{class};
     my $classid = 0;
     if (length($class)) {
-	# TODO: cache this
-	$classid = $dbh->selectrow_array("SELECT classid FROM class ".
-					 "WHERE dmid=? AND classname=?",
-					 undef, $dmid, $class)
-	    or return $self->err_line("unreg_class");
+        # TODO: cache this
+        $classid = $dbh->selectrow_array("SELECT classid FROM class ".
+                                         "WHERE dmid=? AND classname=?",
+                                         undef, $dmid, $class)
+            or return $self->err_line("unreg_class");
     }
-    
+
     # see if we have a fid for this key already
     my $old_file = Mgd::key_filerow($dbh, $dmid, $key);
     if ($old_file) {
-	# add to to-delete list
-	$dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_file->{fid});
-	$dbh->do("DELETE FROM file WHERE fid=?", undef, $old_file->{fid});
+        # add to to-delete list
+        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_file->{fid});
+        $dbh->do("DELETE FROM file WHERE fid=?", undef, $old_file->{fid});
     }
-	
+
 
     # setup the new mapping
     $dbh->do("INSERT INTO file SET ".
-	     " fid=NULL, dmid=?, dkey=?, length=NULL, ".
-	     " classid=?, devcount=0", undef,
-	     $dmid, $key, $classid);
+             " fid=NULL, dmid=?, dkey=?, length=NULL, ".
+             " classid=?, devcount=0", undef,
+             $dmid, $key, $classid);
     return undef if $dbh->err;
     my $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
     return undef unless $fid > 0;
@@ -543,8 +582,8 @@ sub cmd_create_open {
     # find a device to put this file on that has 100Mb free.
     # FIXME: make this use get_device_summary, removing this SQL:
     my $devids = $dbh->selectcol_arrayref("SELECT devid FROM device ".
-					  "WHERE status='alive' AND (mb_used IS NULL ".
-					  "   OR (mb_total-mb_used > 100))");
+                                          "WHERE status='alive' AND (mb_used IS NULL ".
+                                          "   OR (mb_total-mb_used > 100))");
     my $count = $devids ? @$devids : 0;
     return $self->err_line("no_devices") unless $count;
 
@@ -553,12 +592,12 @@ sub cmd_create_open {
 
     # FIXME: verify the path is good, and try alt device otherwise
     my $path = Mgd::make_path($devid, $fid);
-    
+
 
     return $self->ok_line({
-	fid => $fid,
-	devid => $devid,
-	path => $path,
+        fid => $fid,
+        devid => $devid,
+        path => $path,
     });
 }
 
@@ -576,16 +615,16 @@ sub cmd_create_close {
     my $path = $args->{path} or return $self->err_line("no_path");
 
     # is the provided path what we'd expect for this fid/devid?
-    return $self->err_line("bogus_args") 
-	unless $path eq Mgd::make_path($devid, $fid);
+    return $self->err_line("bogus_args")
+        unless $path eq Mgd::make_path($devid, $fid);
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
-	return $self->err_line("nodb");
+        return $self->err_line("nodb");
 
     # is this fid still owned by this key?
     my $cur_fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
-					undef, $dmid, $key);
+                                        undef, $dmid, $key);
     return $self->err_line("expired_fid") unless $cur_fid == $fid;
 
     my $size = -s "$Mgd::MOG_ROOT/$path";
@@ -594,12 +633,12 @@ sub cmd_create_close {
     return $self->err_line("empty_file") unless $size;
 
     $dbh->do("UPDATE file SET length=? WHERE fid=?", undef,
-	     $size, $fid);
+             $size, $fid);
     if (Mgd::add_file_on($fid, $devid)) {
-	return $self->ok_line();
+        return $self->ok_line();
     } else {
-	# FIXME: handle this better
-	return $self->err_line("db_error");
+        # FIXME: handle this better
+        return $self->err_line("db_error");
     }
 }
 
@@ -614,11 +653,11 @@ sub cmd_delete {
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
-	return $self->err_line("nodb");
+        return $self->err_line("nodb");
 
     # is this fid still owned by this key?
     my $fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
-				    undef, $dmid, $key);
+                                    undef, $dmid, $key);
     return $self->err_line("unknown_key") unless $fid;
 
     $dbh->do("DELETE FROM file WHERE fid=?", undef, $fid);
@@ -637,7 +676,7 @@ sub check_domain {
 
     # validate domain
     my $dmid = Mgd::domain_id($args->{domain}) or
-	return $self->err_line("unreg_domain");
+        return $self->err_line("unreg_domain");
 
     return $dmid;
 }
@@ -654,7 +693,7 @@ sub cmd_get_paths {
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
-	return $self->err_line("nodb");
+        return $self->err_line("nodb");
 
     my $filerow = Mgd::key_filerow($dbh, $dmid, $key);
     return $self->err_line("unknown_key") unless $filerow;
@@ -664,19 +703,19 @@ sub cmd_get_paths {
 
     # is this fid still owned by this key?
     my $devids = $dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
-					  undef, $fid);
+                                          undef, $fid);
 
     my $ret = {
-	paths => 0,
+        paths => 0,
     };
     foreach my $devid (@{$devids || []}) {
-	my $dev = $dsum->{$devid};
-	next unless $dev && $dev->{status} eq "alive";
-	my $path = Mgd::make_path($devid, $fid);
-	next unless $ret->{paths} || (-s "$Mgd::MOG_ROOT/$path" == $filerow->{length});
-	my $n = ++$ret->{paths};
-	$ret->{"path$n"} = $path;
-	last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
+        my $dev = $dsum->{$devid};
+        next unless $dev && $dev->{status} eq "alive";
+        my $path = Mgd::make_path($devid, $fid);
+        next unless $ret->{paths} || (-s "$Mgd::MOG_ROOT/$path" == $filerow->{length});
+        my $n = ++$ret->{paths};
+        $ret->{"path$n"} = $path;
+        last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
     }
     return $self->ok_line($ret);
 }
@@ -684,9 +723,8 @@ sub cmd_get_paths {
 sub ok_line {
     my Client $self = shift;
     my $args = shift;
-    $self->{sock}->print("OK " . join('&',
-				      map { eurl($_) . "=" . eurl($args->{$_}) }
-				      keys %$args) . "\r\n");
+    my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
+    $self->write("OK $argline\r\n");
     return 1;
 }
 
@@ -694,10 +732,10 @@ sub err_line {
     my Client $self = shift;
     my $err_code = shift;
     my $err_text = {
-	'unknown_command' => "Unknown server command",
+        'unknown_command' => "Unknown server command",
     }->{$err_code};
 
-    $self->{sock}->print("ERR $err_code " . eurl($err_text) . "\r\n");
+    $self->write("ERR $err_code " . eurl($err_text) . "\r\n");
     return 0;
 }
 
@@ -738,3 +776,9 @@ sub decode_url_args
     return $ret;
 }
 
+
+# Local Variables:
+# mode: perl
+# c-basic-indent: 4
+# indent-tabs-mode: nil
+# End:
