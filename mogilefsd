@@ -490,8 +490,7 @@ eval {
     Client->EventLoop();
 };
 
-if ( $@ ) { print STDERR "ERR: $@\n" }
-print "Main event loop terminating.\n";
+if ( $@ ) { Mgd::log('err', "crash log: $@"); }
 Mgd::log('info', 'ending run');
 closelog();
 
@@ -628,9 +627,8 @@ sub error {
         send_to_parent("error $_[0]");
     } else {
         # we're a parent, so just handle output of error
-        # FIXME make this syslog or something
         Frontend->NoteError(\$_[0]);
-        print STDERR "$_[0]\n";
+        Mgd::log('debug', $_[0]);
     }
     return 0;
 }
