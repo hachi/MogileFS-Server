@@ -30,7 +30,7 @@ die "Mount root '$mount_at' does not exist\n"
     unless -e $mount_at;
 
 die "Mount root '$mount_at' is not a directory\n"
-    unless -d $mount_at;
+    unless -d _;
 
 # validate MogileFS hosts
 foreach my $host (@mog_hosts) {
@@ -126,14 +126,27 @@ foreach my $dev (@$devices) {
 
     my $doing = " - mounting $src => $dest ...";
 
+    my $ok = sub {
+        print "$doing OK\n" if $verbose;
+        $did_mount++;
+        next;
+    };
+
+    my $fail = sub {
+        print "$doing FAIL\n";
+        print join("\n", map { "   * $_" } @_) . "\n";
+        next;
+    };
+
+    # if the destination is already a symlink, then we presume that is the 
+    # current machine, with the directory already symlinked... so no actual
+    # mounting should be done.
+    $ok->() if -l $dest;
+
     # create directory if necessary
-    unless (-d $dest) {
+    unless (-d _) {
         eval { mkpath($dest) };
-        if ($@) {
-            print "$doing FAIL\n";
-            print "   * error creating $dest: $@\n";
-            next;
-        }
+        $fail->("error creating $dest: $@") if $@;
     }
 
     # actually attempt to mount device
@@ -157,15 +170,11 @@ foreach my $dev (@$devices) {
             $errstr = $errmap[$bit] if $errcode & 1 << $bit;
         }
 
-        print "$doing FAIL\n";
-        print "   * error: $errstr\n";
-        print "   * $res\n";
-        next;
+        $fail->("error: $errstr", $res);
     }
 
     # one down...
-    print "$doing OK\n" if $verbose;
-    $did_mount++;
+    $ok->();
 }
 
 print "\n$did_mount of $to_mount devices sucessfully mounted.\n" if $verbose;
