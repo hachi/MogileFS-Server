@@ -51,6 +51,7 @@ my (
 Getopt::Long::Configure( "bundling" );
 Getopt::Long::GetOptions(
     'c|config=s'    => \$config,
+    's|skipconfig'  => \$skipconfig,
     'd|debug+'      => \$cmdline{debug},
     'D|daemon'      => \$cmdline{daemonize},
     'dsn=s'         => \$cmdline{db_dsn},
@@ -61,7 +62,7 @@ Getopt::Long::GetOptions(
     'l|listeners=i' => \$cmdline{listener_jobs},
 );
 
-$config ||= $DEFAULT_CONFIG;
+$config = $DEFAULT_CONFIG if !$config && -r $DEFAULT_CONFIG;
 
 # Read the config file if one was specified
 if ( $config && !$skipconfig ) {
