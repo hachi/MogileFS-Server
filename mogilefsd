@@ -291,7 +291,7 @@ NEEDUPDATE
 }
 
 # now check for an updated tempfile table
-my $devids = $dbh->selectrow_array('SELECT devids FROM tempfile');
+my $devids = $dbh->selectrow_array('SELECT devids FROM tempfile LIMIT 1');
 if ($dbh->err) {
     if ($upgrade) {
         print STDERR "Updating tempfile table...\n";
