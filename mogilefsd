@@ -1272,6 +1272,42 @@ sub cmd_get_paths {
     return $self->ok_line($ret);
 }
 
+sub cmd_set_state {
+    my Client $self = shift;
+    my $args = shift;
+
+    # get database handle
+    my $ret = {};
+    my $dbh = Mgd::get_dbh
+        or return $self->err_line('nodb');
+
+    # figure out what they want to do
+    my ($host, $dev, $state) = ($args->{host}, $args->{device}+0, $args->{state});
+    return $self->err_line('bad_params')
+        unless $host && $dev && ($state =~ /^(?:alive|down|dead)$/);
+
+    # now get this device's current state and host
+    my ($realhost, $curstate) =
+        $dbh->selectrow_array('SELECT hostname, device.status FROM host, device ' .
+                              'WHERE host.hostid = device.hostid AND device.devid = ?',
+                              undef, $dev);
+
+    # verify host is the same
+    return $self->err_line('host_mismatch')
+        unless $realhost eq $host;
+
+    # make sure the destination state isn't too high
+    return $self->err_line('state_too_high')
+        if $curstate eq 'dead' && $state eq 'alive';
+
+    # update the state in the database now
+    $dbh->do('UPDATE device SET status = ? WHERE devid = ?', undef, $state, $dev);
+    return $self->err_line('failure') if $dbh->err;
+
+    # success, state changed
+    return $self->ok_line($ret);
+}
+
 sub cmd_stats {
     my Client $self = shift;
     my $args = shift;
@@ -1366,6 +1402,9 @@ sub err_line {
         'class_exists' => "That class already exists in that domain",
         'domain_exists' => "That domain already exists",
         'invalid_mindevcount' => "The mindevcount must be at least 1",
+        'bad_params' => "Invalid parameters to command; please see documentation",
+        'host_mismatch' => "The device specified doesn't belong to the host specified",
+        'state_too_high' => "Status cannot go from dead to alive; must use down",
         'failure' => "Operation failed",
     }->{$err_code};
 
