@@ -963,7 +963,8 @@ sub check_host_cache {
 
     %cache_host = ();
     my $dbh = get_dbh();
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, hostip, http_port, remoteroot FROM host");
+    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
+                            "hostip, http_port, http_get_port, remoteroot FROM host");
     $sth->execute;
     $cache_host{$_->{hostid}} = $_ while $_ = $sth->fetchrow_hashref;
     $cache_host_time = $now;
@@ -1137,6 +1138,13 @@ sub hostid_http_port {
     return $h ? $h->{http_port} : undef;
 }
 
+sub hostid_http_get_port {
+    my $hostid = shift;
+    check_host_cache();
+    my $h = $cache_host{$hostid};
+    return $h ? $h->{http_get_port} : undef;
+}
+
 sub make_http_path {
     my ($devid, $fid) = @_;
 
@@ -1152,14 +1160,16 @@ sub make_http_path {
 }
 
 sub make_full_url {
-    my ($devid, $fid) = @_;
+    # set use_get_port to be true to specify to use the get port
+    my ($devid, $fid, $use_get_port) = @_;
 
     # get some information we'll need
     my $devs = Mgd::get_device_summary();
     my $dev = $devs->{$devid} or return undef;
     my $path = Mgd::make_http_path($devid, $fid) or return undef;
     my $host = Mgd::hostid_ip($dev->{hostid}) or return undef;
-    my $port = Mgd::hostid_http_port($dev->{hostid}) or return undef;
+    my $port = $use_get_port ? Mgd::hostid_http_get_port($dev->{hostid}) : undef;
+    $port ||= Mgd::hostid_http_port($dev->{hostid}) or return undef;
     return "http://$host:$port$path";
 }
 
@@ -1191,6 +1201,12 @@ sub make_path {
     make_dirs( "$MOG_ROOT/$path" ) or return undef;
 
     return $path;
+}
+
+sub make_get_path {
+    # the get path only changes for HTTP mode
+    return Mgd::make_path(@_) unless $USE_HTTP;
+    return Mgd::make_full_url(@_, 1);
 }
 
 sub make_dirs
@@ -2326,7 +2342,7 @@ sub cmd_get_paths {
         my $devid = $devids->[($_+$idx) % $devcount];
         my $dev = $dsum->{$devid};
         next unless $dev && $dev->{status} eq "alive";
-        my $path = Mgd::make_path($devid, $fid);
+        my $path = Mgd::make_get_path($devid, $fid);
         next unless $ret->{paths} || $args->{noverify} ||
                         (Mgd::get_file_size($path) == $filerow->{length});
         my $n = ++$ret->{paths};
