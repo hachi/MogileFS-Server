@@ -109,8 +109,8 @@ Perlbal::run();
 ### simple package for handling the stream request port
 package SideChannelClient;
 
-use Danga::Socket ();
 use base qw{Perlbal::Socket};
+use fields qw{count};
 
 # needed since we're pretending to be a Perlbal::Socket... never idle out
 sub max_idle_time { return 0; }
@@ -120,6 +120,7 @@ sub new {
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new(@_);
     $self->state('side_channel');
+    $self->{count} = 0;
     return $self;
 }
 
@@ -133,6 +134,9 @@ sub event_read {
     while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
         my $cmd = $1;
         if ($cmd =~ /^size (\S+)$/) {
+            # increase our count
+            $self->{count}++;
+
             # validate uri
             my $uri = $1;
             if ($uri =~ /\.\./) {
@@ -158,6 +162,16 @@ sub event_read {
 # override Danga::Socket's event handlers which die
 sub event_err { $_[0]->close; }
 sub event_hup { $_[0]->close; }
+
+# as_string handler
+sub as_string {
+    my SideChannelClient $self = shift;
+
+    my $ret = $self->SUPER::as_string;
+    $ret .= "; size_requests=$self->{count}";
+
+    return $ret;
+}
 
 # Local Variables:
 # mode: perl
