@@ -2354,7 +2354,7 @@ sub cmd_create_open {
 
     # setup the new mapping
     $dbh->do("INSERT INTO tempfile SET ".
-             " fid=NULL, dmid=?, dkey=?, classid=?",
+             " fid=NULL, dmid=?, dkey=?, classid=?, createtime=UNIX_TIMESTAMP()",
              undef, $dmid, $key, $classid);
     return undef if $dbh->err;
     my $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
