@@ -1,0 +1,24 @@
+#!/bin/sh
+
+
+PKG=mogstored
+
+. /usr/share/debconf/confmodule || exit 0
+
+if [ "$1" = "purge" ] 
+	then
+		rm -f /etc/mogilefs/mogstored.conf
+		rmdir --ignore-fail-on-non-empty /etc/mogilefs
+
+		db_get $PKG/docroot
+		DOCROOT=$RET
+
+		rmdir --ignore-fail-on-non-empty $DOCROOT &> /dev/null
+
+fi
+
+#DEBHELPER#
+
+	rm -f /var/run/mogstored.pid
+
+

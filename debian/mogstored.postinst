@@ -1,0 +1,47 @@
+#!/bin/sh
+
+PKG=mogstored
+
+. /usr/share/debconf/confmodule || exit 0
+
+
+set -e
+
+case "$1" in
+  configure)
+
+	if [ ! -e /etc/mogilefs/mogstored.conf ]
+		then
+			mkdir -p /etc/mogilefs
+			cp /usr/share/mogstored/mogstored.conf.default /etc/mogilefs/mogstored.conf
+
+		db_get $PKG/docroot
+		MOGSTORED_DOCROOT=$RET
+
+		if [ ! -d "$MOGSTORED_DOCROOT" ]
+			then
+		
+			mkdir -p $MOGSTORED_DOCROOT
+			chmod 755 $MOGSTORED_DOCROOT
+		fi
+
+		perl -pi -e "s|#MOGSTORED_DOCROOT|$MOGSTORED_DOCROOT|" /etc/mogilefs/mogstored.conf
+
+	fi
+
+
+  ;;
+
+  abort-upgrade|abort-remove|abort-deconfigure)
+
+  ;;
+
+  *)
+  echo "postinst called with unknown argument \`$1'" >&2
+  exit 1
+  ;;
+esac
+db_stop
+
+#DEBHELPER#
+

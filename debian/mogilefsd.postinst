@@ -1,0 +1,33 @@
+#!/bin/sh
+
+PKG=mogilefsd
+DEFAULTFILE=/etc/default/$PKG
+
+. /usr/share/debconf/confmodule || exit 0
+
+#DEBHELPER#
+
+set -e
+
+case "$1" in
+  configure)
+
+	if [ ! -e /etc/mogilefs/mogilefsd.conf ]
+		then
+			mkdir -p /etc/mogilefs
+			cp /usr/share/mogilefsd/mogilefsd.conf.default /etc/mogilefs/mogilefsd.conf
+	fi
+
+  ;;
+
+  abort-upgrade|abort-remove|abort-deconfigure)
+
+  ;;
+
+  *)
+  echo "postinst called with unknown argument \`$1'" >&2
+  exit 1
+  ;;
+esac
+db_stop
+

@@ -1,0 +1,80 @@
+#!/usr/bin/make -f
+# Sample debian/rules that uses debhelper.
+# GNU copyright 1997 to 1999 by Joey Hess.
+
+# Uncomment this to turn on verbose mode.
+#export DH_VERBOSE=1
+
+# This is the debhelper compatibility version to use.
+# export DH_COMPAT=4
+
+ENV=/usr/bin/env
+PERL=/usr/bin/perl
+
+MOGILEFSD_PACKAGE=mogilefsd
+MOGSTORED_PACKAGE=mogstored
+
+MOGILEFSD_CONFDIR=$(CURDIR)/debian/$(MOGILEFSD_PACKAGE)/usr/share/$(MOGILEFSD_PACKAGE)
+MOGSTORED_CONFDIR=$(CURDIR)/debian/$(MOGSTORED_PACKAGE)/usr/share/$(MOGSTORED_PACKAGE)
+
+MOGILEFSDBLIB=blib.mogilefsd
+MOGSTOREDBLIB=blib.mogstored
+
+build:
+	dh_testdir
+	# Add here commands to compile the package.
+	$(ENV) DANGABUILD_MOGILEFSDONLY=1 perl Makefile.PL verbose INSTALLDIRS=vendor INST_SCRIPT=$(MOGILEFSDBLIB)
+	cp Makefile Makefile.mogilefsd
+	$(ENV) DANGABUILD_MOGSTOREDONLY=1 perl Makefile.PL verbose INSTALLDIRS=vendor INST_SCRIPT=$(MOGSTOREDBLIB)
+	cp Makefile Makefile.mogstored
+clean:
+	dh_testdir
+	dh_testroot
+
+	-$(MAKE) clean
+	rm -f Makefile.old Makefile.mogilefsd Makefile.mogstored
+	rm -rf $(MOGILEFSDBLIB) $(MOGSTOREDBLIB)
+	dh_clean
+
+install:
+	dh_testdir
+	dh_testroot
+	dh_clean -k
+	dh_installdirs
+
+	$(MAKE) -f Makefile.mogilefsd PREFIX=$(CURDIR)/debian/$(MOGILEFSD_PACKAGE)/usr OPTIMIZE="-O2 -g -Wall" test install
+	$(MAKE) -f Makefile.mogstored PREFIX=$(CURDIR)/debian/$(MOGSTORED_PACKAGE)/usr OPTIMIZE="-O2 -g -Wall" test install
+
+	#There is no test suite, so smoke-test here
+	perl -c $(CURDIR)/mogilefsd
+	perl -c $(CURDIR)/mogstored
+
+	install -d $(MOGILEFSD_CONFDIR)
+	install -m 644 $(CURDIR)/conf/mogilefsd.conf $(MOGILEFSD_CONFDIR)/mogilefsd.conf.default
+
+	install -d $(MOGSTORED_CONFDIR)
+	install -m 644 $(CURDIR)/conf/mogstored.conf $(MOGSTORED_CONFDIR)/mogstored.conf.default
+
+	-find $(CURDIR)/debian -type d | xargs rmdir -p --ignore-fail-on-non-empty
+
+binary-arch:;
+binary-indep: build install
+	dh_testdir
+	dh_testroot
+	dh_installdocs
+	dh_installman
+	dh_installdebconf
+	dh_installinit
+	dh_installchangelogs
+	dh_link
+	dh_strip
+	dh_compress
+	dh_fixperms
+	dh_installdeb
+	dh_perl
+	dh_gencontrol
+	dh_md5sums
+	dh_builddeb
+
+binary: binary-indep binary-arch
+.PHONY: build clean binary-indep binary-arch binary install configure

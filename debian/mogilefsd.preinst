@@ -1,0 +1,24 @@
+#!/bin/sh
+
+PKG=mogilefsd
+DEFAULTFILE=/etc/default/$PKG
+
+. /usr/share/debconf/confmodule || exit 0
+
+#DEBHELPER#
+
+set -e
+
+db_get $PKG/runasuser
+RUNAS=$RET
+
+	getent passwd $RUNAS >/dev/null || adduser --system $RUNAS
+
+	if [ ! -e $DEFAULTFILE ]
+		then
+			mkdir -p /etc/default
+			echo "#!/bin/sh" >> $DEFAULTFILE
+			echo "# Defaults for the mogilefsd package" >> $DEFAULTFILE
+			echo "MOGILEFSD_RUNASUSER=$RUNAS" >> $DEFAULTFILE
+	fi
+

@@ -1,0 +1,5 @@
+Template: mogstored/docroot
+Type: string
+_Default: /var/mogdata
+_Description: Document root for mogstored:
+ The mogstored daemon needs a directory for the root of its filetree.

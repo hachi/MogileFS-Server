@@ -1,0 +1,27 @@
+This package was debianized by Jay Bonci <jay@bonci.com> on
+Fri Jan 14 15:57:37 EST 2005
+
+It was downloaded from: http://www.danga.com/dist/MogileFS/server/
+
+Upstream Author: 
+	Brad Fitzpatrick <brad@danga.com>
+	Brad Whitaker    <whitaker@danga.com>
+	Mark Smith       <junior@danga.com>
+
+
+Copyright:
+	This program is free software; you can redistribute it and/or modify
+	it under the terms of either:
+
+	a) the GNU General Public License as published by the Free
+	Software Foundation; either version 1, or (at your option) any
+	later version, or
+
+	b) the "Artistic License"
+
+	See:
+
+	/usr/share/common-licenses/Artistic
+	/usr/share/common-licenses/GPL
+
+	For more information regarding these licensing options

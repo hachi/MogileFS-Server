@@ -1,0 +1,15 @@
+#!/bin/sh
+
+#DEBHELPER#
+
+if [ "$1" = "purge" ] 
+	then
+		rm -f /etc/mogilefs/mogilefsd.conf
+		rm -f /etc/default/mogilefsd
+		
+		[ -d /etc/mogilefs ] && rmdir --ignore-fail-on-non-empty /etc/mogilefs
+		rmdir --ignore-fail-on-non-empty /etc/default
+fi
+
+rm -f /var/run/mogilefsd.pid
+

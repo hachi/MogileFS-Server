@@ -1,0 +1,7 @@
+Template: mogilefsd/runasuser
+Type: string
+_Default: mogilefsd
+_Description: User to run mogilefsd as:
+ The mogilefsd storage engine cannot be run as root. What user should it be
+ run as? This user will be created for you as a system user if it does not
+ yet exist.

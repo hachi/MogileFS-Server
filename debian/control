@@ -1,0 +1,25 @@
+Source: mogilefs-server
+Section: perl
+Priority: optional
+Maintainer: Jay Bonci <jaybonci@debian.org>
+Build-Depends-Indep: debhelper (>= 4.1.40), perl (>= 5.6.0-16), libdbd-mysql-perl, libdbi-perl, libperlbal-perl, liblinux-aio-perl, po-debconf, libnet-netmask-perl, libwww-perl
+Standards-Version: 3.6.1.0
+
+Package: mogilefsd
+Architecture: all
+Depends: ${perl:Depends}, libdbd-mysql-perl, libdbi-perl, debconf (>= 1.2.0), libnet-netmask-perl, libwww-perl
+Suggests: libmogilefs-perl, mogilefs-utils
+Description: scalable distributed filesystem from Danga Interactive
+ MogileFS is an open-source, application-level distributed filesystem. It
+ creates a host-nuetral, filesystem-agnostic method of distributing files
+ that has many advantages over NFS and single-machine raid.  This set
+ of utilities is very scalable and can handle Livejournal.com's load, for
+ which it was designed.
+
+Package: mogstored
+Architecture: all
+Depends: ${perl:Depends}, libperlbal-perl, liblinux-aio-perl, debconf (>= 1.2.0)
+Suggests: mogilefs-utils
+Description: storage node daemon for MogileFS
+ Mogstored is a storage node daemon for MogileFS, the open-source
+ application-level distributed filesystem from Danga Interactive.
