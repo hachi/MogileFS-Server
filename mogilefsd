@@ -469,7 +469,7 @@ sub make_path {
     my $nfid = sprintf '%010d', $fid;
     my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
 
-    my $path = "$hostname/dev$devid/$b/$mmm/$ttt/$nfid.fid";
+    my $path = "$hostname/dev$devid/$b/$mmm/$ttt/$fid.fid";
     make_dirs( "$MOG_ROOT/$path" ) or return undef;
 
     return $path;
