@@ -1390,7 +1390,7 @@ sub wait_for_readability {
     my $nfound = select($rin, undef, undef, $timeout);
 
     # ensure we close the socket if it doesn't get readable
-    unless (defined $nfound) {
+    unless ($nfound) {
         POSIX::close($fileno);
         return 0;
     }
