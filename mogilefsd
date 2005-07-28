@@ -375,6 +375,7 @@ $SIG{INT}  = sub {
     print STDERR "Sent SIGINT to $count children.\n" if $DEBUG;
     exit 0;
 };
+$SIG{PIPE} = 'IGNORE';  # catch them by hand
 
 #############################################################################
 ## beginning of main execution path

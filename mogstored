@@ -11,8 +11,7 @@ eval 'exec /usr/bin/perl -w -S $0 ${1+"$@"}'
 
 use strict;
 use lib 'lib';
-use Perlbal;
-use Linux::AIO '1.3';
+use Perlbal '1.3';
 use IO::Socket::INET;
 
 my $opt_daemonize;
@@ -45,14 +44,14 @@ my $listen = "0.0.0.0:7500";
 $conf ||= "
 SERVER max_connections = 10000
 CREATE SERVICE mogstored
-SET mogstored.role = web_server
-SET mogstored.listen = $listen
-SET mogstored.docroot = $path
-SET mogstored.dirindexing = 0
-SET mogstored.enable_put = 1
-SET mogstored.enable_delete = 1
-SET mogstored.min_put_directory = 1
-SET mogstored.persist_client = 1
+   SET role = web_server
+   SET listen = $listen
+   SET docroot = $path
+   SET dirindexing = 0
+   SET enable_put = 1
+   SET enable_delete = 1
+   SET min_put_directory = 1
+   SET persist_client = 1
 ENABLE mogstored
 ";
 
@@ -127,8 +126,11 @@ Perlbal::run();
 ### simple package for handling the stream request port
 package SideChannelClient;
 
-use base qw{Perlbal::Socket};
-use fields qw{count};
+use base qw{Danga::Socket};
+use fields (
+            'count',
+            'read_buf',
+            );
 
 # needed since we're pretending to be a Perlbal::Socket... never idle out
 sub max_idle_time { return 0; }
@@ -139,6 +141,7 @@ sub new {
     $self->SUPER::new(@_);
     $self->state('side_channel');
     $self->{count} = 0;
+    $self->{read_buf} = '';
     return $self;
 }
 
@@ -163,7 +166,7 @@ sub event_read {
             }
 
             # now stat the file to get the size and such
-            Linux::AIO::aio_stat("$path$uri", sub {
+            Perlbal::AIO::aio_stat("$path$uri", sub {
                 return if $self->{closed};
                 my $size = -e _ ? -s _ : -1;
                 $self->write("$uri $size\r\n");
