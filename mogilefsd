@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# MogileFS daemon - HEAVILY UNDER CONSTRUCTION
+# MogileFS daemon
 #
 # Copyright 2004, Danga Interactive
 #
@@ -920,7 +920,7 @@ sub get_mindevcounts {
     # make sure we have good info
     Mgd::check_host_cache();
     my $host_ct = keys %Mgd::cache_host;
-    
+
     # find the classes for each domainid (including domains without explict classes)
     my %min; # dmid -> classid -> mindevcount
     validate_dbh();
@@ -1416,18 +1416,19 @@ sub get_file_size {
     my $rv = 0;
     my $sock = $streamcache{$host};
 
-    # sub to parse the response from $sock.  common code, so we have it here.
+    # sub to parse the response from $sock.  returns undef on error,
+    # or otherwise the size of the $path in bytes.
     my $parse_response = sub {
         # give the socket 3 seconds to become readable
         unless (Mgd::wait_for_readability(fileno($sock), $node_timeout)) {
             close($sock);
-            return 0;
+            return undef;
         }
 
         # now we know there's readable data
         my $line = <$sock>;
-        return 0 unless defined $line;
-        return 0 unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
+        return undef unless defined $line;
+        return undef unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
         return error("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
             if $1 ne $uri;
         return $2+0;
@@ -1442,7 +1443,8 @@ sub get_file_size {
             return error("send() didn't return expected length ($rv, not $reqlen) for $path");
         } else {
             # success
-            return $parse_response->();
+            my $size = $parse_response->();
+            return $size if defined $size;
         }
     }
 
@@ -1458,7 +1460,8 @@ sub get_file_size {
                 return error("send() didn't return expected length ($rv, not $reqlen) for $path");
             } else {
                 # success
-                return $parse_response->();
+                my $size = $parse_response->();
+                return $size if defined $size;
             }
         }
     }
@@ -2066,7 +2069,7 @@ Welcome to mogilefsd's built-in help system.  Available commands:
 More to come...
 .
 HELP
-    
+
 }
 
 # called when a client sends us text.  we just create a job for
