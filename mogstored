@@ -16,37 +16,67 @@ use IO::Socket::INET;
 
 my $opt_daemonize;
 my $opt_config;
-exit 1 unless
-    Getopt::Long::GetOptions(
-               'daemon' => \$opt_daemonize,
-               'config=s' => \$opt_config,
-               );
+
+my $http_listen = "0.0.0.0:7500";
+my $mgmt_listen = "0.0.0.0:7501";
+my $docroot     = "/var/mogdata";
+
+my %config_opts = (
+                   'daemonize'    => \$opt_daemonize,
+                   'config=s'     => \$opt_config,
+                   'httplisten=s' => \$http_listen,
+                   'mgmtlisten=s' => \$mgmt_listen,
+                   'docroot=s'    => \$docroot,
+                   );
+usage() unless Getopt::Long::GetOptions(%config_opts);
 
 my $default_config = "/etc/mogilefs/mogstored.conf";
 $opt_config = $default_config if ! $opt_config && -e $default_config;
 
-my $conf;
-if (-e $opt_config) {
-    if (open F, $opt_config) {
-        local $/ = undef;
-        $conf = <F>;
-        close F;
-    } else {
-        die "Couldn't open config file ($opt_config): $!\n";
+sub usage {
+    my $note = shift;
+    $note = $note ? "NOTE: $note\n\n" : "";
+
+    die "${note}Usage: mogstored [OPTS]
+
+OPTS:
+ --daemonize  -d        Daemonize
+ --config=<file>        Set config file (default is /etc/mogilefs/mogstored.conf)
+ --httplisten=<ip:port> IP/Port HTTP server listens on
+ --mgmtlisten=<ip:port> IP/Port management/sidechannel listens on
+ --docroot=<path>       Docroot above device mount points.  Defaults to /var/mogdata
+";
+
+}
+
+# parse the mogstored config file, which is just lines of comments and
+# "key = value" lines, where keys are just the same as commandline
+# options.
+if ($opt_config) {
+    die "Config file $opt_config doesn't exist.\n" unless -e $opt_config;
+    open F, $opt_config or die "Couldn't open config file for reading: $!";
+    while (<F>) {
+        s/\#.*//;
+        next unless /\S/;
+        if (/SERVER max_connect/i || /CREATE SERVICE/i) {
+            usage("Your $opt_config file is the old syntax.  The new format is simply lines of <key> = <value> where keys are the same as mogstored's command line options.");
+
+        }
+        die "Unknown config syntax: $_\n" unless /^\s*(\w+)\s*=\s*(.+?)\s*$/;
+        my ($key, $val) = ($1, $2);
+        my $dest = $config_opts{$key} || $config_opts{"$key=s"};
+        die "Unknown config setting: $key\n" unless $dest;
+        $$dest = $val;
     }
 }
 
-my $out = sub { print STDOUT join("\n", map { ref $_ eq 'ARRAY' ? @$_ : $_ } @_) . "\n"; };
-
-my $path = "/var/mogdata";
-my $listen = "0.0.0.0:7500";
-
-$conf ||= "
+# this is the perlbal configuration only.  not the mogstored configuration.
+my $pb_conf ||= "
 SERVER max_connections = 10000
 CREATE SERVICE mogstored
    SET role = web_server
-   SET listen = $listen
-   SET docroot = $path
+   SET listen = $http_listen
+   SET docroot = $docroot
    SET dirindexing = 0
    SET enable_put = 1
    SET enable_delete = 1
@@ -55,7 +85,7 @@ CREATE SERVICE mogstored
 ENABLE mogstored
 ";
 
-Perlbal::run_manage_command($_, $out) foreach split(/\n/, $conf);
+Perlbal::run_manage_commands($pb_conf, sub { print STDERR "$_[0]\n"; });
 
 unless (Perlbal::Socket->WatchedSockets() > 0) {
     die "Invalid configuration.  (shouldn't happen?)  Stopping.\n";
@@ -71,6 +101,8 @@ if ($opt_daemonize) {
 Perlbal::Socket::register_callback(1, sub {
     my $err = sub { Perlbal::log('crit', $_[0]); return 60; };
     my $rval = `df -l`;
+    my $path = Perlbal->service('mogstored')->{docroot};
+
     foreach my $l (split /\r?\n/, $rval) {
         next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
         my ($dev, $total, $used, $avail, $use, $disk) = ($1, $2, $3, $4, $5, $6);
@@ -94,13 +126,13 @@ Perlbal::Socket::register_callback(1, sub {
 });
 
 # setup a new socket for handling size requests
-my $server = IO::Socket::INET->new(LocalPort => 7501, # FIXME make this configurable
+my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
                                    Type      => SOCK_STREAM,
                                    Proto     => 'tcp',
                                    Blocking  => 0,
                                    Reuse     => 1,
                                    Listen    => 10 )
-    or die "Error creating socket: $@\n";
+    or die "Error creating management socket: $@\n";
 
 # in Perl 5.6, we weren't always seeing this turned off by IO::Socket
 # so we have to do it manually here just to be sure.
@@ -108,12 +140,10 @@ IO::Handle::blocking($server, 0);
 
 # accept handler for new workers
 my $accept_handler = sub {
-    my $csock = $server->accept()
-        or return;
+    my $csock = $server->accept or return;
     IO::Handle::blocking($csock, 0);
     my $client = SideChannelClient->new($csock);
     $client->watch_read(1);
-    # ... that's it.  Client->new adds to event loop.
 };
 
 # add to fd list so this one gets processed
@@ -128,8 +158,9 @@ package SideChannelClient;
 
 use base qw{Danga::Socket};
 use fields (
-            'count',
-            'read_buf',
+            'count',      # how many requests we've serviced
+            'read_buf',   # unprocessed read buffer
+            'mogsvc',     # the mogstored Perlbal::Service object
             );
 
 # needed since we're pretending to be a Perlbal::Socket... never idle out
@@ -139,9 +170,9 @@ sub new {
     my SideChannelClient $self = shift;
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new(@_);
-    $self->state('side_channel');
     $self->{count} = 0;
     $self->{read_buf} = '';
+    $self->{mogsvc} = Perlbal->service('mogstored');
     return $self;
 }
 
@@ -149,8 +180,10 @@ sub event_read {
     my SideChannelClient $self = shift;
 
     my $bref = $self->read(1024);
-    return $self->close() unless defined $bref;
+    return $self->close unless defined $bref;
     $self->{read_buf} .= $$bref;
+
+    my $path = $self->{mogsvc}->{docroot};
 
     while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
         my $cmd = $1;
