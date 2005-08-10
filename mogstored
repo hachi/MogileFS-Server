@@ -100,27 +100,51 @@ if ($opt_daemonize) {
 # register our disk usage callback to get disk usage and keep an eye on how we're doing
 Perlbal::Socket::register_callback(1, sub {
     my $err = sub { Perlbal::log('crit', $_[0]); return 60; };
-    my $rval = `df -l`;
     my $path = Perlbal->service('mogstored')->{docroot};
+    $path =~ s!/$!!;
 
-    foreach my $l (split /\r?\n/, $rval) {
-        next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
-        my ($dev, $total, $used, $avail, $use, $disk) = ($1, $2, $3, $4, $5, $6);
-        next unless $disk =~ /^$path/;
+    # find all devices below us
+    my @devnum;
+    if (opendir(D, $path)) {
+        @devnum = grep { /^dev\d+$/ } readdir(D);
+        closedir(D);
+    } else {
+        $err->("Failed to open $path: $!");
+    }
 
-        # create string to print
-        my $now = time;
-        my $output = "time: $now\ndevice: $dev\ntotal: $total\nused: $used\navailable: $avail\nuse: $use\ndisk: $disk\n";
+    foreach my $devnum (@devnum) {
+        my $rval = `df -k -l $path/$devnum`;
+        foreach my $l (split /\r?\n/, $rval) {
+            next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
+            my ($dev, $total, $used, $avail, $useper, $disk) = ($1, $2, $3, $4, $5, $6);
 
-        # open a file on that disk location called 'usage'
-        my $rv = open(FILE, ">$disk/usage");
-        unless ($rv) {
-            $err->("Unable to open '$disk/usage' for writing: $!");
-            next;
+            unless ($disk =~ m!$devnum/?$!) {
+                $disk = "$path/$devnum";
+            }
+
+            # create string to print
+            my $now = time;
+            my $output = {
+                time      => time(),
+                device    => $dev,    # /dev/sdh1
+                total     => $total,  # integer: total KiB blocks
+                used      => $used,   # integer: used KiB blocks
+                available => $avail,  # integer: available KiB blocks
+                'use'     => $useper, # "45%"
+                disk      => $disk,   # mount point of disk (/var/mogdata/dev8), or path if not a mount
+            };
+
+            # open a file on that disk location called 'usage'
+            my $rv = open(FILE, ">$disk/usage");
+            unless ($rv) {
+                $err->("Unable to open '$disk/usage' for writing: $!");
+                next;
+            }
+            foreach (sort keys %$output) {
+                print FILE "$_: $output->{$_}\n";
+            }
+            close FILE;
         }
-        print FILE $output;
-        close FILE;
-
     }
     return 60;
 });

@@ -1,0 +1,6 @@
+2005-08-10:
+        * write out usage files for devices, even if they're not on their own mount point.
+          also explicitly include the '-k' flag to df, so we know they're KiB.
+
+2005-08-07:
+        * new config syntax and command line options
