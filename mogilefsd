@@ -1493,6 +1493,20 @@ sub class_id {
     return $classid;
 }
 
+sub host_id {
+    my $host = shift;
+    return undef unless $host;
+
+    Mgd::check_host_cache();
+
+    foreach my $hostid (keys %Mgd::cache_host) {
+        return $hostid
+            if $Mgd::cache_host{$hostid}->{hostname} eq $host;
+    }
+
+    return undef;
+}
+
 sub domain_id {
     # check the cache for this item
     my $now = time();
@@ -2654,6 +2668,10 @@ sub cmd_get_hosts {
 
         $ret->{hosts}++;
         while (my ($key, $val) = each %$row) {
+            # ignore things such as the netmask object
+            next if ref $val;
+
+            # must be regular data so copy it in
             $ret->{"host$ret->{hosts}_$key"} = $val;
         }
     }
@@ -2758,6 +2776,70 @@ sub cmd_update_class {
 
     # simply passes through to create_class with update set
     $self->cmd_create_class({ %$args, update => 1 });
+}
+
+sub cmd_create_host {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+
+    my $host = $args->{host};
+    return $self->err_line('no_host') unless $host;
+
+    # unless update, require ip/port
+    unless ($args->{update}) {
+        return $self->err_line('no_ip') unless $args->{ip};
+        return $self->err_line('no_port') unless $args->{port};
+    }
+
+    $args->{status} ||= 'down';
+    return $self->err_line('unknown_state')
+        unless $args->{status} =~ /^(?:alive|down|dead)$/;
+
+    my $hid = Mgd::host_id($host);
+    return $self->err_line('host_exists') if $hid && ! $args->{update};
+
+    # update or insert at this point
+    if ($args->{update}) {
+        # create an update list; basically we take our input arguments, map them
+        # to the database columns, see if this argument was passed (so we don't
+        # overwrite other things), and then quote the input and set it
+        my %map = ( ip => 'hostip', port => 'http_port', getport => 'http_get_port',
+                    altip => 'altip', altmask => 'altmask', root => 'remoteroot',
+                    status => 'status', );
+        my $set = join(', ', map { $map{$_} . " = " . $dbh->quote($args->{$_}) }
+                             grep { exists $args->{$_} }
+                             keys %map);
+
+        # now do the update
+        $dbh->do("UPDATE host SET $set WHERE hostid = ?", undef, $hid);
+    } else {
+        # get the max host id in use
+        $hid = $dbh->selectrow_array('SELECT MAX(hostid) FROM host') + 1;
+
+        # now insert the new host
+        $dbh->do("INSERT INTO host (hostid, status, http_port, http_get_port, hostname, hostip, altip, altmask, remoteroot) " .
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 undef, $hid, map { $args->{$_} } qw(status port getport host ip altip altmask root));
+    }
+    return $self->err_line('failure') if $dbh->err;
+
+    # force a host reload
+    $Mgd::cache_host_time = 0;
+    Mgd::check_host_cache();
+
+    # return success
+    return $self->ok_line($Mgd::cache_host{$hid});
+}
+
+sub cmd_update_host {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    # simply passes through to create_host with update set
+    $self->cmd_create_host({ %$args, update => 1 });
 }
 
 sub cmd_get_domains {
@@ -2978,13 +3060,18 @@ sub err_line {
         'unknown_command' => "Unknown server command",
         'no_domain' => "No domain provided",
         'no_class' => "No class provided",
+        'no_host' => "No host provided",
+        'no_ip' => "IP required to create host",
+        'no_port' => "Port required to create host",
         'unreg_domain' => "Domain name invalid/not found",
         'class_exists' => "That class already exists in that domain",
         'domain_exists' => "That domain already exists",
+        'host_exists' => "That host already exists",
         'invalid_mindevcount' => "The mindevcount must be at least 1",
         'bad_params' => "Invalid parameters to command; please see documentation",
         'host_mismatch' => "The device specified doesn't belong to the host specified",
         'state_too_high' => "Status cannot go from dead to alive; must use down",
+        'unknown_state' => "Invalid/unknown state",
         'failure' => "Operation failed",
         'key_exists' => "Target key name already exists; can't overwrite.",
         'none_match' => "No keys match that pattern and after-value (if any).",
