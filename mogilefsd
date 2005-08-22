@@ -1499,6 +1499,27 @@ sub class_id {
     return $classid;
 }
 
+sub hostid_classes {
+    my $dmid = shift;
+    return undef unless $dmid > 0;
+
+    my $dbh = Mgd::get_dbh;
+    my $classes = $dbh->selectall_arrayref
+        ("SELECT classid, classname, mindevcount FROM class WHERE dmid=?", undef, $dmid)
+            or return undef;
+    return undef unless $classes;
+
+    my $res = {};
+    foreach my $row (@$classes) {
+        $res->{$row->[0]} = {
+            classid => $row->[0],
+            classname => $row->[1],
+            mindevcount => $row->[2],
+        };
+    }
+    return $res;
+}
+
 sub host_id {
     my $host = shift;
     return undef unless $host;
@@ -2663,9 +2684,6 @@ sub cmd_get_hosts {
     my QueryWorker $self = shift;
     my $args = shift;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
-
     Mgd::check_host_cache();
 
     my $ret = { hosts => 0 };
@@ -2688,9 +2706,6 @@ sub cmd_get_hosts {
 sub cmd_get_devices {
     my QueryWorker $self = shift;
     my $args = shift;
-
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
 
     my $devs = Mgd::get_device_summary();
 
@@ -2729,6 +2744,38 @@ sub cmd_create_domain {
     return $self->err_line('failure') if $dbh->err;
 
     # return the domain id we created
+    return $self->ok_line({ domain => $domain });
+}
+
+sub cmd_delete_domain {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    my $domain = $args->{domain};
+    return $self->err_line('no_domain') unless length $domain;
+
+    # FIXME: add some sort of authentication/limitation on this?
+
+    my $dmid = Mgd::domain_id($domain);
+    return $self->err_line('domain_not_found') unless $dmid;
+
+    # ensure it has no classes
+    my $classes = Mgd::hostid_classes($dmid);
+    return $self->err_line('failure') unless $classes;
+    return $self->err_line('domain_not_empty') if %$classes;
+
+    # and ensure it has no files (fast: key based)
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+    my $ct = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ?', undef, $dmid);
+    return $self->err_line('failure') if $dbh->err;
+    return $self->err_line('domain_has_files') if $ct;
+
+    # all clear, nuke it
+    $dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
+    return $self->err_line('failure') if $dbh->err;
+
+    # return the domain we nuked
     return $self->ok_line({ domain => $domain });
 }
 
@@ -3098,7 +3145,10 @@ sub err_line {
         'bad_params' => "Invalid parameters to command; please see documentation",
         'class_exists' => "That class already exists in that domain",
         'class_not_found' => "Class not found",
+        'domain_has_files' => "Domain still has files, uanble to delete",
         'domain_exists' => "That domain already exists",
+        'domain_not_empty' => "Domain still has classes, unable to delete",
+        'domain_not_found' => "Domain not found",
         'failure' => "Operation failed",
         'host_exists' => "That host already exists",
         'host_mismatch' => "The device specified doesn't belong to the host specified",
