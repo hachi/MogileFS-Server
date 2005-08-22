@@ -2835,6 +2835,39 @@ sub cmd_update_class {
     $self->cmd_create_class({ %$args, update => 1 });
 }
 
+sub cmd_delete_class {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    my $domain = $args->{domain};
+    return $self->err_line('no_domain') unless length $domain;
+
+    my $class = $args->{class};
+    return $self->err_line('no_class') unless length $domain;
+
+    # FIXME: add some sort of authentication/limitation on this?
+
+    my $dmid = Mgd::domain_id($domain);
+    return $self->err_line('domain_not_found') unless $dmid;
+
+    my $cid = Mgd::class_id($dmid, $class);
+    return $self->err_line('class_not_found') unless $cid;
+
+    # and ensure it has no files (fast: key based)
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+    my $ct = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ?', undef, $dmid, $cid);
+    return $self->err_line('failure') if $dbh->err;
+    return $self->err_line('class_has_files') if $ct;
+
+    # all clear, nuke it
+    $dbh->do("DELETE FROM class WHERE dmid = ? AND classid = ?", undef, $dmid, $cid);
+    return $self->err_line('failure') if $dbh->err;
+
+    # return the class we nuked
+    return $self->ok_line({ domain => $domain, class => $class });
+}
+
 sub cmd_create_host {
     my QueryWorker $self = shift;
     my $args = shift;
@@ -3144,6 +3177,7 @@ sub err_line {
         'after_mismatch' => "Pattern does not match the after-value?",
         'bad_params' => "Invalid parameters to command; please see documentation",
         'class_exists' => "That class already exists in that domain",
+        'class_has_files' => "Class still has files, uanble to delete",
         'class_not_found' => "Class not found",
         'domain_has_files' => "Domain still has files, uanble to delete",
         'domain_exists' => "That domain already exists",
