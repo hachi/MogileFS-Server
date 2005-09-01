@@ -1437,6 +1437,7 @@ sub get_file_size {
         return undef unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
         return error("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
             if $1 ne $uri;
+        return 0 if $2 < 0;   # backchannel sends back -1 on errors, which we need to map to 0
         return $2+0;
     };
 
@@ -1476,7 +1477,10 @@ sub get_file_size {
     my $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 3)
         or return error("get_file_size() unable to contact mogstored for size of $path");
     $sock->write("HEAD $uri HTTP/1.0\r\n\r\n");
+    my $first = <$sock>;
+    return error("get_file_size()'s HEAD request wasn't a 200 OK") unless $first =~ m!^HTTP/1\.\d 200!;
     while (defined (my $line = <$sock>)) {
+        last if $line eq "\r\n";
         if ($line =~ /^Content-length: (\d+)/i) {
             # success
             return $1+0;
@@ -2556,6 +2560,7 @@ sub cmd_create_close {
 
     # get size of file and verify that it matches what we were given, if anything
     my $size = Mgd::get_file_size($path);
+
     return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
         if $args->{size} && ($args->{size} != $size);
 
