@@ -2613,6 +2613,47 @@ sub cmd_delete {
 
 }
 
+sub cmd_list_fids {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    # validate parameters
+    my $fromfid = $args->{from}+0;
+    my $tofid = $args->{to}+0;
+    $tofid ||= ($fromfid + 100);
+    $tofid = ($fromfid + 100)
+        if $tofid > $fromfid + 100 ||
+           $tofid < $fromfid;
+
+    # get dbh to do the query
+    my $dbh = Mgd::get_dbh or
+        return $self->err_line("nodb");
+    my $rows = $dbh->selectall_hashref('SELECT fid, dmid, dkey, length, classid, devcount ' .
+                                       'FROM file WHERE fid BETWEEN ? AND ?',
+                                       'fid', undef, $fromfid, $tofid);
+    return $self->err_line('failure') if $dbh->err || ! $rows;
+    return $self->ok_line({ fid_count => 0 }) unless %$rows;
+
+    # setup temporary storage of class/host
+    my (%domains, %classes);
+
+    # now iterate over our data rows and construct result
+    my $ct = 0;
+    my $ret = {};
+    foreach my $fid (keys %$rows) {
+        $ct++;
+        my $r = $rows->{$fid};
+        $ret->{"fid_${ct}_fid"} = $fid;
+        $ret->{"fid_${ct}_domain"} = ($domains{$r->{dmid}} ||= Mgd::domain_name($r->{dmid}));
+        $ret->{"fid_${ct}_class"} = ($classes{$r->{dmid}}{$r->{classid}} ||= Mgd::class_name($r->{dmid}, $r->{classid}));
+        $ret->{"fid_${ct}_key"} = $r->{dkey};
+        $ret->{"fid_${ct}_length"} = $r->{length};
+        $ret->{"fid_${ct}_devcount"} = $r->{devcount};
+    }
+    $ret->{fid_count} = $ct;
+    return $self->ok_line($ret);
+}
+
 sub cmd_list_keys {
     my QueryWorker $self = shift;
     my $args = shift;
@@ -3149,6 +3190,13 @@ sub cmd_stats {
             $ret->{"devices${count}files"} = $stat->[1];
         }
         $ret->{"devicescount"} = $count;
+    }
+
+    # now fid statitics
+    if ($args->{fids} || $args->{all}) {
+        my ($max, $ct) = $dbh->selectrow_array('SELECT MAX(fid), COUNT(*) FROM file');
+        $ret->{"fidmax"} = $max;
+        $ret->{"fidcount"} = $ct;
     }
 
     # FIXME: DO! add other stats
