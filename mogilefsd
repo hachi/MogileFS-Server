@@ -1274,7 +1274,9 @@ sub find_deviceid {
     # copy down global minimum free space if not specified
     $opts{min_free_space} ||= $min_free_space;
     $opts{max_disk_age} ||= $max_disk_age;
-    $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
+    if ($opts{max_disk_age}) {
+        $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
+    }
 
     # setup for iterating over devices
     my $devs = Mgd::get_device_summary();
