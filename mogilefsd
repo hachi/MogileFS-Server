@@ -3196,9 +3196,8 @@ sub cmd_stats {
 
     # now fid statitics
     if ($args->{fids} || $args->{all}) {
-        my ($max, $ct) = $dbh->selectrow_array('SELECT MAX(fid), COUNT(*) FROM file');
+        my $max = $dbh->selectrow_array('SELECT MAX(fid) FROM file');
         $ret->{"fidmax"} = $max;
-        $ret->{"fidcount"} = $ct;
     }
 
     # FIXME: DO! add other stats
