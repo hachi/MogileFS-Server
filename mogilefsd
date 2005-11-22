@@ -312,6 +312,26 @@ NEEDUPDATE
     }
 }
 
+# verify that we have device weights
+my $devids = $dbh->selectrow_array('SELECT weight FROM device LIMIT 1');
+if ($dbh->err) {
+    if ($upgrade) {
+        print STDERR "Updating device table...\n";
+        $dbh->do("ALTER TABLE device ADD COLUMN weight MEDIUMINT DEFAULT 100 AFTER status");
+        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
+    } else {
+        die <<NEEDUPDATE;
+Error: database schema out of date.
+
+MogileFS needs to update your database schema.  Please rerun the MogileFS
+server with the --upgrade option if you wish for us to do this.
+
+This will NOT destroy any existing data.
+NEEDUPDATE
+    }
+}
+
+
 # we're done with this, so undef it before we start forking, as then
 # maybe we'll end up with children having the same socket and everybody
 # writing to it at the same time...
@@ -1320,6 +1340,45 @@ sub find_deviceid {
     return @list ? $list[0] : undef;
 }
 
+# input:
+#   given an array of arrayrefs of [ item, weight ], returns weighted randomized
+#   list of items (without the weights, not arrayref; just list)
+#
+#   a weight of 0 means to exclude that item from the results list; i.e. it's not
+#   ever used
+#   
+# example:
+#   my @items = weighted_list( [ 1, 10 ], [ 2, 20 ], [ 3, 0 ] );
+#
+#   returns (1, 2) or (2, 1) with the latter far more likely
+sub weighted_list {
+    my @list = grep { $_->[1] > 0 } @_;
+    my @ret;
+    
+    my $sum = 0;
+    $sum += $_->[1] foreach @list;
+
+    my $getone = sub {
+        return shift(@list)->[0]
+            if scalar(@list) == 1;
+
+        my $val = rand() * $sum;
+        my $curval = 0;
+        for (my $idx = 0; $idx < scalar(@list); $idx++) {
+            my $item = $list[$idx];
+            $curval += $item->[1];
+            if ($curval >= $val) {
+                my ($ret) = splice(@list, $idx, 1);
+                $sum -= $item->[1];
+                return $ret->[0];
+            }
+        }
+    };
+
+    push @ret, $getone->() while @list;
+    return @ret;
+}
+
 sub get_device_summary {
     my $include_dead = shift() ? ", 'dead'" : '';
     my $now = time;
@@ -1331,7 +1390,7 @@ sub get_device_summary {
     my %dev;  #
     my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
-                            "mb_used, mb_asof, status FROM device ".
+                            "mb_used, mb_asof, status, weight FROM device ".
                             "WHERE status IN ('alive', 'down' $include_dead)");
     $sth->execute;
     $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
@@ -1352,6 +1411,12 @@ sub get_device_summary {
 
     $cache_device_summary_time = $now;
     return $cache_device_summary = \%dev;
+}
+
+sub invalidate_device_cache {
+    # so next time it's invalid and won't be used old
+    $cache_device_summary_time = 0;
+    $cache_device_summary = undef;
 }
 
 sub invalidate_host_cache {
@@ -2446,6 +2511,20 @@ sub cmd_sleep {
     return $self->ok_line;
 }
 
+sub cmd_clear_cache {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    if ($args->{devices} || $args->{all}) {
+        Mgd::invalidate_device_cache();
+    }
+    if ($args->{hosts} || $args->{all}) {
+        Mgd::invalidate_host_cache();
+    }
+
+    return $self->ok_line;
+}
+
 sub cmd_create_open {
     my QueryWorker $self = shift;
     my $args = shift;
@@ -3069,16 +3148,20 @@ sub cmd_get_paths {
     # is this fid still owned by this key?
     my $devids = $dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
                                           undef, $fid) || [];
-    my $devcount = scalar(@$devids);
-    my $idx = int(rand() * $devcount);
 
-    for (1..$devcount) {
-        my $devid = $devids->[($_+$idx) % $devcount];
+    # randomly weight the devices
+    my @list = Mgd::weighted_list(map { [ $_, defined $dsum->{$_}->{weight} ?
+                                                      $dsum->{$_}->{weight} : 100 ] } @$devids);
+
+    # construct result paths
+    foreach my $devid (@list) {
         my $dev = $dsum->{$devid};
         next unless $dev && $dev->{status} eq "alive";
+
         my $path = Mgd::make_get_path($devid, $fid);
         next unless $ret->{paths} || $args->{noverify} ||
                         (Mgd::get_file_size($path) == $filerow->{length});
+
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;
         last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
