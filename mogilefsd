@@ -3170,6 +3170,38 @@ sub cmd_get_paths {
     return $self->ok_line($ret);
 }
 
+sub cmd_set_weight {
+    my QueryWorker $self = shift;
+    my $args = shift;
+
+    # get database handle
+    my $ret = {};
+    my $dbh = Mgd::get_dbh
+        or return $self->err_line('nodb');
+
+    # figure out what they want to do
+    my ($host, $dev, $weight) = ($args->{host}, $args->{device}+0, $args->{weight}+0);
+    return $self->err_line('bad_params')
+        unless $host && $dev && $weight >= 0;
+
+    # now get this device's current weight and host
+    my ($realhost) =
+        $dbh->selectrow_array('SELECT hostname FROM host, device ' .
+                              'WHERE host.hostid = device.hostid AND device.devid = ?',
+                              undef, $dev);
+
+    # verify host is the same
+    return $self->err_line('host_mismatch')
+        unless $realhost eq $host;
+
+    # update the weight in the database now
+    $dbh->do('UPDATE device SET weight = ? WHERE devid = ?', undef, $weight, $dev);
+    return $self->err_line('failure') if $dbh->err;
+
+    # success, weight changed
+    return $self->ok_line($ret);
+}
+
 sub cmd_set_state {
     my QueryWorker $self = shift;
     my $args = shift;
