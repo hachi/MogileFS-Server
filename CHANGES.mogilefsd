@@ -1,0 +1,12 @@
+2006-01-10 (Brad)
+        -- make Mgd::get_device_summary() always return all devices, regardless
+        of status.
+
+        -- update all callers of get_device_summary to filter on the device
+        status, if they need to. (provided more clarity into what
+        callers' intentions were...)
+
+        -- add a new device state 'readonly' which means: it can be read from
+        from clients, it can be replicated from, but no new files can go
+        on it or be replicated onto it. and it also reaps, meaning the
+        device is fucked. the filesystem probably ate itself.
