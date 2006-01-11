@@ -875,7 +875,7 @@ sub replicate {
     # learn what devices this file is already on
     my $on_count = 0;
     my %on_host;     # hostid -> 1
-    my @dead_devid;   # list of dead devids
+    my @dead_devid;   # list of dead devids.  FIXME: do something with this?
     my @exist_devid;  # list of existing devids
 
     my $sth = $dbh->prepare("SELECT devid FROM file_on WHERE fid=?");
@@ -883,7 +883,7 @@ sub replicate {
     die $dbh->errstr if $dbh->err;
     while (my ($devid) = $sth->fetchrow_array) {
         my $d = $devs->{$devid};
-        unless ($d) {
+        unless ($d && $d->{status} =~ /^alive|readonly$/) {
             push @dead_devid, $devid;
             next;
         }
@@ -1002,6 +1002,8 @@ sub job_monitor {
 
         # now iterate over devices
         foreach my $dev (values %$devs) {
+            next if $dev->{status} =~ /^dead|down$/;
+
             my $host = $Mgd::cache_host{$dev->{hostid}};
             my $port = $host->{http_get_port} || $host->{http_port};
             my $url = "http://$host->{hostip}:$port/dev$dev->{devid}/usage";
@@ -1073,8 +1075,8 @@ sub job_reaper {
         $parse_parent_response->();
 
         # get a current list of devices
-        my $devs = Mgd::get_device_summary(1);
-        my @deaddevs = grep { $_->{status} eq 'dead' } values %$devs;
+        my $devs = Mgd::get_device_summary();
+        my @deaddevs = grep { $_->{status} =~ /^dead|readonly$/ } values %$devs;
         next unless @deaddevs;
 
         # now iterate over dead devices
@@ -1346,7 +1348,7 @@ sub find_deviceid {
 #
 #   a weight of 0 means to exclude that item from the results list; i.e. it's not
 #   ever used
-#   
+#
 # example:
 #   my @items = weighted_list( [ 1, 10 ], [ 2, 20 ], [ 3, 0 ] );
 #
@@ -1354,7 +1356,7 @@ sub find_deviceid {
 sub weighted_list {
     my @list = grep { $_->[1] > 0 } @_;
     my @ret;
-    
+
     my $sum = 0;
     $sum += $_->[1] foreach @list;
 
@@ -1380,7 +1382,6 @@ sub weighted_list {
 }
 
 sub get_device_summary {
-    my $include_dead = shift() ? ", 'dead'" : '';
     my $now = time;
     return $cache_device_summary if $cache_device_summary_time > $now - 15;
 
@@ -1390,8 +1391,7 @@ sub get_device_summary {
     my %dev;  #
     my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
-                            "mb_used, mb_asof, status, weight FROM device ".
-                            "WHERE status IN ('alive', 'down' $include_dead)");
+                            "mb_used, mb_asof, status, weight FROM device");
     $sth->execute;
     $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
 
@@ -1424,7 +1424,7 @@ sub invalidate_host_cache {
     $cache_host_time = 0;
     %cache_host = ();
 }
-    
+
 sub check_host_cache {
     my $now = time;
     return if $cache_host_time > $now - 5;
@@ -3075,13 +3075,13 @@ sub cmd_delete_host {
     my $dsum = Mgd::get_device_summary();
     foreach my $dev (values %$dsum) {
         return $self->err_line('host_not_empty')
-            if $dev->{hostid} == $hostid;
+            if $dev->{hostid} == $hostid && $dev->{status} ne "dead";
     }
 
     my $res = $dbh->do("DELETE FROM host WHERE hostid = ?", undef, $hostid);
     return $self->err_line('failure')
         unless $res;
-        
+
     Mgd::invalidate_host_cache();
     return $self->ok_line;
 }
@@ -3156,7 +3156,7 @@ sub cmd_get_paths {
     # construct result paths
     foreach my $devid (@list) {
         my $dev = $dsum->{$devid};
-        next unless $dev && $dev->{status} eq "alive";
+        next unless $dev && ($dev->{status} eq "alive" || $dev->{status} eq "readonly");
 
         my $path = Mgd::make_get_path($devid, $fid);
         next unless $ret->{paths} || $args->{noverify} ||
@@ -3214,7 +3214,7 @@ sub cmd_set_state {
     # figure out what they want to do
     my ($host, $dev, $state) = ($args->{host}, $args->{device}+0, $args->{state});
     return $self->err_line('bad_params')
-        unless $host && $dev && ($state =~ /^(?:alive|down|dead)$/);
+        unless $host && $dev && ($state =~ /^(?:alive|down|dead|readonly)$/);
 
     # now get this device's current state and host
     my ($realhost, $curstate) =
