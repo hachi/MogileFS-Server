@@ -331,6 +331,24 @@ NEEDUPDATE
     }
 }
 
+# make sure we have the readonly device table enum
+my ($table, $create)  = $dbh->selectrow_array("SHOW CREATE TABLE device");
+if ($create !~ /readonly/) {
+    if ($upgrade) {
+        print STDERR "Updating device table...\n";
+        $dbh->do("ALTER TABLE device MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly')");
+        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
+    } else {
+        die <<NEEDUPDATE;
+Error: database schema out of date.
+
+MogileFS needs to update your database schema.  Please rerun the MogileFS
+server with the --upgrade option if you wish for us to do this.
+
+This will NOT destroy any existing data.
+NEEDUPDATE
+    }
+}
 
 # we're done with this, so undef it before we start forking, as then
 # maybe we'll end up with children having the same socket and everybody
@@ -1338,8 +1356,8 @@ sub find_deviceid {
         }
     }
 
-    # return first listed suitable device
-    return @list ? $list[0] : undef;
+    # return whole list if wanting array, else just first item
+    return wantarray ? @list : shift(@list);
 }
 
 # input:
