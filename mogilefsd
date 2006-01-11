@@ -1094,7 +1094,7 @@ sub job_reaper {
 
         # get a current list of devices
         my $devs = Mgd::get_device_summary();
-        my @deaddevs = grep { $_->{status} =~ /^dead|readonly$/ } values %$devs;
+        my @deaddevs = grep { $_->{status} =~ /^dead$/ } values %$devs;
         next unless @deaddevs;
 
         # now iterate over dead devices
