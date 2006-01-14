@@ -37,6 +37,9 @@ use Time::HiRes qw(gettimeofday tv_interval);
 use Net::Netmask;
 use LWP::UserAgent;
 
+# this is incremented whenever the schema changes.  server will refuse
+# to start-up with an old schema version
+use constant SCHEMA_VERSION => 5;
 
 #####################################################################
 ### C O N F I G
@@ -168,186 +171,17 @@ Error: unable to establish connection with your MogileFS database.
 
 Please verify that you have correctly setup a configuration file or are
 providing the correct information in order to reach the database and try
-running the MogileFS server again.
+running the MogileFS server again.  If you haven't setup your database yet,
+run 'mogdbsetup'.
 NODB
 }
 
-### make sure they have a database setup?
-my $host = $dbh->selectrow_hashref('SELECT * FROM host LIMIT 1');
-if ($dbh->err) {
-    my $err = $dbh->errstr;
-    my $db = ($db_dsn =~ /^DBI:mysql:(.+)$/) ? $1 : '<db_name>';
-    die <<ERR;
-Database error: $err
+my $sversion = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field='schema_version'") || 0;
+unless ($sversion == SCHEMA_VERSION) {
+    my $exp = SCHEMA_VERSION;
+    die "Server's database schema version of $sversion doesn't match expected value of $exp.  Halting.
 
-This is commonly caused by not having the tables created in the database.
-The easiest way to setup your database is to do something like this:
-
-    cat devnotes/sql.txt | mysql -u$db_user -p $db
-
-NOTE: This will OVERWRITE any MogileFS related tablase in the database.
-Please make SURE that this is what you want to do before you do this!
-ERR
-}
-
-### but if it was undef, no hosts?
-if ($host) {
-    # see if they have the get port, else update it
-    unless (exists $host->{http_get_port}) {
-        if ($upgrade) {
-            print STDERR "Updating host table...\n";
-            $dbh->do("ALTER TABLE host ADD COLUMN http_get_port MEDIUMINT UNSIGNED AFTER http_port");
-            die "Error: " . $dbh->errstr . "\n" if $dbh->err;
-        } else {
-            die <<NEEDUPDATE;
-Error: host table out of date.
-
-MogileFS needs to update your database schema.  Please rerun the MogileFS
-server with the --upgrade option if you wish for us to do this.
-
-This will NOT destroy any existing data.
-NEEDUPDATE
-        }
-    }
-
-    # now update to add new columns?
-    unless (exists $host->{altip}) {
-        if ($upgrade) {
-            print STDERR "Updating host table...\n";
-            $dbh->do("ALTER TABLE host ADD COLUMN altip VARCHAR(15) AFTER hostip");
-            die "Error (1): " . $dbh->errstr . "\n" if $dbh->err;
-            $dbh->do("ALTER TABLE host ADD COLUMN altmask VARCHAR(18) AFTER altip");
-            die "Error (2): " . $dbh->errstr . "\n" if $dbh->err;
-            $dbh->do("ALTER TABLE host ADD UNIQUE altip (altip)");
-            die "Error (3): " . $dbh->errstr . "\n" if $dbh->err;
-        } else {
-            die <<NEEDUPDATE;
-Error: host table out of date.
-
-MogileFS needs to update your database schema.  Please rerun the MogileFS
-server with the --upgrade option if you wish for us to do this.
-
-This will NOT destroy any existing data.
-NEEDUPDATE
-        }
-    }
-} else {
-    die <<NOHOSTS;
-Error: no hosts found.
-
-It seems like you don't have any hosts defined in your MogileFS setup.
-This means that we really can't do anything, so we're going to shut down.
-NOHOSTS
-}
-
-### and now check for devices
-my $device = $dbh->selectrow_hashref('SELECT * FROM device LIMIT 1');
-if ($device) {
-    unless (exists $device->{mb_asof}) {
-        if ($upgrade) {
-            print STDERR "Updating device table...\n";
-            $dbh->do("ALTER TABLE device ADD COLUMN mb_asof INT(10) UNSIGNED AFTER mb_used");
-            die "Error: " . $dbh->errstr . "\n" if $dbh->err;
-        } else {
-            die <<NEEDUPDATE;
-Error: device table out of date.
-
-MogileFS needs to update your database schema.  Please rerun the MogileFS
-server with the --upgrade option if you wish for us to do this.
-
-This will NOT destroy any existing data.
-NEEDUPDATE
-        }
-    }
-} else {
-    die <<NODEVICES;
-Error: no devices found.
-
-It seems like you don't have any devices defined in your MogileFS setup.
-This means that we really can't do anything, so we're going to shut down.
-NODEVICES
-}
-
-# see if they have the new fid table
-my $fid = $dbh->selectrow_array('SELECT fid FROM unreachable_fids LIMIT 1');
-if ($dbh->err) {
-    if ($upgrade) {
-        print STDERR "Creating unreachable_fids table...\n";
-        $dbh->do("CREATE TABLE unreachable_fids (" .
-                 "    fid        INT UNSIGNED NOT NULL," .
-                 "    lastupdate INT UNSIGNED NOT NULL," .
-                 "    PRIMARY KEY (fid)," .
-                 "    INDEX (lastupdate)" .
-                 ")");
-        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
-    } else {
-        die <<NEEDUPDATE;
-Error: database schema out of date.
-
-MogileFS needs to update your database schema.  Please rerun the MogileFS
-server with the --upgrade option if you wish for us to do this.
-
-This will NOT destroy any existing data.
-NEEDUPDATE
-
-    }
-}
-
-# now check for an updated tempfile table
-my $devids = $dbh->selectrow_array('SELECT devids FROM tempfile LIMIT 1');
-if ($dbh->err) {
-    if ($upgrade) {
-        print STDERR "Updating tempfile table...\n";
-        $dbh->do("ALTER TABLE tempfile ADD COLUMN devids VARCHAR(60)");
-        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
-    } else {
-        die <<NEEDUPDATE;
-Error: database schema out of date.
-
-MogileFS needs to update your database schema.  Please rerun the MogileFS
-server with the --upgrade option if you wish for us to do this.
-
-This will NOT destroy any existing data.
-NEEDUPDATE
-    }
-}
-
-# verify that we have device weights
-my $devids = $dbh->selectrow_array('SELECT weight FROM device LIMIT 1');
-if ($dbh->err) {
-    if ($upgrade) {
-        print STDERR "Updating device table...\n";
-        $dbh->do("ALTER TABLE device ADD COLUMN weight MEDIUMINT DEFAULT 100 AFTER status");
-        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
-    } else {
-        die <<NEEDUPDATE;
-Error: database schema out of date.
-
-MogileFS needs to update your database schema.  Please rerun the MogileFS
-server with the --upgrade option if you wish for us to do this.
-
-This will NOT destroy any existing data.
-NEEDUPDATE
-    }
-}
-
-# make sure we have the readonly device table enum
-my ($table, $create)  = $dbh->selectrow_array("SHOW CREATE TABLE device");
-if ($create !~ /readonly/) {
-    if ($upgrade) {
-        print STDERR "Updating device table...\n";
-        $dbh->do("ALTER TABLE device MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly')");
-        die "Error: " . $dbh->errstr . "\n" if $dbh->err;
-    } else {
-        die <<NEEDUPDATE;
-Error: database schema out of date.
-
-MogileFS needs to update your database schema.  Please rerun the MogileFS
-server with the --upgrade option if you wish for us to do this.
-
-This will NOT destroy any existing data.
-NEEDUPDATE
-    }
+Please run mogdbsetup to upgrade your schema.\n";
 }
 
 # we're done with this, so undef it before we start forking, as then
@@ -397,7 +231,9 @@ sub validate_dbh {
 }
 
 sub get_dbh {
-    return $dbh ||= DBI->connect($db_dsn, $db_user, $db_pass);
+    return $dbh ||= DBI->connect($db_dsn, $db_user, $db_pass, {
+        PrintError => 0,
+    });
 }
 
 # Install signal handlers.
