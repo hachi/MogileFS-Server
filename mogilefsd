@@ -1273,6 +1273,9 @@ sub invalidate_device_cache {
     $cache_device_summary = undef;
 }
 
+# FIXME: this should propogate to parent, and send messages down to
+# query workers.  otherwise there's coherency issues between threads
+# for a bit.
 sub invalidate_host_cache {
     # so next time it's invalid and won't be used old
     $cache_host_time = 0;
@@ -2703,6 +2706,43 @@ sub cmd_get_devices {
     return $self->ok_line($ret);
 }
 
+sub cmd_create_device {
+    my QueryWorker $self = shift;
+    my $args = shift;
+    my $devs = Mgd::get_device_summary();
+
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line("nodb");
+
+    my $status = $args->{state} || "alive";
+    return $self->err_line("invalid_state") unless $status =~ /^alive|down|readonly$/;
+
+    my $devid = $args->{devid};
+    return $self->err_line("invalid_devid") unless $devid && $devid =~ /^\d+$/;
+
+    my $hostid;
+    Mgd::check_host_cache();
+    if ($args->{hostid} && $args->{hostid} =~ /^\d+$/) {
+        $hostid = $args->{hostid};
+        return $self->err_line("unknown_hostid") unless $Mgd::cache_host{$hostid};
+    } elsif (my $host = $args->{hostname}) {
+        while (my ($hid, $row) = each %Mgd::cache_host) {
+            if ($row->{hostname} eq $host) {
+                $hostid = $hid;
+                last;
+            }
+        }
+        return $self->err_line("unknown_host") unless $hostid;
+    }
+
+    $dbh->do("INSERT INTO device SET devid=?, hostid=?, status=?", undef,
+             $devid, $hostid, $status);
+    if ($dbh->err) {
+        return $self->err_line("existing_devid");
+    }
+    return $self->ok_line;
+}
+
 sub cmd_create_domain {
     my QueryWorker $self = shift;
     my $args = shift;
@@ -2891,7 +2931,7 @@ sub cmd_create_host {
         # now do the update
         $dbh->do("UPDATE host SET $set WHERE hostid = ?", undef, $hid);
     } else {
-        # get the max host id in use
+        # get the max host id in use (FIXME: racy!)
         $hid = $dbh->selectrow_array('SELECT MAX(hostid) FROM host') + 1;
 
         # now insert the new host
