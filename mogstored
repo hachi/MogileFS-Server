@@ -22,7 +22,7 @@ my $mgmt_listen = "0.0.0.0:7501";
 my $docroot     = "/var/mogdata";
 
 my %config_opts = (
-                   'daemonize'    => \$opt_daemonize,
+                   'daemonize|d'  => \$opt_daemonize,
                    'config=s'     => \$opt_config,
                    'httplisten=s' => \$http_listen,
                    'mgmtlisten=s' => \$mgmt_listen,
@@ -113,7 +113,7 @@ Perlbal::Socket::register_callback(1, sub {
     }
 
     foreach my $devnum (@devnum) {
-        my $rval = `df -k -l $path/$devnum`;
+        my $rval = `df -k -l -P $path/$devnum`;
         foreach my $l (split /\r?\n/, $rval) {
             next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
             my ($dev, $total, $used, $avail, $useper, $disk) = ($1, $2, $3, $4, $5, $6);
