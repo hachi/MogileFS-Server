@@ -2390,6 +2390,8 @@ sub cmd_create_open {
     my $dmid = $self->check_domain($args) or return 0;
     my $key = $args->{key} || "";
     my $multi = $args->{multi_dest} ? 1 : 0;
+    my $fid = ($args->{fid} + 0) || undef; # we want it to be undef if they didn't give one
+                                           # and we want to force it numeric...
 
     # get DB handle
     my $dbh = Mgd::get_dbh or
@@ -2425,13 +2427,20 @@ sub cmd_create_open {
 
     # setup the new mapping.  we store the devices that we picked for
     # this file in here, knowing that they might not be used.  create_close
-    # is responsible for actually mapping in file_on.
+    # is responsible for actually mapping in file_on.  NOTE: fid is being
+    # passed in, it's either some number they gave us, or it's going to be
+    # undef which translates into NULL which means to automatically create
+    # one.  that should be fine.
     $dbh->do("INSERT INTO tempfile SET ".
-             " fid=NULL, dmid=?, dkey=?, classid=?, createtime=UNIX_TIMESTAMP(), devids=?",
-             undef, $dmid, $key, $classid, join(',', @dests));
+             " fid=?, dmid=?, dkey=?, classid=?, createtime=UNIX_TIMESTAMP(), devids=?",
+             undef, $fid, $dmid, $key, $classid, join(',', @dests));
     return undef if $dbh->err;
-    my $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
-    return undef unless $fid > 0;
+    unless (defined $fid) {
+        # if they did not give us a fid, then we want to grab the one that was
+        # theoretically automatically generated
+        $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
+    }
+    return undef unless defined $fid && $fid > 0;
 
     # original single path support
     return $self->ok_line({

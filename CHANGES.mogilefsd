@@ -1,3 +1,7 @@
+2006-02-28 (Jr)
+        -- allow create_open to take optional fid parameter which enables you to
+        dictate which fid to use internally and to not rely on MySQL's auto_increment
+
 2006-01-10 (Brad)
         -- make Mgd::get_device_summary() always return all devices, regardless
         of status.
