@@ -2458,12 +2458,14 @@ sub cmd_create_open {
     while ($fid_in_use->($fid)) {
         return $self->err_line("fid_in_use") if $explicit_fid_used;
 
+        # mysql could have been restarted with an empty tempfile table, causing
+        # innodb to reuse a fid number.  so we need to seed the tempfile table...
+
         # get the highest fid from the filetable and insert a dummy row
         $fid = $dbh->selectrow_array("SELECT MAX(fid) FROM file");
         $ins_tempfile->();
 
-        # mysql could have been restarted with an empty tempfile table, causing
-        # innodb to reuse a fid number.  so we need to seed the tempfile table.
+        # then do a normal auto-increment
         $fid = undef;
         return undef unless $ins_tempfile->();
     }
