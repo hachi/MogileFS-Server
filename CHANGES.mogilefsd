@@ -1,3 +1,7 @@
+2006-03-01 (Brad)
+        -- fix dataloss bug when the 'tempfile' table is Innodb and the
+           server is restarted while the tempfile table is empty.
+
 2006-02-28 (Jr)
         -- allow create_open to take optional fid parameter which enables you to
         dictate which fid to use internally and to not rely on MySQL's auto_increment
