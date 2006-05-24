@@ -1,0 +1,18 @@
+* 404 storms during replicating:  (1.5 year old email, might be fixed, verify)
+
+:: [replicate(12648)] Error: Resource http://10.0.0.82:7500/dev15/0/015/693/0015693821.fid failed: HTTP 404
+:: [replicate(12648)] Copier failed replicating 15693821
+:: [replicate(12648)] Error: Resource http://10.0.0.82:7500/dev15/0/015/693/0015693819.fid failed: HTTP 404
+:: [replicate(12648)] Copier failed replicating 15693819
+:: [replicate(12648)] Error: Resource http://10.0.0.81:7500/dev9/0/015/693/0015693844.fid failed: HTTP 404
+:: [replicate(12648)] Copier failed replicating 15693844
+:: [replicate(12646)] Copier failed replicating 15693846
+:: [replicate(12646)] Error: Resource http://10.0.0.82:7500/dev15/0/015/693/0015693821.fid failed: HTTP 404
+:: [replicate(12646)] Copier failed replicating 15693821
+:: [replicate(12646)] Error: Resource http://10.0.0.81:7500/dev9/0/015/693/0015693844.fid failed: HTTP 404
+:: [replicate(12646)] Copier failed replicating 15693844
+:: [replicate(12648)] Error: Resource http://10.0.0.81:7500/dev3/0/015/693/0015693848.fid failed: HTTP 404
+:: [replicate(12650)] Error: Resource http://10.0.0.82:7500/dev15/0/015/693/0015693819.fid failed: HTTP 404
+:: [replicate(12648)] Copier failed replicating 15693848
+......
+
