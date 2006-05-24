@@ -3,6 +3,7 @@
 # MogileFS daemon
 #
 # Copyright 2004, Danga Interactive
+# Copyright 2006, Six Apart Ltd.
 #
 # Authors:
 #   Brad Fitzpatrick <brad@danga.com>
@@ -10,7 +11,7 @@
 #   Mark Smith       <junior@danga.com>
 #
 # License:
-#   undecided.
+#   Artistic/GPLv2, at your choosing.
 #
 
 package Mgd;
@@ -73,7 +74,6 @@ my (
     $mog_root,
     $default_mindevcount,
     $worker_port,
-    $upgrade,
     $min_free_space,
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
@@ -94,7 +94,6 @@ Getopt::Long::GetOptions(
     'w|workers=i'   => \$cmdline{query_jobs},
     'no_http'       => \$cmdline{no_http},
     'workerport=i'  => \$cmdline{worker_port},
-    'upgrade'       => \$upgrade,
     'maxdiskage=i'  => \$cmdline{max_disk_age},
     'minfreespace=i' => \$cmdline{min_free_space},
     'default_mindevcount=i' => \$cmdline{default_mindevcount},
