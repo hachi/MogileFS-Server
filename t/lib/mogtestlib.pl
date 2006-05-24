@@ -2,6 +2,8 @@ use strict;
 use warnings;
 use DBI;
 
+use FindBin qw($Bin);
+
 sub create_temp_db {
     my $dbname = "tmp_mogiletest";
     create_mysql_db($dbname);
@@ -23,6 +25,26 @@ sub create_mysql_db {
 sub drop_mysql_db {
     my $dbname = shift;
     _root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
+}
+
+sub create_temp_tracker {
+    my $db = shift;
+
+    my $pid = fork();
+
+    unless ($pid) {
+        exec("$Bin/../mogilefsd",
+             "--skipconfig",
+             "--dsn=" . $db->dsn,
+             "--dbuser=" . $db->user,
+             "--dbpass=" . $db->pass);
+    }
+
+    for (1..10) {
+        my $pinged = kill 0, $pid;
+        print "ping $pid = $pinged\n";
+        sleep 1;
+    }
 }
 
 package DBHandle;
