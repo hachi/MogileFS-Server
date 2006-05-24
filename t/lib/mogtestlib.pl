@@ -37,6 +37,11 @@ sub dbh {
         or die "Couldn't connect to '$self->{name}' database";
 }
 
+sub name {
+    my $self = shift;
+    return $self->{name};
+}
+
 sub dsn {
     my $self = shift;
     return "DBI:mysql:$self->{name}";
