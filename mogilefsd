@@ -511,6 +511,9 @@ sub error {
 
 sub job_delete {
 
+    my $sleep_for = 0; # we sleep longer and longer until we hit max_sleep
+    my $sleep_max = 5; # max sleep when there's nothing to do.
+
   PASS:
     while (1) {
         validate_dbh();
@@ -543,9 +546,11 @@ sub job_delete {
                                                   "LIMIT $LIMIT");
             my $count = $delmap ? scalar @$delmap : 0;
             unless ($count) {
-                sleep 5;
+                $sleep_for++ if $sleep_for < $sleep_max;
+                sleep $sleep_for;
                 next PASS;
             }
+            $sleep_for = 0;
 
             my %dev_down;  # devid -> 1 (when device times out due to EIO)
             my $done = 0;
