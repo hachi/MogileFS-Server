@@ -2,20 +2,30 @@ package MogileFS::Worker::Query;
 # responds to queries from Mogile clients
 
 use strict;
-use fields qw{sock querystarttime reqid};
+use base 'MogileFS::Worker';
+use fields qw(querystarttime reqid);
 
 sub new {
-    my MogileFS::Worker::Query $self = shift;
+    my ($class, $psock) = @_;
+    my $self = fields::new($class);
+    $self->SUPER::new($psock);
 
-    $self = fields::new($self) unless ref $self;
-    $self->{sock} = shift;
     $self->{querystarttime} = undef;
-    $self->{reqid} = undef;
-
+    $self->{reqid}          = undef;
     return $self;
 }
 
-sub process_line {
+sub work {
+    my $self = shift;
+    my $psock = $self->{psock};
+    while (defined (my $line = <$psock>)) {
+        $line =~ s/[\r\n]+$//;
+        $self->validate_dbh;
+        $self->process_line(\$line);
+    }
+}
+
+sub process_work {
     my MogileFS::Worker::Query $self = shift;
     my $lineref = shift;
 
@@ -973,7 +983,7 @@ sub ok_line {
 
     my $args = shift;
     my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
-    $self->{sock}->write("${id}${delay}OK $argline\r\n");
+    $self->{psock}->write("${id}${delay}OK $argline\r\n");
     return 1;
 }
 
@@ -1021,7 +1031,7 @@ sub err_line {
 
     my $id = defined $self->{reqid} ? "$self->{reqid} " : '';
 
-    $self->{sock}->write("${id}${delay}ERR $err_code " . eurl($err_text) . "\r\n");
+    $self->{psock}->write("${id}${delay}ERR $err_code " . eurl($err_text) . "\r\n");
     return 0;
 }
 

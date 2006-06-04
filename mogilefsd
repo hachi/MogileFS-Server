@@ -40,7 +40,13 @@ use LWP::UserAgent;
 use List::Util;
 
 use lib 'lib';
+use MogileFS::Connection::Client;
+
 use MogileFS::Worker::Query;
+use MogileFS::Worker::Delete;
+use MogileFS::Worker::Replicate;
+use MogileFS::Worker::Reaper;
+use MogileFS::Worker::Monitor;
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
@@ -275,9 +281,8 @@ my $accept_handler = sub {
 
     printf( "Listen child making a Client for %d.\n", fileno($csock) )
         if $DEBUG >= 2;
-    my $client = Client->new($csock);
+    my $client = MogileFS::Connection::Client->new($csock);
     printf( "Client is %s\n", $client ) if $DEBUG >= 2;
-    $client->watch_read(1);
 };
 
 # now setup socket for workers to connect to
@@ -295,7 +300,7 @@ my $waccept_handler = sub {
     my $csock = $wserver->accept();
     return unless $csock;
 
-    printf( "Listen child making a Client for %d.\n", fileno($csock) )
+    printf( "Listen child making a Worker connection for %d.\n", fileno($csock) )
         if $DEBUG >= 2;
     my $client = WorkerConn->new($csock);
     printf( "Child is %s\n", $client ) if $DEBUG >= 2;
@@ -357,18 +362,18 @@ my $spawn_children = sub {
 };
 
 # setup Danga::Socket to start handling connections
-Client->DebugLevel( 3 );
-Client->OtherFds( fileno($server)  => $accept_handler,
+Danga::Socket->DebugLevel( 3 );
+Danga::Socket->OtherFds( fileno($server)  => $accept_handler,
                   fileno($wserver) => $waccept_handler, );
 
 # setup the post event loop callback to spawn jobs, and the timeout
-Client->SetLoopTimeout( 250 ); # 250 milliseconds
-Client->SetPostLoopCallback($spawn_children);
+Danga::Socket->SetLoopTimeout( 250 ); # 250 milliseconds
+Danga::Socket->SetPostLoopCallback($spawn_children);
 
 # and now, actually start listening for events
 eval {
     print( "Starting event loop for frontend job on pid $$.\n" ) if $DEBUG;
-    Client->EventLoop();
+    Danga::Socket->EventLoop();
 };
 
 if ( $@ ) { Mgd::log('err', "crash log: $@"); }
@@ -462,11 +467,20 @@ sub make_new_child {
         or die "Error creating socket to master: $@\n";
     $psock->write("$$ $job\n");
 
+    my $class_suffix = {
+        queryworker => "Query",
+        delete      => "Delete",
+        replicate   => "Replicate",
+        reaper      => "Reaper",
+        monitor     => "Monitor",
+    }->{$job} or
+        die "No worker class defined for job '$job'\n";
+
     # now call our job function
-    no strict 'refs';
-    my $job_handler = *{"job_$job"}{CODE};
-    $job_handler->();
-    exit;
+    my $class = "MogileFS::Worker::" . $class_suffix;
+    my $worker = $class->new($psock);
+    $worker->work;
+    exit 0;
 }
 
 # given (job, pid), record that this worker is about to die
@@ -493,12 +507,6 @@ sub log {
     }
 }
 
-# argument: a string to send to the parent process.
-sub send_to_parent {
-    # send a string to our parent
-    return unless $psock;
-    $psock->write("$_[0]\r\n");
-}
 
 # argument: a string to take as indicating the error that just happened.
 sub error {
@@ -511,123 +519,6 @@ sub error {
         Mgd::log('debug', $_[0]);
     }
     return 0;
-}
-
-sub job_delete {
-
-    my $sleep_for = 0; # we sleep longer and longer until we hit max_sleep
-    my $sleep_max = 5; # max sleep when there's nothing to do.
-
-  PASS:
-    while (1) {
-        validate_dbh();
-        my $dbh = get_dbh();
-
-        # see if we have anything from the parent
-        my $start_time = time();
-        my $end_time   = $start_time + 5;
-        send_to_parent('del_i_looped');
-        while (defined (my $line = <$psock>)) {
-            $line =~ s/\r?\n$//;
-            last if $line eq '.';
-            if ($line eq 'shutdown') {
-                exit 0;
-            }
-        }
-
-        # we select 1000 but only do a random 100 of them, to allow
-        # for stateless paralleism
-        my $LIMIT     = 1000;
-        my $PER_BATCH = 100;
-
-        while (1) {
-            # report in to parent periodically
-            next PASS if time() >= $end_time;
-
-            my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
-                                                  "FROM file_to_delete fd ".
-                                                  "LEFT JOIN file_on fo ON fd.fid=fo.fid ".
-                                                  "LIMIT $LIMIT");
-            my $count = $delmap ? scalar @$delmap : 0;
-            unless ($count) {
-                $sleep_for++ if $sleep_for < $sleep_max;
-                sleep $sleep_for;
-                next PASS;
-            }
-            $sleep_for = 0;
-
-            my %dev_down;  # devid -> 1 (when device times out due to EIO)
-            my $done = 0;
-            foreach my $dm (List::Util::shuffle(@$delmap)) {
-                my ($fid, $devid) = @$dm;
-
-                # if no device is returned from the query above, that
-                # means there are no file_on rows for it, and we can consider
-                # it now deleted.
-                unless (defined $devid) {
-                    $dbh->do("DELETE FROM file_to_delete WHERE fid=?", undef, $fid);
-                    next;
-                }
-
-                # don't try to delete from this device if we earlier
-                # found it to be timing out with EIO
-                next if $dev_down{$devid};
-
-                last if ++$done > $PER_BATCH;
-
-                my $path = make_path($devid, $fid);
-                my $rv = 0;
-                if (my $urlref = Mgd::is_url($path)) {
-                    # hit up the server and delete it
-                    my $sock = IO::Socket::INET->new(PeerAddr => $urlref->[0],
-                                                     PeerPort => $urlref->[1],
-                                                     Timeout => 2);
-                    unless ($sock) {
-                        # timeout or something, mark this device as down for now and move on
-                        $dev_down{$devid} = 1;
-                        next;
-                    }
-
-                    # send delete request
-                    error("Sending delete for $path") if $Mgd::DEBUG >= 2;
-                    $sock->write("DELETE $urlref->[2] HTTP/1.0\r\n\r\n");
-                    my $response = <$sock>;  # FIXME: could hang
-                    if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-                        if (($1 >= 200 && $1 <= 299) || $1 == 404) {
-                            # effectively means all went well
-                            $rv = 1;
-                        } else {
-                            # remote file system error?  mark node as down
-                            error("Error: unlink failure: $path: $1");
-                            $dev_down{$devid} = 1;
-                            next;
-                        }
-                    } else {
-                        error("Error: unknown response line: $response");
-                    }
-                } else {
-                    # do normal unlink
-                    $rv = unlink "$Mgd::MOG_ROOT/$path";
-
-                    # device is timing out.  take note of it and
-                    # continue dealing with other deletes
-                    if (! $rv) {
-                        if ($! == EIO) {
-                            $dev_down{$devid} = 1;
-                            next;
-                        } elsif ($! == ENOENT) {
-                            $rv = 1;  # count non-existent file as deleted
-                        }
-                    }
-                }
-
-                # if we deleted it, or it didn't exist, consider it
-                # deleted.
-                $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
-                         undef, $fid, $devid) if $rv;
-            }
-        }
-    }
 }
 
 # copies a file from one Perlbal to another utilizing HTTP
@@ -834,306 +725,6 @@ sub get_mindevcounts {
     # return ref to hash
     return \%min;
 }
-
-sub job_monitor {
-    my $parse_parent_response = sub {
-        # now see what was in our message queue
-        while (defined (my $line = <$psock>)) {
-            $line =~ s/\r?\n$//;
-            last if $line eq '.';
-
-            # now find out what command this is?
-            if ($line eq 'shutdown') {
-                exit 0;
-            }
-        }
-    };
-
-    while (1) {
-        sleep 15;
-
-        # get db and note we're starting a run
-        error("Monitor running; scanning usage files")
-            if $Mgd::DEBUG >= 1;
-        validate_dbh();
-        my $dbh = get_dbh() or return 0;
-
-        # general report in to parent
-        send_to_parent('monitor_ping');
-        $parse_parent_response->();
-
-        # get a current list of devices
-        my $devs = Mgd::get_device_summary();
-        next unless $devs && %$devs;
-
-        # now iterate over devices
-        foreach my $dev (values %$devs) {
-            next if $dev->{status} =~ /^dead|down$/;
-
-            my $host = $Mgd::cache_host{$dev->{hostid}};
-            my $port = $host->{http_get_port} || $host->{http_port};
-            my $url = "http://$host->{hostip}:$port/dev$dev->{devid}/usage";
-
-            # now try to get the data with a short timeout
-            my $ua = LWP::UserAgent->new( timeout => 2 );
-            my $response = $ua->get($url);
-
-            unless ($response->is_success) {
-                error("Failed getting dev$dev->{devid}: " . $response->status_line);
-                next;
-            }
-
-            my %stats;
-            my $data = $response->content;
-            foreach (split(/\r?\n/, $data)) {
-                next unless /^(\w+)\s*:\s*(.+)$/;
-                $stats{$1} = $2;
-            }
-
-            my ($used, $total) = ($stats{used}, $stats{total});
-            unless ($used && $total) {
-                error("dev$dev->{devid} reports used = $used, total = $total, error?");
-                next;
-            }
-
-            # bytes => megabytes
-            $used /= 1024;
-            $total /= 1024;
-
-            $dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
-                     "WHERE devid = ?", undef, int($total), int($used), $dev->{devid});
-            if ($dbh->err) {
-                error("Database error in update query: " . $dbh->errstr);
-                next;
-            }
-
-            error("dev$dev->{devid}: used = $used, total = $total")
-                if $Mgd::DEBUG >= 1;
-        }
-    }
-}
-
-sub job_reaper {
-    my $parse_parent_response = sub {
-        # now see what was in our message queue
-        while (defined (my $line = <$psock>)) {
-            $line =~ s/\r?\n$//;
-            last if $line eq '.';
-
-            # now find out what command this is?
-            if ($line eq 'shutdown') {
-                exit 0;
-            }
-        }
-    };
-
-    while (1) {
-        sleep 10;
-
-        # get db and note we're starting a run
-        error("Reaper running; looking for dead devices")
-            if $Mgd::DEBUG >= 1;
-        validate_dbh();
-        my $dbh = get_dbh() or return 0;
-
-        # general report in to parent
-        send_to_parent('reaper_ping');
-        $parse_parent_response->();
-
-        # get a current list of devices
-        my $devs = Mgd::get_device_summary();
-        my @deaddevs = grep { $_->{status} =~ /^dead$/ } values %$devs;
-        next unless @deaddevs;
-
-        # now iterate over dead devices
-        foreach my $dev (@deaddevs) {
-            my $devid = $dev->{devid};
-
-            # look for files on this device
-            my $fids = $dbh->selectcol_arrayref('SELECT fid FROM file_on WHERE devid = ? LIMIT 1000',
-                                                undef, $devid);
-            if ($dbh->err) {
-                error("Error selecting jobs to reap: " . $dbh->errstr);
-                next;
-            }
-            next unless $fids && @$fids;
-
-            # note we got some
-            error("Found " . scalar(@$fids) . " files on dead device $devid");
-
-            # now iterate
-            foreach my $fid (@$fids) {
-                $dbh->do('DELETE FROM file_on WHERE fid = ? AND devid = ?',
-                         undef, $fid, $devid);
-                if ($dbh->err) {
-                    error("Error deleting from file_on (file $fid, device $devid): " . $dbh->errstr);
-                    next;
-                }
-
-                # now update the fid count
-                unless (Mgd::update_fid_devcount($fid)) {
-                    error("Error updating fid $fid devcount");
-                    next;
-                }
-
-                # if debugging on, note this is done
-                error("Reaper noted fid $fid no longer on device $devid")
-                    if $Mgd::DEBUG >= 2;
-            }
-        }
-    }
-}
-
-sub job_replicate {
-    my $parse_parent_response = sub {
-        # now see what was in our message queue
-        while (defined (my $line = <$psock>)) {
-            $line =~ s/\r?\n$//;
-            last if $line eq '.';
-
-            # now find out what command this is?
-            if ($line =~ /^repl_was_done (\d+)/ && $_[0]) {
-                delete $_[0]->{$1};
-            } elsif ($line eq 'shutdown') {
-                exit 0;
-            }
-        }
-    };
-
-    # { fid => lastcheck }; instructs us not to replicate this fid... we will clear
-    # out fids from this list that are expired
-    my %fidfailure;
-
-    # { fid => 1 }; used to keep track of fids we find in the unreachable_fids table
-    my %unreachable;
-
-    my $sleep = 2;
-    while (1) {
-        sleep $sleep;
-        validate_dbh();
-        my $dbh = get_dbh() or return 0;
-
-        # general report in to parent
-        send_to_parent('repl_ping');
-        $parse_parent_response->(undef);
-
-        # start off assuming that we're going to get everything replicated and then take a break
-        $sleep = 2;
-
-        # update our unreachable fid list... we consider them good for 15 minutes
-        my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
-        die $dbh->errstr if $dbh->err;
-        foreach my $r (@{$urfids || []}) {
-            my $nv = $r->[1] + 900;
-            unless ($fidfailure{$r->[0]} && $fidfailure{$r->[0]} < $nv) {
-                # given that we might have set it below to a time past the unreachable
-                # 15 minute timeout, we want to only overwrite %fidfailure's idea of
-                # the expiration time if we are extending it
-                $fidfailure{$r->[0]} = $nv;
-            }
-            $unreachable{$r->[0]} = 1;
-        }
-
-        # get the min dev counts
-        my %min = %{ Mgd::get_mindevcounts() };
-
-        # iterate through each domain, replicating its contents
-        foreach my $dmid (keys %min) {
-            # iterate through each class, including the implicit class 0
-            while (my ($classid, $min) = each %{$min{$dmid}}) {
-                error("Checking replication for dmid=$dmid, classid=$classid, min=$min")
-                    if $Mgd::DEBUG >= 1;
-
-                my $LIMIT = 1000;
-
-                # try going from devcount of 1 up to devcount of $min-1
-                my %fidtodo; # fid => 1
-                my $fixed = 0;
-                my $attempted = 0;
-                my $devcount = 1;
-                while ($fixed < $LIMIT && $devcount < $min) {
-                    my $now = time();
-                    my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
-                                                        "AND devcount = ? AND length IS NOT NULL ".
-                                                        "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
-                    die $dbh->errstr if $dbh->err;
-                    $fidtodo{$_} = 1 foreach @$fids;
-
-                    # increase devcount so we try to replicate the files at the next devcount
-                    $devcount++;
-
-                    # see if we have any files to replicate
-                    my $count = $fids ? scalar @$fids : 0;
-                    error("  found $count for dmid=$dmid/classid=$classid/min=$min")
-                        if $Mgd::DEBUG >= 1;
-                    next unless $count;
-
-                    # randomize the list so multiple daemons/threads working on
-                    # replicate at the same time don't all fight over the
-                    # same fids to move
-                    my @randfids = randlist(@$fids);
-
-                    error("Need to replicate: $dmid/$classid: @$fids") if $Mgd::DEBUG >= 2;
-                    foreach my $fid (@randfids) {
-                        # now replicate this fid
-                        $attempted++;
-                        next unless $fidtodo{$fid};
-
-                        if ($fidfailure{$fid}) {
-                            if ($fidfailure{$fid} < $now) {
-                                delete $fidfailure{$fid};
-                            } else {
-                                next;
-                            }
-                        }
-
-                        if (my $status = replicate($dbh, $fid, $min)) {
-                            # $status is either 0 (failure, handled below), 1 (success, we actually
-                            # replicated this file), or 2 (success, but someone else replicated it).
-                            # so if it's 2, we just want to go to the next fid.  this file is done.
-                            next if $status == 2;
-
-                            # if it was no longer reachable, mark it reachable
-                            if (delete $unreachable{$fid}) {
-                                $dbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
-                                die $dbh->errstr if $dbh->err;
-                            }
-
-                            # housekeeping
-                            $fixed++;
-                            send_to_parent("repl_i_did $fid");
-                            $parse_parent_response->(\%fidtodo);
-
-                            # status update
-                            if ($fixed % 20 == 0) {
-                                my $ratio = $fixed/$attempted*100;
-                                error(sprintf("replicated=$fixed, attempted=$attempted, ratio=%.2f%%", $ratio))
-                                    if $fixed % 20 == 0;
-                            }
-                        } else {
-                            # failed in replicate, don't retry for a minute
-                            $fidfailure{$fid} = $now + 60;
-                        }
-                    }
-                }
-
-                # if we did 1000, we just want to jump to the next pass through all domains and classes without pausing
-                $sleep = 0 if $fixed >= $LIMIT;
-            }
-        }
-    }
-}
-
-sub job_queryworker {
-    # process lines of input, blocking.
-    my $worker = MogileFS::Worker::Query->new($psock);
-    while (defined (my $line = <$psock>)) {
-        $line =~ s/[\r\n]+$//;
-        validate_dbh();
-        $worker->process_line(\$line);
-    }
-}
-
 
 #####################################################################
 ### S E R V E R   A P I   F U N C T I O N S
@@ -1692,51 +1283,6 @@ sub randlist
 }
 
 
-#####################################################################
-### C L I E N T   C L A S S
-### A client is a user connection for sending requests to us.  Requests
-### can either be normal user requests to be sent to a QueryWorker
-### or management requests that start with a !.
-#####################################################################
-package Client;
-
-use Danga::Socket ();
-use base qw{Danga::Socket};
-
-use fields qw{read_buf};
-
-sub new {
-    my Client $self = shift;
-    $self = fields::new($self) unless ref $self;
-    $self->SUPER::new( @_ );
-    return $self;
-}
-
-# Client
-sub event_read {
-    my Client $self = shift;
-
-    my $bref = $self->read(1024);
-    return $self->close() unless defined $bref;
-    $self->{read_buf} .= $$bref;
-
-    while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
-        next unless length $1;
-        Frontend->HandleClientRequest($self, $1);
-    }
-}
-
-# Client
-sub event_err { my $self = shift; $self->close; }
-sub event_hup { my $self = shift; $self->close; }
-
-# just note that we've died
-sub close {
-    # mark us as being dead
-    my Client $self = shift;
-    Frontend->NoteDeadClient($self);
-    $self->SUPER::close(@_);
-}
 
 
 #####################################################################
@@ -1849,7 +1395,7 @@ sub SetAsChild {
     %ErrorsTo = ();
 
     # and now kill off our event loop so that we don't waste time
-    Client->SetPostLoopCallback(sub { return 0; });
+    Danga::Socket->SetPostLoopCallback(sub { return 0; });
 }
 
 # called when a child has died.  a child is someone doing a job for us,
@@ -1868,7 +1414,7 @@ sub NoteDeadChild {
 # we just want to remove them from the error reporting interface, if
 # they happen to be part of it.
 sub NoteDeadClient {
-    my Client $client = $_[1];
+    my $client = $_[1];
     delete $ErrorsTo{$client->{fd}};
 }
 
@@ -1876,11 +1422,10 @@ sub NoteDeadClient {
 # so it's pretty simple that basically we just spit it out to folks listening
 # to errors
 sub NoteError {
-    my Client $client;
     return unless %ErrorsTo;
 
     my $msg = ":: ${$_[1]}\r\n";
-    foreach $client (values %ErrorsTo) {
+    foreach my $client (values %ErrorsTo) {
         $client->write(\$msg);
     }
 }
@@ -1950,7 +1495,7 @@ sub HandleQueryWorkerResponse {
     return unless $worker && $Mappings{$worker->{fd}};
 
     # get the client we're working with (if any)
-    my Client $client = $Mappings{$worker->{fd}}->[0];
+    my $client = $Mappings{$worker->{fd}}->[0];
 
     # if we have no client, then we just got a standard message from
     # the queryworker and need to pass it up the line
@@ -2028,7 +1573,7 @@ sub ProcessQueues {
 
 # send short descriptions of commands we support to the user
 sub SendHelp {
-    my Client $client = $_[1];
+    my $client = $_[1];
 
     # not supported yet
     #my $whaton = $_[2];
@@ -2076,7 +1621,7 @@ sub HandleClientRequest {
 
     # quick check to see if we the parent should handle this
     if (substr($_[2], 0, 1) eq '!') {
-        my Client $client = $_[1];
+        my MogileFS::Connection::Client $client = $_[1];
         my ($cmd, $args) = ($_[2] =~ m/^!(.+?)(?:\s+(.+))?$/);
 
         my @out;
@@ -2236,7 +1781,7 @@ sub HandleChildRequest {
         # send out what we have queued up for it
         $child->drain_queue;
 
-    } elsif ($cmd =~ /^del_i_looped/) {
+    } elsif ($cmd =~ /^request_orders/) {
         $check_job->();
 
     } elsif ($cmd =~ /^monitor_ping/) {
