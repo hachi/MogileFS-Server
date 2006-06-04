@@ -41,6 +41,7 @@ use List::Util;
 
 use lib 'lib';
 use MogileFS::Connection::Client;
+use MogileFS::Connection::Worker;
 
 use MogileFS::Worker::Query;
 use MogileFS::Worker::Delete;
@@ -302,7 +303,7 @@ my $waccept_handler = sub {
 
     printf( "Listen child making a Worker connection for %d.\n", fileno($csock) )
         if $DEBUG >= 2;
-    my $client = WorkerConn->new($csock);
+    my $client = MogileFS::Connection::Worker->new($csock);
     printf( "Child is %s\n", $client ) if $DEBUG >= 2;
     Frontend->RegisterWorkerConn($client);
 };
@@ -1282,90 +1283,6 @@ sub randlist
     return @rlist;
 }
 
-
-
-
-#####################################################################
-### W O R K E R C O N N   C L A S S
-### This class maintains a connection to one of our various classes
-### of workers.
-#####################################################################
-package WorkerConn;
-
-use Danga::Socket ();
-use base qw{Danga::Socket};
-
-use fields qw{read_buf job pid cmd_buf reqid};
-
-sub new {
-    my WorkerConn $self = shift;
-    $self = fields::new($self) unless ref $self;
-    $self->SUPER::new( @_ );
-
-    # mark as not a worker by default
-    $self->{pid} = 0;
-    $self->{reqid} = 0;
-    $self->{job} = undef;
-    $self->{cmd_buf} = [];
-
-    return $self;
-}
-
-sub event_read {
-    my WorkerConn $self = shift;
-
-    my $bref = $self->read(1024);
-    return $self->close() unless defined $bref;
-    $self->{read_buf} .= $$bref;
-
-    while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
-        my $line = $1;
-        if ($self->job eq 'queryworker' && (substr($line, 0, 5) ne 'error')) {
-            Frontend->HandleQueryWorkerResponse($self, $line);
-        } else {
-            Frontend->HandleChildRequest($self, $line);
-        }
-    }
-}
-
-sub job {
-    my WorkerConn $self = shift;
-    return $self->{job} unless @_;
-    return $self->{job} = shift;
-}
-
-sub pid {
-    my WorkerConn $self = shift;
-    return $self->{pid} unless @_;
-    return $self->{pid} = shift;
-}
-
-sub event_hup { my $self = shift; $self->close; }
-
-sub close {
-    # mark us as being dead
-    my WorkerConn $self = shift;
-    Frontend->NoteDeadWorkerConn($self);
-    $self->SUPER::close(@_);
-}
-
-sub enqueue_line {
-    my WorkerConn $self = $_[0];
-    return if $self->job eq 'queryworker'; # they don't use this queueing
-    my $msg = "$_[1]\r\n";
-    push @{$self->{cmd_buf}}, $msg;
-}
-
-sub drain_queue {
-    my WorkerConn $worker = $_[0];
-    foreach my $cmd (@{$worker->{cmd_buf}}) {
-        $worker->write($cmd);
-    }
-    $worker->write(".\r\n");
-    $worker->{cmd_buf} = [];
-}
-
-
 #####################################################################
 ### F R O N T E N D  C L A S S
 ### This class handles keeping lists of workers and clients and
@@ -1434,7 +1351,7 @@ sub NoteError {
 # we're not sure what type of child, so just set it in read mode until
 # they tell us what they are
 sub RegisterWorkerConn {
-    my WorkerConn $worker = $_[1];
+    my MogileFS::Connection::Worker $worker = $_[1];
     $worker->watch_read(1);
 }
 
@@ -1443,7 +1360,7 @@ sub RegisterWorkerConn {
 sub RegisterQueryWorker {
     # basically take the worker, mark it as a worker, enqueue it,
     # and then try to process the outstanding queues
-    my WorkerConn $worker = $_[1];
+    my MogileFS::Connection::Worker $worker = $_[1];
     Frontend->EnqueueQueryWorker($worker);
 }
 
@@ -1451,7 +1368,7 @@ sub RegisterQueryWorker {
 # the mapping list for this fd.
 sub EnqueueQueryWorker {
     # first arg is class, second is worker
-    my WorkerConn $worker = $_[1];
+    my MogileFS::Connection::Worker $worker = $_[1];
     delete $Mappings{$worker->{fd}};
 
     # see if we need to kill off some workers
@@ -1470,7 +1387,7 @@ sub EnqueueQueryWorker {
 # object, tells it to die, marks us as having requested its death, and decrements
 # the count of running jobs.
 sub AskWorkerToDie {
-    my WorkerConn $worker = $_[1];
+    my MogileFS::Connection::Worker $worker = $_[1];
     $worker->write("shutdown\r\n");
     Mgd::note_pending_death($worker->job, $worker->pid);
 }
@@ -1479,7 +1396,7 @@ sub AskWorkerToDie {
 # continues killing until we run out of folks to kill.
 sub CullQueryWorkers {
     while (@QueryWorkerQueue && Mgd::job_needs_reduction('queryworker')) {
-        my WorkerConn $worker = shift @QueryWorkerQueue;
+        my MogileFS::Connection::Worker $worker = shift @QueryWorkerQueue;
         Frontend->AskWorkerToDie($worker);
     }
 }
@@ -1491,7 +1408,7 @@ sub HandleQueryWorkerResponse {
     return Mgd::error("Frontend (Child) got worker response: $_[2]") if $IsChild;
 
     # got a response from a worker
-    my WorkerConn $worker = $_[1];
+    my MogileFS::Connection::Worker $worker = $_[1];
     return unless $worker && $Mappings{$worker->{fd}};
 
     # get the client we're working with (if any)
@@ -1553,7 +1470,7 @@ sub ProcessQueues {
         next unless $clref;
 
         # get worker and make sure it's not closed already
-        my WorkerConn $worker = shift @QueryWorkerQueue;
+        my MogileFS::Connection::Worker $worker = shift @QueryWorkerQueue;
         if (!defined $worker || $worker->{closed}) {
             unshift @ClientQueue, $clref;
             next;
@@ -1745,7 +1662,7 @@ sub HandleChildRequest {
     # if they have no job set, then their first line is what job they are
     # and not a command.  they also specify their pid, just so we know what
     # connection goes with what pid, in case it's ever useful information.
-    my WorkerConn $child = $_[1];
+    my MogileFS::Connection::Worker $child = $_[1];
     unless (defined $child->job) {
         my ($pid, $job) = ($_[2] =~ /^(\d+)\s+(.+)/);
         $child->job($job);
@@ -1839,7 +1756,7 @@ sub NoteDeadWorkerConn {
     return if $IsChild;
 
     # get parms and error check
-    my WorkerConn $worker = $_[1];
+    my MogileFS::Connection::Worker $worker = $_[1];
     return unless $worker;
 
     # if there's a mapping for this worker's fd, they had a job that didn't get done
