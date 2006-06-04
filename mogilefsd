@@ -37,6 +37,7 @@ use Socket qw(MSG_NOSIGNAL);
 use Time::HiRes qw(gettimeofday tv_interval);
 use Net::Netmask;
 use LWP::UserAgent;
+use List::Util;
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
@@ -512,11 +513,12 @@ sub job_delete {
 
   PASS:
     while (1) {
-        sleep 9;
         validate_dbh();
         my $dbh = get_dbh();
 
         # see if we have anything from the parent
+        my $start_time = time();
+        my $end_time   = $start_time + 5;
         send_to_parent('del_i_looped');
         while (defined (my $line = <$psock>)) {
             $line =~ s/\r?\n$//;
@@ -526,33 +528,43 @@ sub job_delete {
             }
         }
 
-        my $LIMIT = 500;
+        # we select 1000 but only do a random 100 of them, to allow
+        # for stateless paralleism
+        my $LIMIT     = 1000;
+        my $PER_BATCH = 100;
+
         while (1) {
-            sleep 1;
+            # report in to parent periodically
+            next PASS if time() >= $end_time;
+
             my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
                                                   "FROM file_to_delete fd ".
                                                   "LEFT JOIN file_on fo ON fd.fid=fo.fid ".
                                                   "LIMIT $LIMIT");
             my $count = $delmap ? scalar @$delmap : 0;
-            next PASS unless $count;
+            unless ($count) {
+                sleep 5;
+                next PASS;
+            }
 
-            my %done;  # fid -> 1 (when fid is deleted from all devices)
             my %dev_down;  # devid -> 1 (when device times out due to EIO)
-
-            foreach my $dm (@$delmap) {
+            my $done = 0;
+            foreach my $dm (List::Util::shuffle(@$delmap)) {
                 my ($fid, $devid) = @$dm;
 
                 # if no device is returned from the query above, that
                 # means there are no file_on rows for it, and we can consider
                 # it now deleted.
-                unless ($devid) {
-                    $done{$fid} = 1;
+                unless (defined $devid) {
+                    $dbh->do("DELETE FROM file_to_delete WHERE fid=?", undef, $fid);
                     next;
                 }
 
                 # don't try to delete from this device if we earlier
                 # found it to be timing out with EIO
                 next if $dev_down{$devid};
+
+                last if ++$done > $PER_BATCH;
 
                 my $path = make_path($devid, $fid);
                 my $rv = 0;
@@ -570,7 +582,7 @@ sub job_delete {
                     # send delete request
                     error("Sending delete for $path") if $Mgd::DEBUG >= 2;
                     $sock->write("DELETE $urlref->[2] HTTP/1.0\r\n\r\n");
-                    my $response = <$sock>;
+                    my $response = <$sock>;  # FIXME: could hang
                     if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
                         if (($1 >= 200 && $1 <= 299) || $1 == 404) {
                             # effectively means all went well
@@ -605,15 +617,7 @@ sub job_delete {
                 $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
                          undef, $fid, $devid) if $rv;
             }
-
-            if (%done) {
-                my $in = join(',', keys %done);
-                $dbh->do("DELETE FROM file_to_delete WHERE fid IN ($in)");
-            }
-
-            next PASS if $count < $LIMIT;
         }
-
     }
 }
 
