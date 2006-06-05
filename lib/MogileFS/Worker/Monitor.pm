@@ -31,6 +31,9 @@ sub work {
         }
     };
 
+    my $update_db_every = 15;
+    my %last_db_update;  # devid -> time.  update db less often than poll interval.
+
     every(2.5, sub {
 
         # get db and note we're starting a run
@@ -48,8 +51,10 @@ sub work {
         next unless $devs && %$devs;
 
         # now iterate over devices
+        my %skip_host;  # hostid -> 1 if already noted dead.
         foreach my $dev (values %$devs) {
             next if $dev->{status} =~ /^dead|down$/;
+            next if $skip_host{$dev->{hostid}};
 
             my $host = $Mgd::cache_host{$dev->{hostid}};
             my $port = $host->{http_get_port} || $host->{http_port};
@@ -66,12 +71,15 @@ sub work {
             unless ($response->is_success) {
                 my $failed_after = $res_time - $start_time;
                 if ($failed_after < 0.5) {
+                    $self->broadcast_device_error($dev->{devid});
                     error("Port $port not listening on otherwise-alive machine $host->{hostip}?  Error was: " . $response->status_line);
                 } else {
                     $failed_after = sprintf("%.02f", $failed_after);
+                    $self->broadcast_host_error($dev->{hostid});
+                    $skip_host{$dev->{hostid}} = 1;
                     error("Timeout contacting machine $host->{hostip} for dev $dev->{devid}:  took $failed_after seconds out of $timeout allowed");
                 }
-                return;
+                next;
             }
 
             my %stats;
@@ -87,17 +95,23 @@ sub work {
                 next;
             }
 
-            # bytes => megabytes
-            $used /= 1024;
-            $total /= 1024;
-
-            $dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
-                     "WHERE devid = ?", undef, int($total), int($used), $dev->{devid});
-            if ($dbh->err) {
-                error("Database error in update query: " . $dbh->errstr);
-                next;
+            # only update database every ~15 seconds per device
+            my $last_update = $last_db_update{$dev->{devid}} || 0;
+            my $next_update = $last_update + $update_db_every;
+            my $now = time();
+            if ($now >= $next_update) {
+                $dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
+                         "WHERE devid = ?", undef, int($total / 1024), int($used / 1024), $dev->{devid});
+                if ($dbh->err) {
+                    error("Database error in update query: " . $dbh->errstr);
+                    next;
+                }
+                $last_db_update{$dev->{devid}} = $now;
             }
 
+            # all's good
+            $self->broadcast_host_alive($dev->{hostid});
+            $self->broadcast_device_alive($dev->{devid});
             error("dev$dev->{devid}: used = $used, total = $total")
                 if $Mgd::DEBUG >= 1;
         }

@@ -563,6 +563,10 @@ sub HandleChildRequest {
         # send out what we have queued up for it
         $child->drain_queue;
 
+    } elsif ($cmd =~ /^state_change (\w+) (\d+) (\w+)/) {
+        my ($what, $whatid, $state) = @_;
+        state_change($what, $whatid, $state);
+
     } elsif ($cmd =~ /^request_orders/) {
         $check_job->();
 
@@ -654,6 +658,12 @@ sub job_needs_reduction {
 
 sub is_child {
     return $IsChild;
+}
+
+sub state_change {
+    my ($what, $whatid, $state) = @_;
+    warn "STATE CHANGE: $what<$whatid> = $state\n";
+    #MogileFS::ProcManager->SendToChildrenByJob('replicate', "repl_unreachable $1", $child);
 }
 
 1;
