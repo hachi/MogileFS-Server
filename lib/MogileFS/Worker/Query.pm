@@ -803,18 +803,39 @@ sub cmd_get_paths {
     my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dsum->{$_}->{weight} ?
                                                      $dsum->{$_}->{weight} : 100 ] } @$devids);
 
+    # keep one partially-bogus path around just in case we have nothing else to send.
+    my $backup_path;
+
     # construct result paths
     foreach my $devid (@list) {
         my $dev = $dsum->{$devid};
         next unless $dev && ($dev->{status} eq "alive" || $dev->{status} eq "readonly");
 
         my $path = Mgd::make_get_path($devid, $fid);
-        next unless $ret->{paths} || $args->{noverify} ||
-                        (Mgd::get_file_size($path) == $filerow->{length});
+        my $currently_down =
+            MogileFS->observed_state("host", $dev->{hostid}) eq "dead" ||
+            MogileFS->observed_state("device", $dev->{devid}) eq "dead";
+
+        if ($currently_down) {
+            $backup_path = $path;
+            next;
+        }
+
+        # only verify size one first one, and never verify if they've asked not to
+        next unless
+            $ret->{paths}        ||
+            $args->{noverify}    ||
+            Mgd::get_file_size($path) == $filerow->{length};
 
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;
         last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
+    }
+
+    # use our backup path if all else fails
+    if ($backup_path && ! $ret->{paths}) {
+        $ret->{paths} = 1;
+        $ret->{path1} = $backup_path;
     }
 
     return $self->ok_line($ret);
