@@ -25,7 +25,7 @@ sub work {
     }
 }
 
-sub process_work {
+sub process_line {
     my MogileFS::Worker::Query $self = shift;
     my $lineref = shift;
 
