@@ -280,6 +280,7 @@ sub HandleQueryWorkerResponse {
 
     # get the client we're working with (if any)
     my $client = $Mappings{$worker->{fd}}->[0];
+    my $line = $_[2];
 
     # if we have no client, then we just got a standard message from
     # the queryworker and need to pass it up the line
@@ -289,12 +290,19 @@ sub HandleQueryWorkerResponse {
     # away, just reenqueue this query worker
     return MogileFS::ProcManager->EnqueueQueryWorker($worker) if $client->{closed};
 
+    # out-of-band messages (not replies to requests) start with a colon:
+    if ($line =~ /^:state_change (\w+) (\d+) (\w+)/) {
+        my ($what, $whatid, $state) = ($1, $2, $3);
+        state_change($what, $whatid, $state);
+        return;
+    }
+
     # <numeric id> [client-side time to complete] <response>
     my ($time, $id, $res);
-    if ($_[2] =~ /^(\d+-\d+)\s+(\d+\.\d+)\s+(.+)$/) {
+    if ($line =~ /^(\d+-\d+)\s+(\d+\.\d+)\s+(.+)$/) {
         # save time and response for use later
         ($id, $time, $res) = ($1, $2, $3);
-    } elsif ($_[2] =~ /^(\d+-\d+)\s(.+)$/) {
+    } elsif ($line =~ /^(\d+-\d+)\s(.+)$/) {
         # didn't match, must be in a different format?
         ($id, $time, $res) = ($1, 'undef', $2);
     }
@@ -565,7 +573,7 @@ sub HandleChildRequest {
         # send out what we have queued up for it
         $child->drain_queue;
 
-    } elsif ($cmd =~ /^state_change (\w+) (\d+) (\w+)/) {
+    } elsif ($cmd =~ /^:state_change (\w+) (\d+) (\w+)/) {
         my ($what, $whatid, $state) = ($1, $2, $3);
         state_change($what, $whatid, $state, $child);
 
