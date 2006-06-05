@@ -72,7 +72,7 @@ sub work {
 
                 last if ++$done > $PER_BATCH;
 
-                my $path = make_path($devid, $fid);
+                my $path = Mgd::make_path($devid, $fid);
                 my $rv = 0;
                 if (my $urlref = Mgd::is_url($path)) {
                     # hit up the server and delete it
