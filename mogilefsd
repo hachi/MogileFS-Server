@@ -415,9 +415,12 @@ sub get_file_size {
     # sub to parse the response from $sock.  returns undef on error,
     # or otherwise the size of the $path in bytes.
     my $node_timeout = MogileFS->config("node_timeout");
+    my $read_timed_out = 0;
+
     my $parse_response = sub {
         # give the socket 3 seconds to become readable
         unless (Mgd::wait_for_readability(fileno($sock), $node_timeout)) {
+            $read_timed_out = 1;
             close($sock);
             return undef;
         }
@@ -443,13 +446,14 @@ sub get_file_size {
             # success
             my $size = $parse_response->();
             return $size if defined $size;
+            undef $streamcache{$host};
         }
     }
-
     # try creating a connection to the stream
-    unless ($rv) {
+    else {
         $sock = IO::Socket::INET->new(PeerAddr => $host,
-                                      PeerPort => MogileFS->config("mogstored_stream_port"), Timeout => 5);
+                                      PeerPort => MogileFS->config("mogstored_stream_port"), Timeout => 2);
+        # FIXME: cache that we can't connect to the mogstored stream port for people using only apache/dav
         $streamcache{$host} = $sock;
         if ($sock) {
             $rv = send($sock, $req, $flag_nosignal);
@@ -461,12 +465,16 @@ sub get_file_size {
                 # success
                 my $size = $parse_response->();
                 return $size if defined $size;
+                undef $streamcache{$host};
             }
         }
     }
 
-    # failure case: use a HEAD request to get the size of the file
-    my $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 3)
+    # failure case: use a HEAD request to get the size of the file:
+    # give them 2 seconds to connect to server, unless we'd already timed out earlier
+    my $connect_timeout = $read_timed_out ? 1 : 2;
+
+    my $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => $connect_timeout)
         or return error("get_file_size() unable to contact mogstored for size of $path");
     $sock->write("HEAD $uri HTTP/1.0\r\n\r\n");
     my $first = <$sock>;
