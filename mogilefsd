@@ -3,7 +3,7 @@
 # MogileFS daemon
 #
 # Copyright 2004, Danga Interactive
-# Copyright 2006, Six Apart Ltd.
+# Copyright 2005-2006, Six Apart Ltd.
 #
 # Authors:
 #   Brad Fitzpatrick <brad@danga.com>
@@ -32,13 +32,13 @@ use Carp;
 use File::Basename ();
 use File::Path ();
 use Sys::Syslog;
-use Socket qw(MSG_NOSIGNAL);
 use Time::HiRes qw(gettimeofday tv_interval);
 use Net::Netmask;
 use LWP::UserAgent;
 use List::Util;
 
 use lib 'lib';
+use MogileFS::Sys;
 use MogileFS::Util qw(error daemonize);
 use MogileFS::Connection::Client;
 use MogileFS::Connection::Worker;
@@ -53,53 +53,17 @@ use MogileFS::Config;
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
 use constant SCHEMA_VERSION => 5;
-use vars qw($dbh $FLAG_NOSIGNAL);
-
-# used in send() calls to request not to get SIGPIPEd
-eval { $FLAG_NOSIGNAL = MSG_NOSIGNAL };
-
-MogileFS::Config->load_config;
-
-### initial setup
-Mgd::validate_dbh();
-my $dbh = Mgd::get_dbh();
-unless ($dbh) {
-    die <<NODB;
-Error: unable to establish connection with your MogileFS database.
-
-Please verify that you have correctly setup a configuration file or are
-providing the correct information in order to reach the database and try
-running the MogileFS server again.  If you haven't setup your database yet,
-run 'mogdbsetup'.
-NODB
-}
-
-my $sversion = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field='schema_version'") || 0;
-unless ($sversion == SCHEMA_VERSION) {
-    my $exp = SCHEMA_VERSION;
-    die "Server's database schema version of $sversion doesn't match expected value of $exp.  Halting.
-
-Please run mogdbsetup to upgrade your schema.\n";
-}
-
-# we're done with this, so undef it before we start forking, as then
-# maybe we'll end up with children having the same socket and everybody
-# writing to it at the same time...
-undef $dbh;
-
-#####################################################################
-### D A E M O N   F U N C T I O N S
-#####################################################################
-
-daemonize() if $MogileFS::Config::daemonize;
 
 my %streamcache;    # host -> IO::Socket::INET to mogstored
 our $starttime = time(); # time we got going
-
 our %domaincache; # { domainname => { domainrow } }
 our $domaincachetime = 0;
 our $client_ip = undef; # client ip address
 our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
+
+MogileFS::Config->load_config;
+check_database();
+daemonize() if MogileFS->config("daemonize");
 
 MogileFS::ProcManager->set_min_workers('queryworker' => MogileFS->config('query_jobs'));
 MogileFS::ProcManager->set_min_workers('delete'      => MogileFS->config('delete_jobs'));
@@ -110,23 +74,6 @@ MogileFS::ProcManager->set_min_workers('monitor'     => MogileFS->config('monito
 # open up our log
 openlog('mogilefsd', 'pid', 'daemon');
 Mgd::log('info', 'beginning run');
-
-sub validate_dbh {
-    return unless $dbh;
-    my $id = $dbh->selectrow_array("SELECT CONNECTION_ID()");
-    if (! $id) {
-        # handle's dead.  don't use it.  (MySQL-ism above)
-        undef $dbh;
-    }
-}
-
-sub get_dbh {
-    return $dbh ||= DBI->connect(MogileFS->config('db_dsn'),
-                                 MogileFS->config('db_user'),
-                                 MogileFS->config('db_pass'), {
-                                     PrintError => 0,
-                                 });
-}
 
 # Install signal handlers.
 $SIG{TERM}  = sub {
@@ -145,10 +92,6 @@ $SIG{INT}  = sub {
 };
 $SIG{PIPE} = 'IGNORE';  # catch them by hand
 
-#############################################################################
-## beginning of main execution path
-#############################################################################
-
 # setup server socket to listen for client connections
 my $server = IO::Socket::INET->new(LocalPort => MogileFS->config('conf_port'),
                                    Type      => SOCK_STREAM,
@@ -160,13 +103,9 @@ my $server = IO::Socket::INET->new(LocalPort => MogileFS->config('conf_port'),
 
 # accept handler for new clients
 my $accept_handler = sub {
-    my $csock = $server->accept();
-    return unless $csock;
-
-    printf( "Listen child making a Client for %d.\n", fileno($csock) )
-        if $DEBUG >= 2;
-    my $client = MogileFS::Connection::Client->new($csock);
-    printf( "Client is %s\n", $client ) if $DEBUG >= 2;
+    my $csock = $server->accept
+        or return;
+    MogileFS::Connection::Client->new($csock);
 };
 
 # now setup socket for workers to connect to
@@ -181,14 +120,10 @@ my $wserver = IO::Socket::INET->new(LocalPort => MogileFS->config('worker_port')
 
 # accept handler for new workers
 my $waccept_handler = sub {
-    my $csock = $wserver->accept();
-    return unless $csock;
-
-    printf( "Listen child making a Worker connection for %d.\n", fileno($csock) )
-        if $DEBUG >= 2;
-    my $client = MogileFS::Connection::Worker->new($csock);
-    printf( "Child is %s\n", $client ) if $DEBUG >= 2;
-    MogileFS::ProcManager->RegisterWorkerConn($client);
+    my $csock = $wserver->accept
+        or return;
+    my $conn = MogileFS::Connection::Worker->new($csock);
+    MogileFS::ProcManager->RegisterWorkerConn($conn);
 };
 
 # so children can close these once they fork
@@ -215,6 +150,35 @@ eval {
 if ( $@ ) { Mgd::log('err', "crash log: $@"); }
 Mgd::log('info', 'ending run');
 closelog();
+
+
+# database checking/connecting
+{
+    my ($dbh, $dbh_pid);
+    sub validate_dbh {
+        return unless $dbh;
+        if ($$ != $dbh_pid) {
+            undef $dbh;
+            $dbh_pid = 0;
+            return;
+        }
+        my $id = $dbh->selectrow_array("SELECT CONNECTION_ID()");
+        if (! $id) {
+            # handle's dead.  don't use it.  (MySQL-ism above)
+            undef $dbh;
+        }
+    }
+
+    sub get_dbh {
+        return $dbh if $dbh && $dbh_pid == $$;
+        $dbh_pid = $$;
+        return $dbh = DBI->connect(MogileFS->config('db_dsn'),
+                                   MogileFS->config('db_user'),
+                                   MogileFS->config('db_pass'), {
+                                       PrintError => 0,
+                                   });
+    }
+}
 
 # log stuff to syslog or the screen
 sub log {
@@ -434,7 +398,8 @@ sub get_file_size {
     my ($host, $port, $uri) = ($1, $2, $3);
 
     # don't sigpipe us
-    local $SIG{'PIPE'} = "IGNORE" unless $FLAG_NOSIGNAL;
+    my $flag_nosignal = MogileFS::Sys->flag_nosignal;
+    local $SIG{'PIPE'} = "IGNORE" unless $flag_nosignal;
 
     # setup for sending size request to cached host
     my $req = "size $uri\r\n";
@@ -464,7 +429,7 @@ sub get_file_size {
 
     # try using the cached socket
     if ($sock) {
-        $rv = send($sock, $req, $FLAG_NOSIGNAL);
+        $rv = send($sock, $req, $flag_nosignal);
         if ($!) {
             undef $streamcache{$host};
         } elsif ($rv != $reqlen) {
@@ -482,7 +447,7 @@ sub get_file_size {
                                       PeerPort => MogileFS->config("mogstored_stream_port"), Timeout => 5);
         $streamcache{$host} = $sock;
         if ($sock) {
-            $rv = send($sock, $req, $FLAG_NOSIGNAL);
+            $rv = send($sock, $req, $flag_nosignal);
             if ($!) {
                 return error("error talking to mogstored stream ($path): $!");
             } elsif ($rv != $reqlen) {
@@ -748,6 +713,27 @@ sub update_fid_devcount {
     }
 
     return 1;
+}
+
+sub check_database {
+    my $dbh = Mgd::get_dbh();
+    unless ($dbh) {
+        die qq{
+Error: unable to establish connection with your MogileFS database.
+
+Please verify that you have correctly setup a configuration file or are
+providing the correct information in order to reach the database and try
+running the MogileFS server again.  If you haven\'t setup your database yet,
+run 'mogdbsetup'.
+}
+    }
+
+    my $sversion = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field='schema_version'") || 0;
+    unless ($sversion == SCHEMA_VERSION) {
+        my $exp = SCHEMA_VERSION;
+        die "Server's database schema version of $sversion doesn't match expected value of $exp.  Halting.\n\n".
+            "Please run mogdbsetup to upgrade your schema.\n";
+    }
 }
 
 package MogileFS;
