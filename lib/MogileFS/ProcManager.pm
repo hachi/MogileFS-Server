@@ -566,7 +566,7 @@ sub HandleChildRequest {
         $child->drain_queue;
 
     } elsif ($cmd =~ /^state_change (\w+) (\d+) (\w+)/) {
-        my ($what, $whatid, $state) = @_;
+        my ($what, $whatid, $state) = ($1, $2, $3);
         state_change($what, $whatid, $state, $child);
 
     } elsif ($cmd =~ /^request_orders/) {
