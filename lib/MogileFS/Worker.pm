@@ -69,7 +69,7 @@ sub _broadcast_state {
 # tries to parse generic (not job-specific) commands sent from parent
 # to child.  returns 1 on success, or 0 if comman given isn't generic,
 # and child should parse.
-sub parse_generic_command {
+sub process_generic_command {
     my ($self, $lineref) = @_;
     return 0 unless $$lineref =~ /^:/;  # all generic commands start with colon
 
