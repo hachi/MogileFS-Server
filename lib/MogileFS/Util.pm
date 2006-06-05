@@ -13,8 +13,7 @@ sub every {
         my $start = Time::HiRes::time();
 
         # run the code in a loop, so "next" will get out of it.
-        my $done = 0;
-        while (!$done++) {
+        foreach (1) {
             $code->();
         }
 
@@ -31,6 +30,7 @@ sub error {
         MogileFS::ProcManager->NoteError(\$_[0]);
         Mgd::log('debug', $_[0]);
     }
+    return 0;
 }
 
 sub daemonize {
