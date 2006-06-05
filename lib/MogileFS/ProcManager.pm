@@ -621,6 +621,23 @@ sub SendToChildrenByJob {
     return scalar(keys %$childref);
 }
 
+# doesn't add to queue of things child gets on next interactive command: writes immediately
+# (won't get in middle of partial write, though, as danga::socket queues things up)
+sub ImmediateSendToChildrenByJob {
+    my $childref = $ChildrenByJob{$_[1]};
+    return 0 unless defined $childref && %$childref;
+    my $msg = $_[2];
+
+    foreach my $child (values %$childref) {
+        # ignore the child specified as the third arg if one is sent
+        next if defined $_[3] && $_[3] == $child;
+
+        # send the message to this child
+        $child->write("$msg\r\n");
+    }
+    return scalar(keys %$childref);
+}
+
 # called when we notice that a worker has bit it.  we might have to restart a
 # job that they had been working on.
 sub NoteDeadWorkerConn {
@@ -665,7 +682,7 @@ sub is_child {
 sub state_change {
     my ($what, $whatid, $state, $child) = @_;
     warn "STATE CHANGE: $what<$whatid> = $state\n";
-    MogileFS::ProcManager->SendToChildrenByJob('queryworker', ":state_change $what $whatid $state", $child);
+    MogileFS::ProcManager->ImmediateSendToChildrenByJob('queryworker', ":state_change $what $whatid $state", $child);
 }
 
 1;
