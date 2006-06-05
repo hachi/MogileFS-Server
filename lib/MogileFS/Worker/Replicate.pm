@@ -4,6 +4,7 @@ package MogileFS::Worker::Replicate;
 use strict;
 use base 'MogileFS::Worker';
 use List::Util ();
+use MogileFS::Util qw(error);
 
 use POSIX ":sys_wait_h"; # argument for waitpid
 use POSIX;

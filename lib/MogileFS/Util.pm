@@ -1,6 +1,18 @@
 package MogileFS::Util;
 use strict;
 use Carp qw(croak);
+require Exporter;
+our @ISA = qw(Exporter);
+our @EXPORT_OK = qw(error daemonize);
+
+sub error {
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->send_to_parent("error $_[0]");
+    } else {
+        MogileFS::ProcManager->NoteError(\$_[0]);
+        Mgd::log('debug', $_[0]);
+    }
+}
 
 sub daemonize {
     my($pid, $sess_id, $i);

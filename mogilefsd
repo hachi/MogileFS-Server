@@ -39,7 +39,7 @@ use LWP::UserAgent;
 use List::Util;
 
 use lib 'lib';
-use MogileFS::Util;
+use MogileFS::Util qw(error daemonize);
 use MogileFS::Connection::Client;
 use MogileFS::Connection::Worker;
 use MogileFS::Worker::Query;
@@ -208,7 +208,7 @@ undef $dbh;
 ### D A E M O N   F U N C T I O N S
 #####################################################################
 
-MogileFS::Util::daemonize() if $daemonize;
+daemonize() if $daemonize;
 
 my %streamcache;    # host -> IO::Socket::INET to mogstored
 our $starttime = time(); # time we got going
@@ -342,15 +342,6 @@ sub log {
         # just pass the parameters to syslog
         syslog(@_);
     }
-}
-
-
-# argument: a string to take as indicating the error that just happened.
-sub error {
-    # we're a parent, so just handle output of error
-    MogileFS::ProcManager->NoteError(\$_[0]);
-    Mgd::log('debug', $_[0]);
-    return 0;
 }
 
 sub get_mindevcounts {

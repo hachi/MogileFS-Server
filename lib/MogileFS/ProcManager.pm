@@ -17,7 +17,8 @@ use Socket;
 # Stats: element => number
 our ($IsChild, @QueryWorkerQueue, @ClientQueue, @RecentQueries,
      %Mappings, %ChildrenByJob, %ErrorsTo, %Stats);
-$IsChild = 0;
+
+$IsChild = 0;  # either false if we're the parent, or a MogileFS::Worker object
 
 # keep track of what all child pids are doing, and what jobs are being
 # satisifed.
@@ -132,9 +133,6 @@ sub make_new_child {
     sigprocmask(SIG_UNBLOCK, $sigset)
         or return error("Can't unblock SIGINT for fork: $!");
 
-    # set our frontend into child mode
-    MogileFS::ProcManager->SetAsChild;
-
     # try to create a connection to the parent.  we die here because
     # we're the child and if we can't talk to the master we really need
     # to die so that a child isn't just sitting around without communication
@@ -158,6 +156,10 @@ sub make_new_child {
     # now call our job function
     my $class = "MogileFS::Worker::" . $class_suffix;
     my $worker = $class->new($psock);
+
+    # set our frontend into child mode
+    MogileFS::ProcManager->SetAsChild($worker);
+
     $worker->work;
     exit 0;
 }
@@ -166,10 +168,12 @@ sub make_new_child {
 # parent, but they don't need it.  this method is called when you want
 # to indicate that this procmanager is running on a child and should clean.
 sub SetAsChild {
+    my ($class, $worker) = @_;
+
     @QueryWorkerQueue = ();
     @ClientQueue = ();
     %Mappings = ();
-    $IsChild = 1;
+    $IsChild = $worker;
     %ErrorsTo = ();
 
     # and now kill off our event loop so that we don't waste time
@@ -648,6 +652,9 @@ sub job_needs_reduction {
     return $jobs{$job}->[0] < $jobs{$job}->[1];
 }
 
+sub is_child {
+    return $IsChild;
+}
 
 1;
 
