@@ -48,134 +48,17 @@ use MogileFS::Worker::Replicate;
 use MogileFS::Worker::Reaper;
 use MogileFS::Worker::Monitor;
 use MogileFS::ProcManager;
+use MogileFS::Config;
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
 use constant SCHEMA_VERSION => 5;
-
-#####################################################################
-### C O N F I G
-#####################################################################
-
-use vars qw($dbh $DEFAULT_CONFIG $DEFAULT_MOG_ROOT $MOG_ROOT $MOGSTORED_STREAM_PORT $DEBUG $USE_HTTP $FLAG_NOSIGNAL);
-
-$DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
-$DEFAULT_MOG_ROOT = "/mnt/mogilefs";
-$MOGSTORED_STREAM_PORT = 7501;
-$DEBUG = 0;
+use vars qw($dbh $FLAG_NOSIGNAL);
 
 # used in send() calls to request not to get SIGPIPEd
 eval { $FLAG_NOSIGNAL = MSG_NOSIGNAL };
 
-my (
-    %cmdline,
-    %cfgfile,
-    $config,
-    $skipconfig,
-    $daemonize,
-    $db_dsn,
-    $db_user,
-    $db_pass,
-    $conf_port,
-    $query_jobs,
-    $delete_jobs,
-    $replicate_jobs,
-    $reaper_jobs,
-    $monitor_jobs,
-    $mog_root,
-    $worker_port,
-    $min_free_space,
-    $max_disk_age,
-    $node_timeout,          # time in seconds to wait for storage node responses
-   );
-
-our $default_mindevcount;
-
-# Command-line options will override
-Getopt::Long::Configure( "bundling" );
-Getopt::Long::GetOptions(
-    'c|config=s'    => \$config,
-    's|skipconfig'  => \$skipconfig,
-    'd|debug+'      => \$cmdline{debug},
-    'D|daemon'      => \$cmdline{daemonize},
-    'dsn=s'         => \$cmdline{db_dsn},
-    'dbuser=s'      => \$cmdline{db_user},
-    'dbpass=s'      => \$cmdline{db_pass},
-    'r|mogroot=s'   => \$cmdline{mog_root},
-    'p|confport=i'  => \$cmdline{conf_port},
-    'w|workers=i'   => \$cmdline{query_jobs},
-    'no_http'       => \$cmdline{no_http},
-    'workerport=i'  => \$cmdline{worker_port},
-    'maxdiskage=i'  => \$cmdline{max_disk_age},
-    'minfreespace=i' => \$cmdline{min_free_space},
-    'default_mindevcount=i' => \$cmdline{default_mindevcount},
-    'node_timeout=i' => \$cmdline{node_timeout},
-);
-
-$config = $DEFAULT_CONFIG if !$config && -r $DEFAULT_CONFIG;
-
-# Read the config file if one was specified
-if ( $config && !$skipconfig ) {
-    open my $cf, "<$config" or die "open: $config: $!";
-
-    my $configLine = qr{
-        ^\s*                    # Leading space
-        (\w+)                   # Key
-        \s+ =? \s*              # space + optional equal + optional space
-        (.+?)                   # Value
-        \s*$                    # Trailing space
-    }x;
-
-    my $linecount = 0;
-    while (defined( my $line = <$cf> )) {
-        $linecount++;
-        next if $line =~ m{^\s*(#.*)?$};
-        die "Malformed config file (line $linecount)" unless $line =~ $configLine;
-
-        my ( $key, $value ) = ( $1, $2 );
-        print STDERR "Setting '$key' to '$value'\n" if $cmdline{debug};
-        $cfgfile{ $key } = $value;
-    }
-
-    close $cf;
-}
-
-### FUNCTION: choose_value( $name, $default[, $boolean] )
-sub choose_value ($$;$) {
-    my ( $name, $default, $boolean ) = @_;
-
-    return $cmdline{$name} if defined $cmdline{$name};
-    return $cfgfile{$name} if defined $cfgfile{$name};
-    return $default;
-}
-
-
-# Fill in defaults for those values which were either loaded from config or
-# specified on the command line. Command line takes precendence, then values in
-# the config file, then the defaults.
-$daemonize      = choose_value( 'daemonize', 0, 1 );
-$db_dsn         = choose_value( 'db_dsn', "DBI:mysql:mogilefs" );
-$db_user        = choose_value( 'db_user', "mogile" );
-$db_pass        = choose_value( 'db_pass', "", 1 );
-$conf_port      = choose_value( 'conf_port', 7001 );
-$MOG_ROOT       = choose_value( 'mog_root', $DEFAULT_MOG_ROOT );
-$query_jobs     = choose_value( 'listener_jobs', undef) || # undef if not present, then we
-                  choose_value( 'query_jobs', 20 );       # fall back to query_jobs, new name
-$delete_jobs    = choose_value( 'delete_jobs', 1 );
-$replicate_jobs = choose_value( 'replicate_jobs', 1 );
-$reaper_jobs    = choose_value( 'reaper_jobs', 1 );
-$monitor_jobs   = choose_value( 'monitor_jobs', 1 );
-$worker_port    = choose_value( 'worker_port', 7200 );
-$min_free_space = choose_value( 'min_free_space', 100 );
-$max_disk_age   = choose_value( 'max_disk_age', 5 );
-$DEBUG          = choose_value( 'debug', 0, 1 );
-$USE_HTTP       = ! choose_value( 'no_http', 0, 1);
-$default_mindevcount = choose_value( 'default_mindevcount', 2 );
-$node_timeout   = choose_value( 'node_timeout', 3 );
-
-sub http_mode { return $USE_HTTP; }
-sub mog_root  { return $MOG_ROOT; }
-sub worker_port { return $worker_port; }
+MogileFS::Config->load_config;
 
 ### initial setup
 Mgd::validate_dbh();
@@ -208,7 +91,7 @@ undef $dbh;
 ### D A E M O N   F U N C T I O N S
 #####################################################################
 
-daemonize() if $daemonize;
+daemonize() if $MogileFS::Config::daemonize;
 
 my %streamcache;    # host -> IO::Socket::INET to mogstored
 our $starttime = time(); # time we got going
@@ -218,11 +101,11 @@ our $domaincachetime = 0;
 our $client_ip = undef; # client ip address
 our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
 
-MogileFS::ProcManager->set_min_workers('queryworker' => $query_jobs);
-MogileFS::ProcManager->set_min_workers('delete'      => $delete_jobs);
-MogileFS::ProcManager->set_min_workers('replicate'   => $replicate_jobs);
-MogileFS::ProcManager->set_min_workers('reaper'      => $reaper_jobs);
-MogileFS::ProcManager->set_min_workers('monitor'     => $monitor_jobs);
+MogileFS::ProcManager->set_min_workers('queryworker' => MogileFS->config('query_jobs'));
+MogileFS::ProcManager->set_min_workers('delete'      => MogileFS->config('delete_jobs'));
+MogileFS::ProcManager->set_min_workers('replicate'   => MogileFS->config('replicate_jobs'));
+MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
+MogileFS::ProcManager->set_min_workers('monitor'     => MogileFS->config('monitor_jobs'));
 
 # open up our log
 openlog('mogilefsd', 'pid', 'daemon');
@@ -238,9 +121,11 @@ sub validate_dbh {
 }
 
 sub get_dbh {
-    return $dbh ||= DBI->connect($db_dsn, $db_user, $db_pass, {
-        PrintError => 0,
-    });
+    return $dbh ||= DBI->connect(MogileFS->config('db_dsn'),
+                                 MogileFS->config('db_user'),
+                                 MogileFS->config('db_pass'), {
+                                     PrintError => 0,
+                                 });
 }
 
 # Install signal handlers.
@@ -265,7 +150,7 @@ $SIG{PIPE} = 'IGNORE';  # catch them by hand
 #############################################################################
 
 # setup server socket to listen for client connections
-my $server = IO::Socket::INET->new(LocalPort => $conf_port,
+my $server = IO::Socket::INET->new(LocalPort => MogileFS->config('conf_port'),
                                    Type      => SOCK_STREAM,
                                    Proto     => 'tcp',
                                    Blocking  => 0,
@@ -285,7 +170,7 @@ my $accept_handler = sub {
 };
 
 # now setup socket for workers to connect to
-my $wserver = IO::Socket::INET->new(LocalPort => $worker_port,
+my $wserver = IO::Socket::INET->new(LocalPort => MogileFS->config('worker_port'),
                                     LocalAddr => '127.0.0.1',
                                     Type      => SOCK_STREAM,
                                     Proto     => 'tcp',
@@ -334,7 +219,7 @@ closelog();
 # log stuff to syslog or the screen
 sub log {
     # simple logging functionality
-    if (! $daemonize) {
+    if (! $MogileFS::Config::daemonize) {
         # syslog acts like printf so we have to use printf and append a \n
         shift; # ignore the first parameter (info, warn, critical, etc)
         printf(shift(@_) . "\n", @_);
@@ -366,10 +251,11 @@ sub get_mindevcounts {
 
 
     # now iterate over %min again to set the implicit class
+    my $default_min = MogileFS->config('default_mindevcount');
     foreach my $dmid (keys %min) {
         # each domain's classid=0, if not defined, has an implied mindevcount of $default_mindevcount
         # which most people will probably use.
-        $min{$dmid}{0} = $host_ct < $default_mindevcount ? $host_ct : $default_mindevcount
+        $min{$dmid}{0} = $host_ct < $default_min ? $host_ct : $default_min
             unless exists $min{$dmid}{0};
     }
 
@@ -402,8 +288,8 @@ sub find_deviceid {
     my %opts = ( @_ );
 
     # copy down global minimum free space if not specified
-    $opts{min_free_space} ||= $min_free_space;
-    $opts{max_disk_age} ||= $max_disk_age;
+    $opts{min_free_space} ||= MogileFS->config("min_free_space");
+    $opts{max_disk_age}   ||= MogileFS->config("max_disk_age");
     if ($opts{max_disk_age}) {
         $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
     }
@@ -542,7 +428,8 @@ sub get_file_size {
 
     # quick case -- just a file on disk
     unless ($path =~ m!^http://([^:/]+)(?::(\d+))?(/.+)$!) {
-        return -s "$Mgd::MOG_ROOT/$path"
+        my $root = MogileFS->config("root");
+        return -s "$root/$path"
     }
     my ($host, $port, $uri) = ($1, $2, $3);
 
@@ -557,6 +444,7 @@ sub get_file_size {
 
     # sub to parse the response from $sock.  returns undef on error,
     # or otherwise the size of the $path in bytes.
+    my $node_timeout = MogileFS->config("node_timeout");
     my $parse_response = sub {
         # give the socket 3 seconds to become readable
         unless (Mgd::wait_for_readability(fileno($sock), $node_timeout)) {
@@ -590,7 +478,8 @@ sub get_file_size {
 
     # try creating a connection to the stream
     unless ($rv) {
-        $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $MOGSTORED_STREAM_PORT, Timeout => 5);
+        $sock = IO::Socket::INET->new(PeerAddr => $host,
+                                      PeerPort => MogileFS->config("mogstored_stream_port"), Timeout => 5);
         $streamcache{$host} = $sock;
         if ($sock) {
             $rv = send($sock, $req, $FLAG_NOSIGNAL);
@@ -804,7 +693,7 @@ sub is_url {
 
 sub make_path {
     # jump out if we should be using HTTP stuff
-    return Mgd::make_full_url(@_) if $USE_HTTP;
+    return Mgd::make_full_url(@_) if MogileFS::Config::http_mode();
 
     my ($devid, $fid) = @_;
 
@@ -817,14 +706,14 @@ sub make_path {
     my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
 
     my $path = "$hostname/dev$devid/$b/$mmm/$ttt/$nfid.fid";
-    make_dirs( "$MOG_ROOT/$path" ) or return undef;
+    make_dirs( MogileFS->config('root') . "/$path" ) or return undef;
 
     return $path;
 }
 
 sub make_get_path {
     # the get path only changes for HTTP mode
-    return Mgd::make_path(@_) unless $USE_HTTP;
+    return Mgd::make_path(@_) unless MogileFS::Config::http_mode();
     return Mgd::make_full_url(@_, 1);
 }
 
@@ -860,6 +749,10 @@ sub update_fid_devcount {
 
     return 1;
 }
+
+package MogileFS;
+# just so MogileFS->config($key) will work:
+use MogileFS::Config qw(config);
 
 1;
 

@@ -138,7 +138,7 @@ sub make_new_child {
     # to die so that a child isn't just sitting around without communication
     # to the parent.
     my $psock = IO::Socket::INET->new(PeerAddr => "127.0.0.1",
-                                      PeerPort => Mgd::worker_port(),
+                                      PeerPort => MogileFS->config("worker_port"),
                                       Type     => SOCK_STREAM,
                                       Proto    => 'tcp',)
         or die "Error creating socket to master: $@\n";
