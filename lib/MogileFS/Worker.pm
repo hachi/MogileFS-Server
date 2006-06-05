@@ -61,6 +61,7 @@ sub _broadcast_state {
     # broadcast on initial discovery, state change, and every 10 seconds
     if (!$laststate || $laststate->[1] ne $state || $laststate->[0] < $now - 10) {
         $self->send_to_parent("state_change $what $whatid $state");
+        $self->{last_bcast_state}{$key} = [$now, $state];
     }
 }
 
