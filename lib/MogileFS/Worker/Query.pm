@@ -825,7 +825,7 @@ sub cmd_get_paths {
         next unless
             $ret->{paths}        ||
             $args->{noverify}    ||
-            Mgd::get_file_size($path) == $filerow->{length};
+            Mgd::get_file_size($path, $dev) == $filerow->{length};
 
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;
