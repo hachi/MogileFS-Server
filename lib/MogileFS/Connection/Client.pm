@@ -27,7 +27,7 @@ sub event_read {
 
     while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
         next unless length $1;
-        Frontend->HandleClientRequest($self, $1);
+        MogileFS::ProcManager->HandleClientRequest($self, $1);
     }
 }
 
@@ -39,7 +39,7 @@ sub event_hup { my $self = shift; $self->close; }
 sub close {
     # mark us as being dead
     my $self = shift;
-    Frontend->NoteDeadClient($self);
+    MogileFS::ProcManager->NoteDeadClient($self);
     $self->SUPER::close(@_);
 }
 

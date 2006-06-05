@@ -31,9 +31,9 @@ sub event_read {
     while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
         my $line = $1;
         if ($self->job eq 'queryworker' && (substr($line, 0, 5) ne 'error')) {
-            Frontend->HandleQueryWorkerResponse($self, $line);
+            MogileFS::ProcManager->HandleQueryWorkerResponse($self, $line);
         } else {
-            Frontend->HandleChildRequest($self, $line);
+            MogileFS::ProcManager->HandleChildRequest($self, $line);
         }
     }
 }
@@ -55,7 +55,7 @@ sub event_hup { my $self = shift; $self->close; }
 sub close {
     # mark us as being dead
     my MogileFS::Connection::Worker $self = shift;
-    Frontend->NoteDeadWorkerConn($self);
+    MogileFS::ProcManager->NoteDeadWorkerConn($self);
     $self->SUPER::close(@_);
 }
 
