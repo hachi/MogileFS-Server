@@ -21,7 +21,7 @@ sub work {
     while (defined (my $line = <$psock>)) {
         $line =~ s/[\r\n]+$//;
         $self->validate_dbh;
-        $self->process_line(\$line);
+        $self->process_generic_command(\$line) || $self->process_line(\$line);
     }
 }
 

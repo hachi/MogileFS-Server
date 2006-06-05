@@ -257,6 +257,7 @@ sub find_deviceid {
     if ($opts{max_disk_age}) {
         $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
     }
+    $opts{must_be_alive}  = 1 unless defined $opts{must_be_alive};
 
     # setup for iterating over devices
     my $devs = Mgd::get_device_summary();
@@ -279,6 +280,10 @@ sub find_deviceid {
                 $dev->{mb_asof} < $opts{max_disk_age};
         next if $opts{min_free_space} && $dev->{mb_total} &&
                 $dev->{mb_free} < $opts{min_free_space};
+
+        next if $opts{must_be_alive} &&
+            (MogileFS->observed_state("host", $dev->{hostid}) eq "dead" ||
+             MogileFS->observed_state("device", $dev->{devid}) eq "dead");
 
         # we get here, this is a suitable device
         push @list, $dev->{devid};
@@ -739,6 +744,18 @@ run 'mogdbsetup'.
 package MogileFS;
 # just so MogileFS->config($key) will work:
 use MogileFS::Config qw(config);
+
+my %obs_state;
+
+sub set_observed_state {
+    my ($class, $what, $id, $state) = @_;
+    $obs_state{"$what-$id"} = $state;
+}
+
+sub observed_state {
+    my ($class, $what, $id) = @_;
+    return $obs_state{"$what-$id"} || "";
+}
 
 1;
 

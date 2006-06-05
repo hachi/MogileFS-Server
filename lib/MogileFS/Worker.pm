@@ -55,6 +55,7 @@ sub broadcast_host_alive {
 
 sub _broadcast_state {
     my ($self, $what, $whatid, $state) = @_;
+    MogileFS->set_observed_state($what, $whatid, $state);
     my $key = "$what-$whatid";
     my $laststate = $self->{last_bcast_state}{$key};
     my $now = time();
@@ -63,6 +64,24 @@ sub _broadcast_state {
         $self->send_to_parent("state_change $what $whatid $state");
         $self->{last_bcast_state}{$key} = [$now, $state];
     }
+}
+
+# tries to parse generic (not job-specific) commands sent from parent
+# to child.  returns 1 on success, or 0 if comman given isn't generic,
+# and child should parse.
+sub parse_generic_command {
+    my ($self, $lineref) = @_;
+    return 0 unless $$lineref =~ /^:/;  # all generic commands start with colon
+
+    if ($$lineref =~ /^:state_change (\w+) (\d+) (\w+)/) {
+        # {"host"|"device"} <id> {"alive"|"dead"}
+        MogileFS->set_observed_state($1, $2, $3);
+        return 1;
+    }
+
+    # TODO: warn on unknown commands?
+
+    return 0;
 }
 
 1;

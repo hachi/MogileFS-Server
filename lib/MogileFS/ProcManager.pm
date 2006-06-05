@@ -142,6 +142,8 @@ sub make_new_child {
                                       Type     => SOCK_STREAM,
                                       Proto    => 'tcp',)
         or die "Error creating socket to master: $@\n";
+
+    # advertise our pid/job to process manager now in parent
     $psock->write("$$ $job\n");
 
     my $class_suffix = {
@@ -565,7 +567,7 @@ sub HandleChildRequest {
 
     } elsif ($cmd =~ /^state_change (\w+) (\d+) (\w+)/) {
         my ($what, $whatid, $state) = @_;
-        state_change($what, $whatid, $state);
+        state_change($what, $whatid, $state, $child);
 
     } elsif ($cmd =~ /^request_orders/) {
         $check_job->();
@@ -661,9 +663,9 @@ sub is_child {
 }
 
 sub state_change {
-    my ($what, $whatid, $state) = @_;
+    my ($what, $whatid, $state, $child) = @_;
     warn "STATE CHANGE: $what<$whatid> = $state\n";
-    #MogileFS::ProcManager->SendToChildrenByJob('replicate', "repl_unreachable $1", $child);
+    MogileFS::ProcManager->SendToChildrenByJob('queryworker', ":state_change $what $whatid $state", $child);
 }
 
 1;
