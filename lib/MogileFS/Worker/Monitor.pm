@@ -3,7 +3,7 @@ package MogileFS::Worker::Monitor;
 
 use strict;
 use base 'MogileFS::Worker';
-use MogileFS::Util qw(every);
+use MogileFS::Util qw(every error);
 
 use POSIX;
 
