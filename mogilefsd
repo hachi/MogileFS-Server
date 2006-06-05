@@ -318,7 +318,8 @@ sub get_device_summary {
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
                             "mb_used, mb_asof, status, weight FROM device");
     $sth->execute;
-    $dev{$_->{devid}} = $_ while $_ = $sth->fetchrow_hashref;
+    my $row;
+    $dev{$row->{devid}} = $row while $row = $sth->fetchrow_hashref;
 
     # now override device status with host status if the host status is less than the device status
     Mgd::check_host_cache();
