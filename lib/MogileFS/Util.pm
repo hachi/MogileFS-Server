@@ -1,9 +1,28 @@
 package MogileFS::Util;
 use strict;
 use Carp qw(croak);
+use Time::HiRes;
+
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT_OK = qw(error daemonize weighted_list);
+our @EXPORT_OK = qw(error daemonize weighted_list every);
+
+sub every {
+    my ($delay, $code) = @_;
+    while (1) {
+        my $start = Time::HiRes::time();
+
+        # run the code in a loop, so "next" will get out of it.
+        my $done = 0;
+        while (!$done++) {
+            $code->();
+        }
+
+        my $took = Time::HiRes::time() - $start;
+        my $sleep_for = $delay - $took;
+        Time::HiRes::sleep($sleep_for) if $sleep_for > 0;
+    }
+}
 
 sub error {
     if (my $worker = MogileFS::ProcManager->is_child) {

@@ -3,6 +3,7 @@ package MogileFS::Worker::Monitor;
 
 use strict;
 use base 'MogileFS::Worker';
+use MogileFS::Util qw(every);
 
 use POSIX;
 
@@ -30,8 +31,7 @@ sub work {
         }
     };
 
-    while (1) {
-        sleep 15;
+    every(2.5, sub {
 
         # get db and note we're starting a run
         error("Monitor running; scanning usage files")
@@ -56,12 +56,22 @@ sub work {
             my $url = "http://$host->{hostip}:$port/dev$dev->{devid}/usage";
 
             # now try to get the data with a short timeout
+            my $timeout = 2;
+            my $start_time = Time::HiRes::time();
+
             my $ua = LWP::UserAgent->new( timeout => 2 );
             my $response = $ua->get($url);
+            my $res_time = Time::HiRes::time();
 
             unless ($response->is_success) {
-                error("Failed getting dev$dev->{devid}: " . $response->status_line);
-                next;
+                my $failed_after = $res_time - $start_time;
+                if ($failed_after < 0.5) {
+                    error("Port $port not listening on otherwise-alive machine $host->{hostip}?  Error was: " . $response->status_line);
+                } else {
+                    $failed_after = sprintf("%.02f", $failed_after);
+                    error("Timeout contacting machine $host->{hostip} for dev $dev->{devid}:  took $failed_after seconds out of $timeout allowed");
+                }
+                return;
             }
 
             my %stats;
@@ -91,8 +101,7 @@ sub work {
             error("dev$dev->{devid}: used = $used, total = $total")
                 if $Mgd::DEBUG >= 1;
         }
-    }
-
+    });
 
 }
 
