@@ -800,8 +800,8 @@ sub cmd_get_paths {
                                           undef, $fid) || [];
 
     # randomly weight the devices
-    my @list = Mgd::weighted_list(map { [ $_, defined $dsum->{$_}->{weight} ?
-                                                      $dsum->{$_}->{weight} : 100 ] } @$devids);
+    my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dsum->{$_}->{weight} ?
+                                                     $dsum->{$_}->{weight} : 100 ] } @$devids);
 
     # construct result paths
     foreach my $devid (@list) {
