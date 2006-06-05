@@ -223,7 +223,7 @@ sub replicate {
         $sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
 
         my $rv = undef;
-        if (Mgd::http_mode()) {
+        if (MogileFS::Config->http_mode) {
             $rv = http_copy($sdevid, $ddevid, $fid);
         } else {
             my $root = Mgd::mog_root();
