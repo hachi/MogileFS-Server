@@ -36,6 +36,7 @@ use Time::HiRes qw(gettimeofday tv_interval);
 use Net::Netmask;
 use LWP::UserAgent;
 use List::Util;
+use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
 
 use lib 'lib';
 use MogileFS::Sys;
@@ -391,7 +392,20 @@ sub wait_for_readability {
     return $nfound ? 1 : 0;
 }
 
-# get size of file, return 0 on error
+sub wait_for_writeability {
+    my ($fileno, $timeout) = @_;
+    return 0 unless $fileno && $timeout;
+
+    my $rout;
+    vec($rout, $fileno, 1) = 1;
+    my $nfound = select(undef, $rout, undef, $timeout);
+
+    # nfound can be undef or 0, both failures, or 1, a success
+    return $nfound ? 1 : 0;
+}
+
+# get size of file, return 0 on error.
+# tries to finish in 2.5 seconds, under the client's default 3 second timeout.  (configurable)
 sub get_file_size {
     my $path = shift;
 
@@ -412,17 +426,37 @@ sub get_file_size {
     my $rv = 0;
     my $sock = $streamcache{$host};
 
+    my $start_time = Time::HiRes::time();
+
+    my $httpsock;
+    my $start_connecting_to_http = sub {
+        return if $httpsock;  # don't allow starting connecting twice
+        socket $httpsock, PF_INET, SOCK_STREAM, IPPROTO_TCP;
+        IO::Handle::blocking($httpsock, 0);
+        connect $httpsock, Socket::sockaddr_in($port, Socket::inet_aton($host));
+    };
+
     # sub to parse the response from $sock.  returns undef on error,
     # or otherwise the size of the $path in bytes.
     my $node_timeout = MogileFS->config("node_timeout");
+    my $stream_response_timeout = 1.0;
     my $read_timed_out = 0;
 
     my $parse_response = sub {
-        # give the socket 3 seconds to become readable
-        unless (Mgd::wait_for_readability(fileno($sock), $node_timeout)) {
-            $read_timed_out = 1;
-            close($sock);
-            return undef;
+        # give the socket 1 second to become readable until we get
+        # scared of no reply and start connecting to HTTP to do a HEAD
+        # request.  if both timeout, we know the machine is gone, but
+        # we don't want to wait 2 seconds + 2 seconds... prefer to do
+        # connects in parallel to reduce overall latency.
+        unless (Mgd::wait_for_readability(fileno($sock), $stream_response_timeout)) {
+            $start_connecting_to_http->();
+            # give the socket its final time to get to 2 seconds
+            # before we really give up on it
+            unless (Mgd::wait_for_readability(fileno($sock), $node_timeout - $stream_response_timeout)) {
+                $read_timed_out = 1;
+                close($sock);
+                return undef;
+            }
         }
 
         # now we know there's readable data
@@ -434,6 +468,8 @@ sub get_file_size {
         return 0 if $2 < 0;   # backchannel sends back -1 on errors, which we need to map to 0
         return $2+0;
     };
+
+    my $conn_timeout = 2;
 
     # try using the cached socket
     if ($sock) {
@@ -452,7 +488,9 @@ sub get_file_size {
     # try creating a connection to the stream
     else {
         $sock = IO::Socket::INET->new(PeerAddr => $host,
-                                      PeerPort => MogileFS->config("mogstored_stream_port"), Timeout => 2);
+                                      PeerPort => MogileFS->config("mogstored_stream_port"),
+                                      Timeout  => $conn_timeout);
+
         # FIXME: cache that we can't connect to the mogstored stream port for people using only apache/dav
         $streamcache{$host} = $sock;
         if ($sock) {
@@ -467,18 +505,42 @@ sub get_file_size {
                 return $size if defined $size;
                 undef $streamcache{$host};
             }
+        } else {
+            # see if we timed out connecting.
+            my $elapsed = Time::HiRes::time() - $start_time;
+            if ($elapsed > $conn_timeout - 0.2) {
+                return error("node $host seems to be down in get_file_size");
+            }
+
         }
     }
 
+    # try HTTP
+    $start_connecting_to_http->();  # this will only work once anyway, if we already started above.
+
     # failure case: use a HEAD request to get the size of the file:
     # give them 2 seconds to connect to server, unless we'd already timed out earlier
-    my $connect_timeout = $read_timed_out ? 1 : 2;
+    my $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
+    return 0 if $time_remain <= 0;
 
-    my $sock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => $connect_timeout)
-        or return error("get_file_size() unable to contact mogstored for size of $path");
+    return error("get_file_size() connect timeout for HTTP HEAD for size of $path")
+        unless Mgd::wait_for_writeability(fileno($httpsock), $time_remain);
+    return error("get_file_size() connect failure for HTTP HEAD for size of $path")
+        unless getpeername($httpsock);
+
     $sock->write("HEAD $uri HTTP/1.0\r\n\r\n");
+
+    $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
+    return 0 if $time_remain <= 0;
+    return error("get_file_size() read timeout for HTTP HEAD for size of $path")
+        unless Mgd::wait_for_readability(fileno($httpsock), $time_remain);
+
     my $first = <$sock>;
-    return error("get_file_size()'s HEAD request wasn't a 200 OK") unless $first =~ m!^HTTP/1\.\d 200!;
+    return error("get_file_size()'s HEAD request wasn't a 200 OK")
+        unless $first && $first =~ m!^HTTP/1\.\d 200!;
+
+    # FIXME: this could block too probably, if we don't get a whole
+    # line.  in practice, all headers will come at once, though in same packet/read.
     while (defined (my $line = <$sock>)) {
         last if $line eq "\r\n";
         if ($line =~ /^Content-length: (\d+)/i) {

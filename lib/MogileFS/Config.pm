@@ -116,7 +116,7 @@ sub load_config {
     $DEBUG          = choose_value( 'debug', 0, 1 );
     $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
-    $node_timeout   = choose_value( 'node_timeout', 3 );
+    $node_timeout   = choose_value( 'node_timeout', 2 );
 }
 
 ### FUNCTION: choose_value( $name, $default[, $boolean] )
