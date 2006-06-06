@@ -79,97 +79,97 @@ sub work {
             $unreachable{$r->[0]} = 1;
         }
 
-        # get the min dev counts
-        my %min = %{ Mgd::get_mindevcounts() };
+        foreach_class(sub {
+            my ($dmid, $classid, $min, $policy_class) = @_;
 
-        # iterate through each domain, replicating its contents
-        foreach my $dmid (keys %min) {
-            # iterate through each class, including the implicit class 0
-            while (my ($classid, $min) = each %{$min{$dmid}}) {
-                error("Checking replication for dmid=$dmid, classid=$classid, min=$min")
+            error("Checking replication for dmid=$dmid, classid=$classid, min=$min")
+                if $Mgd::DEBUG >= 1;
+
+            my $LIMIT = 1000;
+
+            # try going from devcount of 1 up to devcount of $min-1
+            $self->{fidtodo} = {};
+            my $fixed = 0;
+            my $attempted = 0;
+            my $devcount = 1;
+            while ($fixed < $LIMIT && $devcount < $min) {
+                my $now = time();
+                my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
+                                                    "AND devcount = ? AND length IS NOT NULL ".
+                                                    "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
+                die $dbh->errstr if $dbh->err;
+                $self->{fidtodo}{$_} = 1 foreach @$fids;
+
+                # increase devcount so we try to replicate the files at the next devcount
+                $devcount++;
+
+                # see if we have any files to replicate
+                my $count = $fids ? scalar @$fids : 0;
+                error("  found $count for dmid=$dmid/classid=$classid/min=$min")
                     if $Mgd::DEBUG >= 1;
+                next unless $count;
 
-                my $LIMIT = 1000;
+                # randomize the list so multiple daemons/threads working on
+                # replicate at the same time don't all fight over the
+                # same fids to move
+                my @randfids = List::Util::shuffle(@$fids);
 
-                # try going from devcount of 1 up to devcount of $min-1
-                $self->{fidtodo} = {};
-                my $fixed = 0;
-                my $attempted = 0;
-                my $devcount = 1;
-                while ($fixed < $LIMIT && $devcount < $min) {
-                    my $now = time();
-                    my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
-                                                        "AND devcount = ? AND length IS NOT NULL ".
-                                                        "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
-                    die $dbh->errstr if $dbh->err;
-                    $self->{fidtodo}{$_} = 1 foreach @$fids;
+                error("Need to replicate: $dmid/$classid: @$fids") if $Mgd::DEBUG >= 2;
+                foreach my $fid (@randfids) {
+                    # now replicate this fid
+                    $attempted++;
+                    next unless $self->{fidtodo}{$fid};
 
-                    # increase devcount so we try to replicate the files at the next devcount
-                    $devcount++;
-
-                    # see if we have any files to replicate
-                    my $count = $fids ? scalar @$fids : 0;
-                    error("  found $count for dmid=$dmid/classid=$classid/min=$min")
-                        if $Mgd::DEBUG >= 1;
-                    next unless $count;
-
-                    # randomize the list so multiple daemons/threads working on
-                    # replicate at the same time don't all fight over the
-                    # same fids to move
-                    my @randfids = List::Util::shuffle(@$fids);
-
-                    error("Need to replicate: $dmid/$classid: @$fids") if $Mgd::DEBUG >= 2;
-                    foreach my $fid (@randfids) {
-                        # now replicate this fid
-                        $attempted++;
-                        next unless $self->{fidtodo}{$fid};
-
-                        if ($fidfailure{$fid}) {
-                            if ($fidfailure{$fid} < $now) {
-                                delete $fidfailure{$fid};
-                            } else {
-                                next;
-                            }
-                        }
-
-                        $self->read_from_parent;
-
-                        if (my $status = replicate($dbh, $fid, $min)) {
-                            # $status is either 0 (failure, handled below), 1 (success, we actually
-                            # replicated this file), or 2 (success, but someone else replicated it).
-                            # so if it's 2, we just want to go to the next fid.  this file is done.
-                            next if $status == 2;
-
-                            # if it was no longer reachable, mark it reachable
-                            if (delete $unreachable{$fid}) {
-                                $dbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
-                                die $dbh->errstr if $dbh->err;
-                            }
-
-                            # housekeeping
-                            $fixed++;
-                            $self->send_to_parent("repl_i_did $fid");
-
-                            # status update
-                            if ($fixed % 20 == 0) {
-                                my $ratio = $fixed/$attempted*100;
-                                error(sprintf("replicated=$fixed, attempted=$attempted, ratio=%.2f%%", $ratio))
-                                    if $fixed % 20 == 0;
-                            }
+                    if ($fidfailure{$fid}) {
+                        if ($fidfailure{$fid} < $now) {
+                            delete $fidfailure{$fid};
                         } else {
-                            # failed in replicate, don't retry for a minute
-                            $fidfailure{$fid} = $now + 60;
+                            next;
                         }
+                    }
+
+                    $self->read_from_parent;
+
+                    if (my $status = replicate($dbh, $fid, $min, $policy_class)) {
+                        # $status is either 0 (failure, handled below), 1 (success, we actually
+                        # replicated this file), or 2 (success, but someone else replicated it).
+                        # so if it's 2, we just want to go to the next fid.  this file is done.
+                        next if $status == 2;
+
+                        # if it was no longer reachable, mark it reachable
+                        if (delete $unreachable{$fid}) {
+                            $dbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
+                            die $dbh->errstr if $dbh->err;
+                        }
+
+                        # housekeeping
+                        $fixed++;
+                        $self->send_to_parent("repl_i_did $fid");
+
+                        # status update
+                        if ($fixed % 20 == 0) {
+                            my $ratio = $fixed/$attempted*100;
+                            error(sprintf("replicated=$fixed, attempted=$attempted, ratio=%.2f%%", $ratio))
+                                if $fixed % 20 == 0;
+                        }
+                    } else {
+                        # failed in replicate, don't retry for a minute
+                        $fidfailure{$fid} = $now + 60;
                     }
                 }
             }
-        }
+        });
     });
 }
 
 # replicates $fid if its devcount is less than $min.
 sub replicate {
-    my ($dbh, $fid, $min) = @_;
+    my ($dbh, $fid, $min, $policy_class) = @_;
+
+    eval "use $policy_class; 1;";
+    if ($@) {
+        return error("Failed to load policy class: $policy_class: $@");
+    }
 
     my $lockname = "mgfs:fid:$fid:replicate";
     my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 1)", undef,
@@ -184,20 +184,20 @@ sub replicate {
 
     # learn what devices this file is already on
     my $on_count = 0;
-    my %on_host;     # hostid -> 1
     my @dead_devid;   # list of dead devids.  FIXME: do something with this?
     my @exist_devid;  # list of existing devids
 
     my $sth = $dbh->prepare("SELECT devid FROM file_on WHERE fid=?");
     $sth->execute($fid);
     die $dbh->errstr if $dbh->err;
+    my @on_devs;
     while (my ($devid) = $sth->fetchrow_array) {
         my $d = $devs->{$devid};
+        push @on_devs, $d;
         unless ($d && $d->{status} =~ /^alive|readonly$/) {
             push @dead_devid, $devid;
             next;
         }
-        $on_host{$d->{hostid}} = 1;
         $on_count++;
         push @exist_devid, $devid;
     }
@@ -221,21 +221,28 @@ sub replicate {
     return $retunlock->(0, "Source is no longer available replicating $fid") if $on_count == 0;
     return $retunlock->(0, "No eligible devices available replicating $fid") if @exist_devid == 0;
 
+    my $ddevid;
     my $sdevid;
+    my %failed;  # devid -> 1 for each devid we were asked to copy to, but failed.
+    while ($ddevid = $policy_class->replicate_to(
+                                                 fid       => $fid,
+                                                 on_devs   => \@on_devs, # all device objects fid is on, dead or otherwise
+                                                 all_devs  => $devs,
+                                                 failed    => \%failed,
+                                                 min       => $min,
+                                                 ))
+    {
+        # they can return either a dev hashref/object or a devid number.  we want the number.
+        $ddevid = $ddevid->{devid} if ref $ddevid;
 
-    while ($on_count < $min) {
-        my $need = $min - $on_count;
+        # replication policy shouldn't tell us to put a file on a device
+        # we've already told it that we've failed at.  so if we get that response,
+        # the policy plugin is broken and we should terminate now.
+        if ($failed{$ddevid}) {
+            return $retunlock->(0, "replication policy told us to do something we already told it we failed at while replicating fid $fid");
+        }
 
-        my @good_devids = Mgd::find_deviceid(
-            random => 1,
-            not_on_hosts => [ keys %on_host ],
-            weight_by_free => 1,
-        );
-
-        # wasn't able to replicate enough?
-        last unless @good_devids;
-
-        my $ddevid = shift @good_devids;
+        # TODO: use an observed good device as source.
         $sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
 
         my $rv = undef;
@@ -248,12 +255,21 @@ sub replicate {
             $rv = File::Copy::copy($src_path, $dst_path);
         }
 
-        return $retunlock->(0, "Copier failed replicating $fid") unless $rv;
+        unless ($rv) {
+            $failed{$ddevid} = 1;
+            next;
+        }
+
         add_file_on($fid, $ddevid, 1);
-        $on_count++;
+        push @on_devs, $devs->{$ddevid};
     }
 
-    return $retunlock->(1);
+    # returning 0, not undef, means replication policy is happy and we're done.
+    if (defined $ddevid && ! $ddevid) {
+        return $retunlock->(1);
+    }
+
+    return $retunlock->(0, "replication policy ran out of suggestions for us replicating fid $fid");
 }
 
 # copies a file from one Perlbal to another utilizing HTTP
@@ -362,6 +378,22 @@ sub add_file_on {
         # was already on that device
         return 1;
     }
+}
+
+sub foreach_class {
+    my $cb = shift;
+
+    # get the min dev counts
+    my %min = %{ Mgd::get_mindevcounts() };
+
+    # iterate through each domain, replicating its contents
+    foreach my $dmid (keys %min) {
+        # iterate through each class, including the implicit class 0
+        while (my ($classid, $min) = each %{$min{$dmid}}) {
+            $cb->($dmid, $classid, $min, "MogileFS::ReplicationPolicy::MultipleHosts");
+        }
+    }
+
 }
 
 1;
