@@ -208,7 +208,16 @@ sub replicate {
         return $rv ? $rv : error($_[0]);
     };
 
-    return $retunlock->(2) if $on_count >= $min;
+    # maybe somebody else got to it already?  let's double-check.
+    if ($on_count >= $min) {
+        my $devcount = $dbh->selectrow_array("SELECT devcount FROM file WHERE fid=?",
+                                              undef, $fid);
+        if ($devcount != $on_count) {
+            return Mgd::update_fid_devcount($fid);
+        }
+        return $retunlock->(2);
+    }
+
     return $retunlock->(0, "Source is no longer available replicating $fid") if $on_count == 0;
     return $retunlock->(0, "No eligible devices available replicating $fid") if @exist_devid == 0;
 
