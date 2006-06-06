@@ -256,6 +256,7 @@ sub replicate {
         }
 
         unless ($rv) {
+            error("Failed copying fid $fid from devid $sdevid to devid $ddevid");
             $failed{$ddevid} = 1;
             next;
         }
@@ -279,7 +280,7 @@ sub http_copy {
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error = sub {
         if ($_[0]) {
-            send_to_parent("repl_unreachable $fid");
+            $self->send_to_parent("repl_unreachable $fid");
 
             # update database table
             Mgd::validate_dbh();
@@ -318,6 +319,7 @@ sub http_copy {
 
     # we just want a content length
     my $clen;
+    # FIXME: this can block.  needs to timeout.
     while (defined (my $line = <$sock>)) {
         $line =~ s/[\s\r\n]+$//;
         last unless length $line;
