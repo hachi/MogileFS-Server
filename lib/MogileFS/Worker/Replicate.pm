@@ -1,11 +1,14 @@
 package MogileFS::Worker::Replicate;
-# deletes files
+# replicates files around
 
 use strict;
 use base 'MogileFS::Worker';
-use List::Util ();
-use MogileFS::Util qw(error);
+use fields (
+            'fidtodo',   # hashref { fid => 1 }
+            );
 
+use List::Util ();
+use MogileFS::Util qw(error every);
 use POSIX ":sys_wait_h"; # argument for waitpid
 use POSIX;
 
@@ -13,28 +16,39 @@ sub new {
     my ($class, $psock) = @_;
     my $self = fields::new($class);
     $self->SUPER::new($psock);
-
+    $self->{fidtodo} = {};
     return $self;
+}
+
+sub process_line {
+    my ($self, $lineref) = @_;
+
+    if ($$lineref =~ /^repl_was_done (\d+)/) {
+        delete $self->{fidtodo}{$1};
+        return;
+    }
+
+    # FIXME: change this to only be the generic ":shutdown" command
+    if ($$lineref =~ /^shutdown/) {
+        exit 0;
+    }
+}
+
+sub read_from_parent {
+    my $self = shift;
+    my $psock = $self->{psock};
+
+    # while things are immediately available,
+    while (Mgd::wait_for_readability(fileno($psock), 0)) {
+        my $line = <$psock>
+            or return;
+        $self->process_generic_command(\$line) || $self->process_line(\$line);
+    }
 }
 
 sub work {
     my $self = shift;
     my $psock = $self->{psock};
-
-    my $parse_parent_response = sub {
-        # now see what was in our message queue
-        while (defined (my $line = <$psock>)) {
-            $line =~ s/\r?\n$//;
-            last if $line eq '.';
-
-            # now find out what command this is?
-            if ($line =~ /^repl_was_done (\d+)/ && $_[0]) {
-                delete $_[0]->{$1};
-            } elsif ($line eq 'shutdown') {
-                exit 0;
-            }
-        }
-    };
 
     # { fid => lastcheck }; instructs us not to replicate this fid... we will clear
     # out fids from this list that are expired
@@ -43,18 +57,13 @@ sub work {
     # { fid => 1 }; used to keep track of fids we find in the unreachable_fids table
     my %unreachable;
 
-    my $sleep = 2;
-    while (1) {
-        sleep $sleep;
+    every(2.0, sub {
         $self->validate_dbh;
         my $dbh = $self->get_dbh or return 0;
 
         # general report in to parent
         $self->send_to_parent('repl_ping');
-        $parse_parent_response->(undef);
-
-        # start off assuming that we're going to get everything replicated and then take a break
-        $sleep = 2;
+        $self->read_from_parent;
 
         # update our unreachable fid list... we consider them good for 15 minutes
         my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
@@ -83,7 +92,7 @@ sub work {
                 my $LIMIT = 1000;
 
                 # try going from devcount of 1 up to devcount of $min-1
-                my %fidtodo; # fid => 1
+                $self->{fidtodo} = {};
                 my $fixed = 0;
                 my $attempted = 0;
                 my $devcount = 1;
@@ -93,7 +102,7 @@ sub work {
                                                         "AND devcount = ? AND length IS NOT NULL ".
                                                         "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
                     die $dbh->errstr if $dbh->err;
-                    $fidtodo{$_} = 1 foreach @$fids;
+                    $self->{fidtodo}{$_} = 1 foreach @$fids;
 
                     # increase devcount so we try to replicate the files at the next devcount
                     $devcount++;
@@ -113,7 +122,7 @@ sub work {
                     foreach my $fid (@randfids) {
                         # now replicate this fid
                         $attempted++;
-                        next unless $fidtodo{$fid};
+                        next unless $self->{fidtodo}{$fid};
 
                         if ($fidfailure{$fid}) {
                             if ($fidfailure{$fid} < $now) {
@@ -122,6 +131,8 @@ sub work {
                                 next;
                             }
                         }
+
+                        $self->read_from_parent;
 
                         if (my $status = replicate($dbh, $fid, $min)) {
                             # $status is either 0 (failure, handled below), 1 (success, we actually
@@ -138,7 +149,6 @@ sub work {
                             # housekeeping
                             $fixed++;
                             $self->send_to_parent("repl_i_did $fid");
-                            $parse_parent_response->(\%fidtodo);
 
                             # status update
                             if ($fixed % 20 == 0) {
@@ -152,12 +162,9 @@ sub work {
                         }
                     }
                 }
-
-                # if we did 1000, we just want to jump to the next pass through all domains and classes without pausing
-                $sleep = 0 if $fixed >= $LIMIT;
             }
         }
-    }
+    });
 }
 
 # replicates $fid if its devcount is less than $min.

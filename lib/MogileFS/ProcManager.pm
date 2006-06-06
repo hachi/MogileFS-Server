@@ -255,8 +255,8 @@ sub EnqueueQueryWorker {
 # the count of running jobs.
 sub AskWorkerToDie {
     my MogileFS::Connection::Worker $worker = $_[1];
-    $worker->write("shutdown\r\n");
     note_pending_death($worker->job, $worker->pid);
+    $worker->write("shutdown\r\n");
 }
 
 # kill bored query workers so we can get down to the level requested.  this
@@ -600,7 +600,7 @@ sub HandleChildRequest {
 
         # announce to the other replicators that this fid was done and then drain the
         # queue to this person.
-        MogileFS::ProcManager->SendToChildrenByJob('replicate', "repl_was_done $fid", $child);
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_was_done $fid", $child);
         $check_job->();
 
     } else {
@@ -690,7 +690,9 @@ sub is_child {
 sub state_change {
     my ($what, $whatid, $state, $child) = @_;
     warn "STATE CHANGE: $what<$whatid> = $state\n";
-    MogileFS::ProcManager->ImmediateSendToChildrenByJob('queryworker', ":state_change $what $whatid $state", $child);
+    for my $type (qw(queryworker replicate)) {
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":state_change $what $whatid $state", $child);
+    }
 }
 
 1;

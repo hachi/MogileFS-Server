@@ -79,6 +79,10 @@ sub process_generic_command {
         return 1;
     }
 
+    if ($$lineref =~ /^:shutdown/) {
+        exit 0;
+    }
+
     # TODO: warn on unknown commands?
 
     return 0;

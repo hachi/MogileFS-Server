@@ -383,7 +383,7 @@ sub key_filerow {
 # become readable; returns 0 or 1 on if it did or not
 sub wait_for_readability {
     my ($fileno, $timeout) = @_;
-    return 0 unless $fileno && $timeout;
+    return 0 unless $fileno && $timeout >= 0;
 
     my $rin;
     vec($rin, $fileno, 1) = 1;
