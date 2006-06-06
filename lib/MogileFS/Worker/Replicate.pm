@@ -280,7 +280,8 @@ sub http_copy {
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error = sub {
         if ($_[0]) {
-            $self->send_to_parent("repl_unreachable $fid");
+            my $worker = MogileFS::ProcManager->is_child;
+            $worker->send_to_parent("repl_unreachable $fid");
 
             # update database table
             Mgd::validate_dbh();
