@@ -1,5 +1,6 @@
 package MogileFS::ProcManager;
 use strict;
+use warnings;
 use POSIX;
 use POSIX ":sys_wait_h"; # argument for waitpid
 use Symbol;
@@ -467,14 +468,12 @@ sub HandleClientRequest {
             if ($args =~ /^(\d+)\s+(\S+)/) {
                 my ($count, $job) = ($1, $2);
 
-                # validate count
-                $count = 0 if $count < 0;
-                # FIXME ...add an upper limit?
+                $count = 500 if $count > 500;
 
                 # now make sure it's a real job
                 if (defined $jobs{$job}) {
                     $jobs{$job}->[0] = $count;
-                    $Mgd::allkidsup = 0;
+                    $allkidsup = 0;
                     push @out, "Now desiring $count children doing '$job'.";
 
                     # try to clean out the queryworkers (if that's what we're doing?)
