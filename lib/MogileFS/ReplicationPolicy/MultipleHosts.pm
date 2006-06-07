@@ -13,6 +13,9 @@ sub replicate_to {
     my $failed   = delete $args{failed};   # hashref of { devid => 1 } of failed attempts this round
     my $min      = delete $args{min};      # configured min devcount for this class
 
+    warn "Unknown parameters: " . join(", ", sort keys %arg);
+    die "Missing parameters" unless $on_devs && $all_devs && $failed && $fid;
+
     # number of devices we currently live on
     my $already_on = @$on_devs;
 
