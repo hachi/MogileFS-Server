@@ -13,7 +13,7 @@ sub replicate_to {
     my $failed   = delete $args{failed};   # hashref of { devid => 1 } of failed attempts this round
     my $min      = delete $args{min};      # configured min devcount for this class
 
-    warn "Unknown parameters: " . join(", ", sort keys %arg);
+    warn "Unknown parameters: " . join(", ", sort keys %args) if %args;
     die "Missing parameters" unless $on_devs && $all_devs && $failed && $fid;
 
     # number of devices we currently live on
@@ -53,7 +53,7 @@ sub unique_hosts {
     my %host;  # hostid -> 1
     foreach my $devid (keys %$devs) {
         my $dev = $devs->{$devid};
-        next if $dev->{status} =~ /^alive|readonly$/;
+        next unless $dev->{status} =~ /^alive|readonly$/;
         $host{$dev->{hostid}}++;
     }
     return scalar keys %host;
