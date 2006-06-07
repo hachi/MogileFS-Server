@@ -242,6 +242,12 @@ sub replicate {
             return $retunlock->(0, "replication policy told us to do something we already told it we failed at while replicating fid $fid");
         }
 
+        # replication policy shouldn't tell us to put a file on a
+        # device that it's already on.  that's just stupid.
+        if (grep { $_->{devid} == $ddevid } @on_devs) {
+            return $retunlock->(0, "replication policy told us to put fid $fid on dev $ddevid, but it's already there!");
+        }
+
         # TODO: use an observed good device as source.
         $sdevid ||= @exist_devid[int(rand(scalar @exist_devid))];
 
