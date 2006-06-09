@@ -2,6 +2,7 @@ package MogileFS::Connection::Worker;
 # This class maintains a connection to one of the various classes of
 # workers.
 
+use strict;
 use Danga::Socket ();
 use base qw{Danga::Socket};
 

@@ -4,6 +4,7 @@
 
 package MogileFS::Connection::Client;
 
+use strict;
 use Danga::Socket ();
 use base qw{Danga::Socket};
 
@@ -27,8 +28,132 @@ sub event_read {
 
     while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
         next unless length $1;
-        MogileFS::ProcManager->HandleClientRequest($self, $1);
+        $self->handle_request($1);
     }
+}
+
+sub handle_request {
+    my ($self, $line) = @_;
+
+    # if it's just 'help', 'h', '?', or something, do that
+    #if ((substr($line, 0, 1) eq '?') || ($line eq 'help')) {
+    #    MogileFS::ProcManager->SendHelp($_[1]);
+    #    return;
+    #}
+
+    if ($line =~ /^!(\S+)(?:\s+(.+))?$/) {
+        my ($cmd, $args) = ($1, $2);
+        return $self->handle_admin_command($cmd, $args);
+    }
+
+    MogileFS::ProcManager->EnqueueCommandRequest($line, $self);
+}
+
+sub handle_admin_command {
+    my ($self, $cmd, $args) = @_;
+
+    my @out;
+    if ($cmd =~ /^stats$/) {
+        # print out some stats on the queues
+        my $uptime = time - $Mgd::starttime;
+        my $ccount = MogileFS::ProcManager->PendingQueryCount;
+        my $wcount = MogileFS::ProcManager->BoredQueryWorkerCount;
+        my $ipcount = MogileFS::ProcManager->QueriesInProgressCount;
+        my $stats = MogileFS::ProcManager->StatsHash;
+        push @out, "uptime $uptime",
+        "pending_queries $ccount",
+        "processing_queries $ipcount",
+        "bored_queryworkers $wcount",
+        map { "$_ $stats->{$_}" } sort keys %$stats;
+
+    } elsif ($cmd =~ /^repl/) {
+        Mgd::validate_dbh();
+          my $dbh = Mgd::get_dbh();
+          my $mdcs = Mgd::get_mindevcounts();
+          foreach my $dmid (sort keys %$mdcs) {
+              my $dmname = Mgd::domain_name($dmid);
+              foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
+                  my $min = $mdcs->{$dmid}->{$classid};
+                  next unless $min > 1;
+
+                  my $classname = Mgd::class_name($dmid, $classid) || '_default';
+                  foreach my $ct (1..$min-1) {
+                      my $count = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
+                                                        undef, $dmid, $classid, $ct);
+                      push @out, "$dmname $classname $ct $count";
+                  }
+              }
+          }
+
+      } elsif ($cmd =~ /^shutdown/) {
+          print "User requested shutdown: $args\n";
+          kill 15, $$; # kill us, that kills our kids
+
+      } elsif ($cmd =~ /^jobs/) {
+          # dump out a list of running jobs and pids
+          MogileFS::ProcManager->foreach_job(sub {
+              my ($job, $ct, $desired, $pidlist) = @_;
+              push @out, "$job count $ct";
+              push @out, "$job desired $desired";
+              push @out, "$job pids " . join(' ', @$pidlist);
+          });
+
+      } elsif ($cmd =~ /^want/) {
+          # !want <count> <jobclass>
+          # set the new desired staffing level for a class
+          if ($args =~ /^(\d+)\s+(\S+)/) {
+              my ($count, $job) = ($1, $2);
+
+              $count = 500 if $count > 500;
+
+              # now make sure it's a real job
+              if (MogileFS::ProcManager->is_valid_job($job)) {
+                  MogileFS::ProcManager->request_job_process($job, $count);
+                  push @out, "Now desiring $count children doing '$job'.";
+              } else {
+                  my $classes = join(", ", MogileFS::ProcManager->valid_jobs);
+                  push @out, "ERROR: Invalid class '$job'.  Valid classes: $classes";
+              }
+          } else {
+              push @out, "ERROR: usage: !want <count> <jobclass>";
+          }
+
+      } elsif ($cmd =~ /^to/) {
+          # !to <jobclass> <message>
+          # sends <message> to all children of <jobclass>
+          if ($args =~ /^(\S+)\s+(.+)/) {
+              my $ct = MogileFS::ProcManager->SendToChildrenByJob($1, $2);
+              push @out, "Message sent to $ct children.";
+
+          } else {
+              push @out, "ERROR: usage: !to <jobclass> <message>";
+          }
+
+      } elsif ($cmd =~ /^queue/ || $cmd =~ /^pend/) {
+          MogileFS::ProcManager->foreach_pending_query(sub {
+              my ($client, $query) = @_;
+              push @out, $query;
+          });
+
+      } elsif ($cmd =~ /^watch/) {
+          if (MogileFS::ProcManager->RemoveErrorWatcher($self)) {
+              push @out, "Removed you from watcher list.";
+          } else {
+              MogileFS::ProcManager->AddErrorWatcher($self);
+              push @out, "Added you to watcher list.";
+          }
+
+      } elsif ($cmd =~ /^recent/) {
+          # show the most recent N queries
+          push @out, MogileFS::ProcManager->RecentQueries;
+
+      } else {
+          MogileFS::ProcManager->SendHelp($self, $args);
+      }
+
+    $self->write(join("\r\n", @out) . "\r\n") if @out;
+    $self->write(".\r\n");
+    return;
 }
 
 # Client

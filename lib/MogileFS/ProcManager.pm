@@ -31,6 +31,10 @@ our $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid di
 
 *error = \&Mgd::error;
 
+sub RecentQueries {
+    return @RecentQueries;
+}
+
 sub set_min_workers {
     my ($class, $job, $min) = @_;
     $jobs{$job} ||= [undef, 0];   # [min, current]
@@ -167,6 +171,61 @@ sub make_new_child {
     exit 0;
 }
 
+sub PendingQueryCount {
+    return scalar @ClientQueue;
+}
+
+sub BoredQueryWorkerCount {
+    return scalar @QueryWorkerQueue;
+}
+
+sub QueriesInProgressCount {
+    return scalar keys %Mappings;
+}
+
+sub StatsHash {
+    return \%Stats;
+}
+
+sub foreach_job {
+    my ($class, $cb) = @_;
+    foreach my $job (sort keys %ChildrenByJob) {
+        my $ct = scalar(keys %{$ChildrenByJob{$job}});
+        $cb->($job, $ct, $jobs{$job}->[0], [ join(' ', sort { $a <=> $b } keys %{$ChildrenByJob{$job}}) ]);
+    }
+}
+
+sub foreach_pending_query {
+    my ($class, $cb) = @_;
+    foreach my $clq (@ClientQueue) {
+        $cb->($clq->[0],  # client object,
+              $clq->[1],  # "cmd ip $query"
+              );
+    }
+}
+
+sub is_valid_job {
+    my ($class, $job) = @_;
+    return defined $jobs{$job};
+}
+
+sub valid_jobs {
+    return sort keys %jobs;
+}
+
+sub request_job_process {
+    my ($class, $job, $n) = @_;
+    return 0 unless $class->is_valid_job($job);
+
+    $jobs{$job}->[0] = $n;
+    $allkidsup = 0;
+
+    # try to clean out the queryworkers (if that's what we're doing?)
+    MogileFS::ProcManager->CullQueryWorkers
+        if $job eq 'queryworker';
+}
+
+
 # when a child is spawned, they'll have copies of all the data from the
 # parent, but they don't need it.  this method is called when you want
 # to indicate that this procmanager is running on a child and should clean.
@@ -215,6 +274,16 @@ sub NoteError {
     }
 }
 
+sub RemoveErrorWatcher {
+    my ($class, $client) = @_;
+    return delete $ErrorsTo{$client->{fd}};
+}
+
+sub AddErrorWatcher {
+    my ($class, $client) = @_;
+    $ErrorsTo{$client->{fd}} = $client;
+}
+
 # take a new connection that we know is from one of our children, but
 # we're not sure what type of child, so just set it in read mode until
 # they tell us what they are
@@ -230,6 +299,15 @@ sub RegisterQueryWorker {
     # and then try to process the outstanding queues
     my MogileFS::Connection::Worker $worker = $_[1];
     MogileFS::ProcManager->EnqueueQueryWorker($worker);
+}
+
+sub EnqueueCommandRequest {
+    my ($class, $line, $client) = @_;
+    push @ClientQueue, [
+                        $client,
+                        "cmd " . ($client->peer_ip_string || '0.0.0.0') . " $line"
+                        ];
+    MogileFS::ProcManager->ProcessQueues;
 }
 
 # puts a worker back in the queue, deleting any outstanding jobs in
@@ -333,15 +411,13 @@ sub ProcessQueues {
     while (@QueryWorkerQueue && @ClientQueue) {
         # get client that isn't closed
         my $clref;
-        while (@ClientQueue) {
-            $clref = shift @ClientQueue;
-            if (!defined $clref || $clref->[0]->{closed}) {
+        while (!$clref && @ClientQueue) {
+            $clref = shift @ClientQueue
+                or next;
+            if ($clref->[0]->{closed}) {
                 $clref = undef;
                 next;
             }
-
-            # if we get here the client is valid
-            last;
         }
         next unless $clref;
 
@@ -399,134 +475,6 @@ More to come...
 .
 HELP
 
-}
-
-# called when a client sends us text.  we just create a job for
-# it and then call ProcessQueues.
-sub HandleClientRequest {
-    return Mgd::error("ProcManager (Child) got request from client: $_[2]") if $IsChild;
-
-    # if it's just 'help', 'h', '?', or something, do that
-    if ((substr($_[2], 0, 1) eq '?') || ($_[2] eq 'help') || ($_[2] eq '')) {
-        MogileFS::ProcManager->SendHelp($_[1]);
-        return;
-    }
-
-    # quick check to see if we the parent should handle this
-    if (substr($_[2], 0, 1) eq '!') {
-        my MogileFS::Connection::Client $client = $_[1];
-        my ($cmd, $args) = ($_[2] =~ m/^!(.+?)(?:\s+(.+))?$/);
-
-        my @out;
-        if ($cmd =~ /^stats$/) {
-            # print out some stats on the queues
-            my $uptime = time - $Mgd::starttime;
-            my $ccount = scalar(@ClientQueue);
-            my $wcount = scalar(@QueryWorkerQueue);
-            my $ipcount = scalar(keys %Mappings);
-            push @out, "uptime $uptime",
-                       "pending_queries $ccount",
-                       "processing_queries $ipcount",
-                       "bored_queryworkers $wcount",
-                       map { "$_ $Stats{$_}" } sort keys %Stats;
-
-        } elsif ($cmd =~ /^repl/) {
-            Mgd::validate_dbh();
-            my $dbh = Mgd::get_dbh();
-            my $mdcs = Mgd::get_mindevcounts();
-            foreach my $dmid (sort keys %$mdcs) {
-                my $dmname = Mgd::domain_name($dmid);
-                foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
-                    my $min = $mdcs->{$dmid}->{$classid};
-                    next unless $min > 1;
-
-                    my $classname = Mgd::class_name($dmid, $classid) || '_default';
-                    foreach my $ct (1..$min-1) {
-                        my $count = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
-                                                          undef, $dmid, $classid, $ct);
-                        push @out, "$dmname $classname $ct $count";
-                    }
-                }
-            }
-
-        } elsif ($cmd =~ /^shutdown/) {
-            print "User requested shutdown: $args\n";
-            kill 15, $$; # kill us, that kills our kids
-
-        } elsif ($cmd =~ /^jobs/) {
-            # dump out a list of running jobs and pids
-            foreach my $job (sort keys %ChildrenByJob) {
-                my $ct = scalar(keys %{$ChildrenByJob{$job}});
-                push @out, "$job count $ct";
-                push @out, "$job desired $jobs{$job}->[0]";
-                push @out, "$job pids " . join(' ', sort { $a <=> $b } keys %{$ChildrenByJob{$job}});
-            }
-
-        } elsif ($cmd =~ /^want/) {
-            # !want <count> <jobclass>
-            # set the new desired staffing level for a class
-            if ($args =~ /^(\d+)\s+(\S+)/) {
-                my ($count, $job) = ($1, $2);
-
-                $count = 500 if $count > 500;
-
-                # now make sure it's a real job
-                if (defined $jobs{$job}) {
-                    $jobs{$job}->[0] = $count;
-                    $allkidsup = 0;
-                    push @out, "Now desiring $count children doing '$job'.";
-
-                    # try to clean out the queryworkers (if that's what we're doing?)
-                    MogileFS::ProcManager->CullQueryWorkers
-                        if $job eq 'queryworker';
-                } else {
-                    my $classes = join(", ", sort keys %jobs);
-                    push @out, "ERROR: Invalid class '$job'.  Valid classes: $classes";
-                }
-            } else {
-                push @out, "ERROR: usage: !want <count> <jobclass>";
-            }
-
-        } elsif ($cmd =~ /^to/) {
-            # !to <jobclass> <message>
-            # sends <message> to all children of <jobclass>
-            if ($args =~ /^(\S+)\s+(.+)/) {
-                my $ct = MogileFS::ProcManager->SendToChildrenByJob($1, $2);
-                push @out, "Message sent to $ct children.";
-
-            } else {
-                push @out, "ERROR: usage: !to <jobclass> <message>";
-            }
-
-        } elsif ($cmd =~ /^queue/ || $cmd =~ /^pend/) {
-            foreach my $clq (@ClientQueue) {
-                push @out, $clq->[1];
-            }
-
-        } elsif ($cmd =~ /^watch/) {
-            if (delete $ErrorsTo{$client->{fd}}) {
-                push @out, "Removed you from watcher list.";
-            } else {
-                $ErrorsTo{$client->{fd}} = $client;
-                push @out, "Added you to watcher list.";
-            }
-
-        } elsif ($cmd =~ /^recent/) {
-            # show the most recent N queries
-            push @out, @RecentQueries;
-
-        } else {
-            MogileFS::ProcManager->SendHelp($client, $args);
-        }
-        $client->write(join("\r\n", @out) . "\r\n") if @out;
-        $client->write(".\r\n");
-        return;
-    }
-
-    # just push the input onto the client queue
-    $Stats{queries}++;
-    push @ClientQueue, [ $_[1], "cmd " . ($_[1]->peer_ip_string || '0.0.0.0') . " $_[2]" ];
-    MogileFS::ProcManager->ProcessQueues;
 }
 
 # a child has contacted us with some command/status/something.
