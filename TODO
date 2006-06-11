@@ -12,6 +12,8 @@
 -- optional 'wait_until_replicated=1' flag to create close, so client doesn't
    get success until file is everywhere.
 
+-- redo/reevaluate the 'unreachable_fids' logic:  unreachable should only mean
+   host/device are up, but file is 404.
 
 
 
