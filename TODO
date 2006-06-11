@@ -1,3 +1,20 @@
+-- fsck job/command.  need 'last fsck' table per fid?  or column?
+
+-- make monitor job try to do a PUT, to detect for read-only mode if kernel
+   fs remounted itself after an error.
+     -- propogate a different 'down' messaeg from 'readonly' observed state
+
+-- 'every' func should select on psock, to process parent-sent commands
+   during worker's breaks
+
+-- create close could wake a replicate process.
+
+-- optional 'wait_until_replicated=1' flag to create close, so client doesn't
+   get success until file is everywhere.
+
+
+
+
 * 404 storms during replicating:  (1.5 year old email, might be fixed, verify)
 
 :: [replicate(12648)] Error: Resource http://10.0.0.82:7500/dev15/0/015/693/0015693821.fid failed: HTTP 404
