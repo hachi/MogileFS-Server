@@ -731,7 +731,12 @@ sub vivify_directories {
     my $host = Mgd::hostid_ip($dev->{hostid}) or return undef;
 
     foreach my $path (@need) {
+        warn "connecting to $host to vivify $path ...\n";
         my $sock = IO::Socket::INET->new(PeerAddr => $host);
+        unless ($sock) {
+            warn " ... no socket.\n";
+            next;
+        }
         print $sock "MKCOL $path HTTP/1.1\r\n".
             "Host: $host\r\n".
             "Content-Length: 0\r\n\r\n";
