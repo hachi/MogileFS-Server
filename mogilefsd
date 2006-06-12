@@ -707,7 +707,8 @@ sub hostid_http_get_port {
     return $h ? $h->{http_get_port} : undef;
 }
 
-my %dir_made;
+my %dir_made;  # /dev<n>/path -> [$depth, $time]
+my $dir_made_lastclean = 0;
 sub vivify_directories {
     my $path = shift;
     # $path is something like:
@@ -731,13 +732,28 @@ sub vivify_directories {
     my $host = Mgd::hostid_ip($dev->{hostid})         or return 0;
     my $port = Mgd::hostid_http_port($dev->{hostid})  or return 0;
     my $peer = "$host:$port";
+    my $now = time();
 
+    my $depth = 0;
     foreach my $path (@need) {
+        $depth++;
+        next if $dir_made{$path};
         my $sock = IO::Socket::INET->new(PeerAddr => $peer, Timeout => 1)
             or next;
         print $sock "MKCOL $path HTTP/1.0\r\n".
             "Content-Length: 0\r\n\r\n";
         my $ans = <$sock>;
+        $dir_made{$path} = [$depth, $now];
+    }
+
+    # cleanup %dir_made occasionally.
+    my $clean_interval = 300;  # every 5 minutes.
+    if ($dir_made_lastclean < $now - $clean_interval) {
+        $dir_made_lastclean = $now;
+        foreach my $k (keys %dir_made) {
+            my ($depth, $ctime) = @{$dir_made{$k}};
+            delete $dir_made{$k} if $depth == 3 && $dir_made{$k} < $now - 3600;
+        }
     }
 }
 
