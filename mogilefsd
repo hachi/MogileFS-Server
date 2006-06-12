@@ -542,11 +542,11 @@ sub get_file_size {
         return error("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
 
-    $httpsock->write("HEAD $uri HTTP/1.0\r\n\r\n");
+    my $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\n\r\n");
 
     $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
     return 0 if $time_remain <= 0;
-    return error("get_file_size() read timeout for HTTP HEAD for size of $path")
+    return error("get_file_size() read timeout ($time_remain) for HTTP HEAD for size of $path")
         unless Mgd::wait_for_readability(fileno($httpsock), $time_remain);
 
     my $first = <$httpsock>;
@@ -720,28 +720,24 @@ sub vivify_directories {
 
     return 0 unless $path =~ /^http/;  # TODO: file-based mode?  naah.  should deprecate non-HTTP mode.
     return 0 unless $path =~ m!/dev(\d+)/(\d+)/(\d\d\d)/(\d\d\d)/\d+\.fid$!;
-    my ($devid, $p1, $p2, $p3) = ($1, $2, $3);
+    my ($devid, $p1, $p2, $p3) = ($1, $2, $3, $4);
     my @need;
     push @need, "/dev$devid/$p1";
     push @need, "/dev$devid/$p1/$p2";
     push @need, "/dev$devid/$p1/$p2/$p3";
 
     my $devs = Mgd::get_device_summary();
-    my $dev = $devs->{$devid} or return 0;
-    my $host = Mgd::hostid_ip($dev->{hostid}) or return undef;
+    my $dev = $devs->{$devid}                         or return 0;
+    my $host = Mgd::hostid_ip($dev->{hostid})         or return 0;
+    my $port = Mgd::hostid_http_port($dev->{hostid})  or return 0;
+    my $peer = "$host:$port";
 
     foreach my $path (@need) {
-        warn "connecting to $host to vivify $path ...\n";
-        my $sock = IO::Socket::INET->new(PeerAddr => $host);
-        unless ($sock) {
-            warn " ... no socket.\n";
-            next;
-        }
-        print $sock "MKCOL $path HTTP/1.1\r\n".
-            "Host: $host\r\n".
+        my $sock = IO::Socket::INET->new(PeerAddr => $peer, Timeout => 1)
+            or next;
+        print $sock "MKCOL $path HTTP/1.0\r\n".
             "Content-Length: 0\r\n\r\n";
         my $ans = <$sock>;
-        warn "MKCOL on $path for hostid ($dev->{hostid}, $host) = $ans\n";
     }
 }
 
