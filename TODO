@@ -15,6 +15,16 @@
 -- redo/reevaluate the 'unreachable_fids' logic:  unreachable should only mean
    host/device are up, but file is 404.
 
+-- test database failures
+
+-- identify idempotent commands and replay them 'n' times if query worker dies
+   during processing.
+
+-- have queries workers be able to broadcast back up to parent "can't parse this"
+   at which point parent parses it (e.g. "help" command), so admins don't
+   need to remember the "!" prefix.  of course, "!" prefix can always be used to
+   reach parent faster.
+
 
 
 * 404 storms during replicating:  (1.5 year old email, might be fixed, verify)
