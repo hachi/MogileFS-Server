@@ -707,6 +707,39 @@ sub hostid_http_get_port {
     return $h ? $h->{http_get_port} : undef;
 }
 
+my %dir_made;
+sub vivify_directories {
+    my $path = shift;
+    # $path is something like:
+    #    http://10.0.0.26:7500/dev2/0/000/148/0000148056.fid
+
+    # three directories we'll want to make:
+    #    http://10.0.0.26:7500/dev2/0
+    #    http://10.0.0.26:7500/dev2/0/000
+    #    http://10.0.0.26:7500/dev2/0/000/148
+
+    return 0 unless $path =~ /^http/;  # TODO: file-based mode?  naah.  should deprecate non-HTTP mode.
+    return 0 unless $path =~ m!/dev(\d+)/(\d+)/(\d\d\d)/(\d\d\d)/\d+\.fid$!;
+    my ($devid, $p1, $p2, $p3) = ($1, $2, $3);
+    my @need;
+    push @need, "/dev$devid/$p1";
+    push @need, "/dev$devid/$p1/$p2";
+    push @need, "/dev$devid/$p1/$p2/$p3";
+
+    my $devs = Mgd::get_device_summary();
+    my $dev = $devs->{$devid} or return 0;
+    my $host = Mgd::hostid_ip($dev->{hostid}) or return undef;
+
+    foreach my $path (@need) {
+        my $sock = IO::Socket::INET->new(PeerAddr => $host);
+        print $sock "MKCOL $path HTTP/1.1\r\n".
+            "Host: $host\r\n".
+            "Content-Length: 0\r\n\r\n";
+        my $ans = <$sock>;
+        warn "MKCOL on $path for hostid ($dev->{hostid}, $host) = $ans\n";
+    }
+}
+
 sub make_http_path {
     my ($devid, $fid) = @_;
 

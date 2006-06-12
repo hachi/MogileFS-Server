@@ -189,6 +189,12 @@ sub cmd_create_open {
         return undef unless $ins_tempfile->();
     }
 
+    # make sure directories exist for client to be able to PUT into
+    foreach my $devid (@dests) {
+        my $path = Mgd::make_path($devid, $fid);
+        Mgd::vivify_directories($path);
+    }
+
     # original single path support
     return $self->ok_line({
         fid => $fid,
