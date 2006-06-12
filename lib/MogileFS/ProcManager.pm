@@ -16,8 +16,11 @@ use Socket;
 # ErrorsTo: fid => Client
 # RecentQueries: [ string, string, string, ... ]
 # Stats: element => number
-our ($IsChild, @QueryWorkerQueue, @ClientQueue, @RecentQueries,
+our ($IsChild, @RecentQueries,
      %Mappings, %ChildrenByJob, %ErrorsTo, %Stats);
+
+my @IdleQueryWorkers;  # workers that are idle, able to process commands  (MogileFS::Worker::Query, ...)
+my @PendingQueries;    # [ MogileFS::Connection::Client, "cmd $ip $query" ]  (literally "cmd ")
 
 $IsChild = 0;  # either false if we're the parent, or a MogileFS::Worker object
 
@@ -172,11 +175,11 @@ sub make_new_child {
 }
 
 sub PendingQueryCount {
-    return scalar @ClientQueue;
+    return scalar @PendingQueries;
 }
 
 sub BoredQueryWorkerCount {
-    return scalar @QueryWorkerQueue;
+    return scalar @IdleQueryWorkers;
 }
 
 sub QueriesInProgressCount {
@@ -197,7 +200,7 @@ sub foreach_job {
 
 sub foreach_pending_query {
     my ($class, $cb) = @_;
-    foreach my $clq (@ClientQueue) {
+    foreach my $clq (@PendingQueries) {
         $cb->($clq->[0],  # client object,
               $clq->[1],  # "cmd ip $query"
               );
@@ -232,8 +235,8 @@ sub request_job_process {
 sub SetAsChild {
     my ($class, $worker) = @_;
 
-    @QueryWorkerQueue = ();
-    @ClientQueue = ();
+    @IdleQueryWorkers = ();
+    @PendingQueries = ();
     %Mappings = ();
     $IsChild = $worker;
     %ErrorsTo = ();
@@ -292,18 +295,9 @@ sub RegisterWorkerConn {
     $worker->watch_read(1);
 }
 
-# take a new worker and note that it's a worker and ready to be used
-# for commands.  this is called when workers connect to the parent
-sub RegisterQueryWorker {
-    # basically take the worker, mark it as a worker, enqueue it,
-    # and then try to process the outstanding queues
-    my MogileFS::Connection::Worker $worker = $_[1];
-    MogileFS::ProcManager->EnqueueQueryWorker($worker);
-}
-
 sub EnqueueCommandRequest {
     my ($class, $line, $client) = @_;
-    push @ClientQueue, [
+    push @PendingQueries, [
                         $client,
                         "cmd " . ($client->peer_ip_string || '0.0.0.0') . " $line"
                         ];
@@ -312,7 +306,7 @@ sub EnqueueCommandRequest {
 
 # puts a worker back in the queue, deleting any outstanding jobs in
 # the mapping list for this fd.
-sub EnqueueQueryWorker {
+sub NoteIdleQueryWorker {
     # first arg is class, second is worker
     my MogileFS::Connection::Worker $worker = $_[1];
     delete $Mappings{$worker->{fd}};
@@ -325,7 +319,7 @@ sub EnqueueQueryWorker {
     }
 
     # must be okay, so put it in the queue
-    push @QueryWorkerQueue, $worker;
+    push @IdleQueryWorkers, $worker;
     MogileFS::ProcManager->ProcessQueues;
 }
 
@@ -341,8 +335,8 @@ sub AskWorkerToDie {
 # kill bored query workers so we can get down to the level requested.  this
 # continues killing until we run out of folks to kill.
 sub CullQueryWorkers {
-    while (@QueryWorkerQueue && job_needs_reduction('queryworker')) {
-        my MogileFS::Connection::Worker $worker = shift @QueryWorkerQueue;
+    while (@IdleQueryWorkers && job_needs_reduction('queryworker')) {
+        my MogileFS::Connection::Worker $worker = shift @IdleQueryWorkers;
         MogileFS::ProcManager->AskWorkerToDie($worker);
     }
 }
@@ -368,7 +362,7 @@ sub HandleQueryWorkerResponse {
 
     # at this point it was a command response, but if the client has gone
     # away, just reenqueue this query worker
-    return MogileFS::ProcManager->EnqueueQueryWorker($worker) if $client->{closed};
+    return MogileFS::ProcManager->NoteIdleQueryWorker($worker) if $client->{closed};
 
     # out-of-band messages (not replies to requests) start with a colon:
     if ($line =~ /^:state_change (\w+) (\d+) (\w+)/) {
@@ -398,7 +392,7 @@ sub HandleQueryWorkerResponse {
 
     # send text to client, put worker back in queue
     $client->write("$res\r\n");
-    MogileFS::ProcManager->EnqueueQueryWorker($worker);
+    MogileFS::ProcManager->NoteIdleQueryWorker($worker);
 }
 
 # called from various spots to empty the queues of available pairs.
@@ -406,11 +400,11 @@ sub ProcessQueues {
     return if $IsChild;
 
     # try to match up a client with a worker
-    while (@QueryWorkerQueue && @ClientQueue) {
+    while (@IdleQueryWorkers && @PendingQueries) {
         # get client that isn't closed
         my $clref;
-        while (!$clref && @ClientQueue) {
-            $clref = shift @ClientQueue
+        while (!$clref && @PendingQueries) {
+            $clref = shift @PendingQueries
                 or next;
             if ($clref->[0]->{closed}) {
                 $clref = undef;
@@ -420,9 +414,9 @@ sub ProcessQueues {
         next unless $clref;
 
         # get worker and make sure it's not closed already
-        my MogileFS::Connection::Worker $worker = shift @QueryWorkerQueue;
+        my MogileFS::Connection::Worker $worker = shift @IdleQueryWorkers;
         if (!defined $worker || $worker->{closed}) {
-            unshift @ClientQueue, $clref;
+            unshift @PendingQueries, $clref;
             next;
         }
 
@@ -490,7 +484,7 @@ sub HandleChildRequest {
 
         # now do any special case startup
         if ($job eq 'queryworker') {
-            MogileFS::ProcManager->RegisterQueryWorker($child);
+            MogileFS::ProcManager->NoteIdleQueryWorker($child);
         }
 
         # add to normal list
@@ -603,7 +597,7 @@ sub NoteDeadWorkerConn {
     # if there's a mapping for this worker's fd, they had a job that didn't get done
     if ($Mappings{$worker->{fd}}) {
         # unshift, since this one already went through the queue once
-        unshift @ClientQueue, $Mappings{$worker->{fd}};
+        unshift @PendingQueries, $Mappings{$worker->{fd}};
         delete $Mappings{$worker->{fd}};
 
         # now try to get it processing again
