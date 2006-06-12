@@ -409,6 +409,7 @@ sub wait_for_writeability {
 
 # get size of file, return 0 on error.
 # tries to finish in 2.5 seconds, under the client's default 3 second timeout.  (configurable)
+my %last_stream_connect_error;  # host => $hirestime.
 sub get_file_size {
     my ($path, $dev) = @_;  # dev is optional.  will be used to send out errors if present.
 
@@ -489,12 +490,12 @@ sub get_file_size {
         }
     }
     # try creating a connection to the stream
-    else {
+    elsif (($last_stream_connect_error{$host} ||= 0) < $start_time - 15.0)
+    {
         $sock = IO::Socket::INET->new(PeerAddr => $host,
                                       PeerPort => MogileFS->config("mogstored_stream_port"),
                                       Timeout  => $conn_timeout);
 
-        # FIXME: cache that we can't connect to the mogstored stream port for people using only apache/dav
         $streamcache{$host} = $sock;
         if ($sock) {
             $rv = send($sock, $req, $flag_nosignal);
@@ -513,6 +514,11 @@ sub get_file_size {
             my $elapsed = Time::HiRes::time() - $start_time;
             if ($elapsed > $conn_timeout - 0.2) {
                 return error("node $host seems to be down in get_file_size");
+            } else {
+                # cache that we can't connect to the mogstored stream
+                # port for people using only apache/lighttpd (dav) on
+                # the storage nodes
+                $last_stream_connect_error{$host} = Time::HiRes::time();
             }
 
         }
