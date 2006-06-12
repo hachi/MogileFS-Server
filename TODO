@@ -31,6 +31,9 @@
    add in the concept of writable vs not too... so maybe writable/readable/unreachable
    instead.
 
+-- make generic script to write out usage files for people not using mogstored
+    -- or, let mogstored be run in 'usage' file writing only mode
+
 
 * 404 storms during replicating:  (1.5 year old email, might be fixed, verify)
 
