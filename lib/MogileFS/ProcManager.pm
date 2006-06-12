@@ -351,19 +351,20 @@ sub CullQueryWorkers {
 # worker so it can handle another response as well as passes the answer
 # back on to the client.
 sub HandleQueryWorkerResponse {
-    return Mgd::error("ProcManager (Child) got worker response: $_[2]") if $IsChild;
-
     # got a response from a worker
-    my MogileFS::Connection::Worker $worker = $_[1];
+    my MogileFS::Connection::Worker $worker;
+    my $line;
+    (undef, $worker, $line) = @_;
+
+    return Mgd::error("ASSERT: ProcManager (Child) got worker response: $line") if $IsChild;
     return unless $worker && $Mappings{$worker->{fd}};
 
     # get the client we're working with (if any)
-    my $client = $Mappings{$worker->{fd}}->[0];
-    my $line = $_[2];
+    my ($client, $jobstr, $starttime) = @{ $Mappings{$worker->{fd}} };
 
     # if we have no client, then we just got a standard message from
     # the queryworker and need to pass it up the line
-    return MogileFS::ProcManager->HandleChildRequest($worker, $_[2]) if !$client;
+    return MogileFS::ProcManager->HandleChildRequest($worker, $line) if !$client;
 
     # at this point it was a command response, but if the client has gone
     # away, just reenqueue this query worker
@@ -381,9 +382,6 @@ sub HandleQueryWorkerResponse {
     if ($line =~ /^(\d+-\d+)\s+(\d+\.\d+)\s+(.+)$/) {
         # save time and response for use later
         ($id, $time, $res) = ($1, $2, $3);
-    } elsif ($line =~ /^(\d+-\d+)\s(.+)$/) {
-        # didn't match, must be in a different format?
-        ($id, $time, $res) = ($1, 'undef', $2);
     }
 
     # now, if it doesn't match
@@ -394,8 +392,8 @@ sub HandleQueryWorkerResponse {
     }
 
     # now time this interval and add to @RecentQueries
-    my $tinterval = Time::HiRes::tv_interval([$Mappings{$worker->{fd}}->[2]]);
-    push @RecentQueries, sprintf("%s %.4f %s", $Mappings{$worker->{fd}}->[1], $tinterval, $time);
+    my $tinterval = Time::HiRes::tv_interval([$starttime]);
+    push @RecentQueries, sprintf("%s %.4f %s", $jobstr, $tinterval, $time);
     shift @RecentQueries if scalar(@RecentQueries) > 50;
 
     # send text to client, put worker back in queue
