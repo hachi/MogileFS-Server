@@ -28,6 +28,7 @@ WriteMakefile(
         'Sys::Syslog'      => 0,
         'Getopt::Long'     => 0,
         'Symbol'           => 0,
+        'Net::Netmask'     => 0,
         fields            => 0,
     },
     dist                    => {
