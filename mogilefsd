@@ -410,6 +410,10 @@ sub wait_for_writeability {
 # get size of file, return 0 on error.
 # tries to finish in 2.5 seconds, under the client's default 3 second timeout.  (configurable)
 my %last_stream_connect_error;  # host => $hirestime.
+
+# (caching the connection used for HEAD requests)
+my %head_socket;                # host:port => [$pid, $time, $socket]
+
 sub get_file_size {
     my ($path, $dev) = @_;  # dev is optional.  will be used to send out errors if present.
 
@@ -435,6 +439,21 @@ sub get_file_size {
     my $httpsock;
     my $start_connecting_to_http = sub {
         return if $httpsock;  # don't allow starting connecting twice
+
+        # try to reuse cached socket
+        if (my $cached = $head_socket{"$host:$port"}) {
+            my ($pid, $conntime, $cachesock) = @{ $cached };
+            # see if it's still connected
+            if ($pid == $$ && getpeername($cachesock) &&
+                $conntime > $start_time - 15 &&
+                # readability would indicated conn closed, or garbage:
+                ! Mgd::wait_for_readability(fileno($cachesock), 0.00))
+            {
+                $httpsock = $cachesock;
+                return;
+            }
+        }
+
         socket $httpsock, PF_INET, SOCK_STREAM, IPPROTO_TCP;
         IO::Handle::blocking($httpsock, 0);
         connect $httpsock, Socket::sockaddr_in($port, Socket::inet_aton($host));
@@ -548,7 +567,7 @@ sub get_file_size {
         return error("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
 
-    my $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\n\r\n");
+    my $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
 
     $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
     return 0 if $time_remain <= 0;
@@ -561,13 +580,21 @@ sub get_file_size {
 
     # FIXME: this could block too probably, if we don't get a whole
     # line.  in practice, all headers will come at once, though in same packet/read.
+    my $cl = undef;
+    my $keep_alive = 0;
     while (defined (my $line = <$httpsock>)) {
-        last if $line eq "\r\n";
-        if ($line =~ /^Content-length: (\d+)/i) {
-            # success
-            return $1+0;
+        if ($line eq "\r\n") {
+            if ($keep_alive) {
+                $head_socket{"$host:$port"} = [ $$, Time::HiRes::time(), $httpsock ];
+            } else {
+                delete $head_socket{"$host:$port"};
+            }
+            return $cl;
         }
+        $cl = $1        if $line =~ /^Content-length: (\d+)/i;
+        $keep_alive = 1 if $line =~ /^Connection:.+\bkeep-alive\b/i;
     }
+    delete $head_socket{"$host:$port"};
 
     # no content length found?
     return error("get_file_size() found no content-length header in response for $path");
