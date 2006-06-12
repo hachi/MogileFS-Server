@@ -25,6 +25,11 @@
    need to remember the "!" prefix.  of course, "!" prefix can always be used to
    reach parent faster.
 
+-- mb_asof handling in find_deviceid seems broken.  less than max age?  wrong units.
+
+-- change 'observable_state' from 'alive/down' to 'reachable/unreachable' and
+   add in the concept of writable vs not too... so maybe writable/readable/unreachable
+   instead.
 
 
 * 404 storms during replicating:  (1.5 year old email, might be fixed, verify)
