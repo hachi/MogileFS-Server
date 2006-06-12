@@ -542,20 +542,20 @@ sub get_file_size {
         return error("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
 
-    $sock->write("HEAD $uri HTTP/1.0\r\n\r\n");
+    $httpsock->write("HEAD $uri HTTP/1.0\r\n\r\n");
 
     $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
     return 0 if $time_remain <= 0;
     return error("get_file_size() read timeout for HTTP HEAD for size of $path")
         unless Mgd::wait_for_readability(fileno($httpsock), $time_remain);
 
-    my $first = <$sock>;
+    my $first = <$httpsock>;
     return error("get_file_size()'s HEAD request wasn't a 200 OK")
         unless $first && $first =~ m!^HTTP/1\.\d 200!;
 
     # FIXME: this could block too probably, if we don't get a whole
     # line.  in practice, all headers will come at once, though in same packet/read.
-    while (defined (my $line = <$sock>)) {
+    while (defined (my $line = <$httpsock>)) {
         last if $line eq "\r\n";
         if ($line =~ /^Content-length: (\d+)/i) {
             # success
