@@ -1,4 +1,10 @@
+-- telnet to 7001 and send "!"<enter>  will crash.
+
+-- tempfile cleanup
+
 -- fsck job/command.  need 'last fsck' table per fid?  or column?
+
+-- fix haphazard CapitalStyle vs capital_style in ProcManager for class methods
 
 -- make monitor job try to do a PUT, to detect for read-only mode if kernel
    fs remounted itself after an error.
