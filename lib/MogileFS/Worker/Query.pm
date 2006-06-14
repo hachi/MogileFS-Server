@@ -32,20 +32,13 @@ sub process_line {
     # see what kind of command this is
     return $self->err_line('unknown_command')
         unless $$lineref =~ /^(\d+-\d+)?\s*(\S+)\s+(\S+)\s*(.*)/;
+
     $self->{reqid} = $1 || undef;
-    my ($cmd, $line, $client_ip) = ($2, $4, $3);
+    my ($cmd, $client_ip, $line) = ($2, $3, $4);
 
     # set global variables for zone determination
     Mgd::set_client_ip($client_ip);
     Mgd::set_force_altzone(0);
-
-    # some basic commands we support
-    if ($cmd eq 'echo') {
-        Mgd::send_to_parent($line);
-        return;
-    } elsif ($cmd eq 'shutdown') {
-        exit 0;
-    }
 
     # fallback to normal command handling
     if ($line =~ /^(\w+)\s*(.*)/) {

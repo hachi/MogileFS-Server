@@ -6,7 +6,12 @@ use strict;
 use Danga::Socket ();
 use base qw{Danga::Socket};
 
-use fields qw{read_buf job pid cmd_buf reqid};
+use fields (
+            'read_buf',
+            'job',
+            'pid',
+            'reqid',
+            );
 
 sub new {
     my MogileFS::Connection::Worker $self = shift;
@@ -17,7 +22,6 @@ sub new {
     $self->{pid} = 0;
     $self->{reqid} = 0;
     $self->{job} = undef;
-    $self->{cmd_buf} = [];
 
     return $self;
 }
@@ -58,22 +62,6 @@ sub close {
     my MogileFS::Connection::Worker $self = shift;
     MogileFS::ProcManager->NoteDeadWorkerConn($self);
     $self->SUPER::close(@_);
-}
-
-sub enqueue_line {
-    my MogileFS::Connection::Worker $self = $_[0];
-    return if $self->job eq 'queryworker'; # they don't use this queueing
-    my $msg = "$_[1]\r\n";
-    push @{$self->{cmd_buf}}, $msg;
-}
-
-sub drain_queue {
-    my MogileFS::Connection::Worker $worker = $_[0];
-    foreach my $cmd (@{$worker->{cmd_buf}}) {
-        $worker->write($cmd);
-    }
-    $worker->write(".\r\n");
-    $worker->{cmd_buf} = [];
 }
 
 1;

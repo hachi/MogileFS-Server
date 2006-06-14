@@ -25,26 +25,12 @@ sub process_line {
 
     if ($$lineref =~ /^repl_was_done (\d+)/) {
         delete $self->{fidtodo}{$1};
-        return;
+        return 1;
     }
 
-    # FIXME: change this to only be the generic ":shutdown" command
-    if ($$lineref =~ /^shutdown/) {
-        exit 0;
-    }
+    return 0;
 }
 
-sub read_from_parent {
-    my $self = shift;
-    my $psock = $self->{psock};
-
-    # while things are immediately available,
-    while (Mgd::wait_for_readability(fileno($psock), 0)) {
-        my $line = <$psock>
-            or return;
-        $self->process_generic_command(\$line) || $self->process_line(\$line);
-    }
-}
 
 sub work {
     my $self = shift;
@@ -58,12 +44,10 @@ sub work {
     my %unreachable;
 
     every(2.0, sub {
+        $self->parent_ping;
+
         $self->validate_dbh;
         my $dbh = $self->get_dbh or return 0;
-
-        # general report in to parent
-        $self->send_to_parent('repl_ping');
-        $self->read_from_parent;
 
         # update our unreachable fid list... we consider them good for 15 minutes
         my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');

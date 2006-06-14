@@ -329,7 +329,7 @@ sub NoteIdleQueryWorker {
 sub AskWorkerToDie {
     my MogileFS::Connection::Worker $worker = $_[1];
     note_pending_death($worker->job, $worker->pid);
-    $worker->write("shutdown\r\n");
+    $worker->write(":shutdown\r\n");
 }
 
 # kill bored query workers so we can get down to the level requested.  this
@@ -436,22 +436,20 @@ sub ProcessQueues {
 sub SendHelp {
     my $client = $_[1];
 
-    # not supported yet
-    #my $whaton = $_[2];
-
     # send general purpose help
     $client->write(<<HELP);
-Welcome to mogilefsd's built-in help system.  Available commands:
+Mogilefsd admin commands:
 
     !recent     Recently executed queries and how long they took.
     !queue      Queries that are pending execution.
-    !stats      General stats on what we're up to.
+    !stats      General stats on what we\'re up to.
     !watch      Observe errors/messages from children.
     !jobs       Outstanding job counts, desired level, and pids.
-    !shutdown   IMMEDIATELY kill all of mogilefsd.  IMMEDIATELY.
+    !shutdown   Immediately kill all of mogilefsd.
 
     !replication
-                See the replication status.  Output format:
+                See the replication status for unreplicated files.
+                Output format:
                 <domain> <class> <devcount> <files>
 
     !to <job class> <message>
@@ -463,8 +461,6 @@ Welcome to mogilefsd's built-in help system.  Available commands:
                 Example: !want 20 queryworker, !want 3 replicate.
                 See !jobs for what jobs are available.
 
-More to come...
-.
 HELP
 
 }
@@ -477,8 +473,10 @@ sub HandleChildRequest {
     # and not a command.  they also specify their pid, just so we know what
     # connection goes with what pid, in case it's ever useful information.
     my MogileFS::Connection::Worker $child = $_[1];
+    my $cmd = $_[2];
+
     unless (defined $child->job) {
-        my ($pid, $job) = ($_[2] =~ /^(\d+)\s+(.+)/);
+        my ($pid, $job) = ($cmd =~ /^(\d+)\s+(.+)/);
         $child->job($job);
         $child->pid($pid);
 
@@ -492,41 +490,14 @@ sub HandleChildRequest {
         return;
     }
 
-    # see if we should downsize this child
-    my $check_job = sub {
-        if (job_needs_reduction($child->job)) {
-            Mgd::error("Reducing headcount of " . $child->job . " job by 1.");
-            MogileFS::ProcManager->AskWorkerToDie($child);
-        } else {
-            $child->drain_queue;
-        }
-    };
-
     # at this point we've got a command of some sort
-    my $cmd = $_[2];
     if ($cmd =~ /^error (.+)$/i) {
         # pass it on to our error handler, prefaced with the child's job
         Mgd::error("[" . $child->job . "(" . $child->pid . ")] $1");
 
-    } elsif ($cmd =~ /^queue/) {
-        # send out what we have queued up for it
-        $child->drain_queue;
-
     } elsif ($cmd =~ /^:state_change (\w+) (\d+) (\w+)/) {
         my ($what, $whatid, $state) = ($1, $2, $3);
         state_change($what, $whatid, $state, $child);
-
-    } elsif ($cmd =~ /^request_orders/) {
-        $check_job->();
-
-    } elsif ($cmd =~ /^monitor_ping/) {
-        $check_job->();
-
-    } elsif ($cmd =~ /^reaper_ping/) {
-        $check_job->();
-
-    } elsif ($cmd =~ /^repl_ping/) {
-        $check_job->();
 
     } elsif ($cmd =~ /^repl_unreachable (\d+)/) {
         # announce to the other replicators that this fid can't be reached, but note
@@ -540,7 +511,15 @@ sub HandleChildRequest {
         # announce to the other replicators that this fid was done and then drain the
         # queue to this person.
         MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_was_done $fid", $child);
-        $check_job->();
+
+    } elsif ($cmd eq "still_alive") {
+
+        #warn sprintf("Job '%s' with pid %d is still alive at %d\n", $child->job, $child->pid, time());
+        if (job_needs_reduction($child->job)) {
+            MogileFS::ProcManager->AskWorkerToDie($child);
+        } else {
+            $child->write(":stay_alive\r\n");
+        }
 
     } else {
         # unknown command

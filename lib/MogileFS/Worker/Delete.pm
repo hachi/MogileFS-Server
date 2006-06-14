@@ -23,14 +23,14 @@ sub work {
 
   PASS:
     while (1) {
+        $self->parent_ping;
+
         $self->validate_dbh;
         my $dbh = $self->get_dbh;
 
         # see if we have anything from the parent
         my $start_time = time();
         my $end_time   = $start_time + 5;
-
-        $self->get_orders_from_parent;
 
         # we select 1000 but only do a random 100 of them, to allow
         # for stateless paralleism

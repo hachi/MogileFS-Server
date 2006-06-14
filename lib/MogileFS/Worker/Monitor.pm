@@ -17,34 +17,18 @@ sub new {
 
 sub work {
     my $self = shift;
-    my $psock = $self->{psock};
-    my $parse_parent_response = sub {
-        # now see what was in our message queue
-        while (defined (my $line = <$psock>)) {
-            $line =~ s/\r?\n$//;
-            last if $line eq '.';
-
-            # now find out what command this is?
-            if ($line eq 'shutdown') {
-                exit 0;
-            }
-        }
-    };
 
     my $update_db_every = 15;
     my %last_db_update;  # devid -> time.  update db less often than poll interval.
 
     every(2.5, sub {
+	$self->parent_ping;
 
         # get db and note we're starting a run
         error("Monitor running; scanning usage files")
             if $Mgd::DEBUG >= 1;
         $self->validate_dbh;
         my $dbh = $self->get_dbh or return 0;
-
-        # general report in to parent
-        $self->send_to_parent('monitor_ping');
-        $parse_parent_response->();
 
         # get a current list of devices
         my $devs = Mgd::get_device_summary();
