@@ -18,7 +18,7 @@ sub work {
     my $self = shift;
     my $psock = $self->{psock};
 
-    every(10, sub {
+    every(5, sub {
         $self->parent_ping;
 
         # get db and note we're starting a run
@@ -29,8 +29,8 @@ sub work {
 
         # get a current list of devices
         my $devs = Mgd::get_device_summary();
-        my @deaddevs = grep { $_->{status} =~ /^dead$/ } values %$devs;
-        next unless @deaddevs;
+        my @deaddevs = grep { $_->{status} eq "dead" } values %$devs
+            or return;
 
         # now iterate over dead devices
         foreach my $dev (@deaddevs) {

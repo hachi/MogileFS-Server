@@ -20,13 +20,13 @@ our ($IsChild, @RecentQueries,
      %Mappings, %ChildrenByJob, %ErrorsTo, %Stats);
 
 my @IdleQueryWorkers;  # workers that are idle, able to process commands  (MogileFS::Worker::Query, ...)
-my @PendingQueries;    # [ MogileFS::Connection::Client, "cmd $ip $query" ]  (literally "cmd ")
+my @PendingQueries;    # [ MogileFS::Connection::Client, "$ip $query" ]
 
 $IsChild = 0;  # either false if we're the parent, or a MogileFS::Worker object
 
 # keep track of what all child pids are doing, and what jobs are being
 # satisifed.
-my %child  = ();    # pid -> job
+my %child  = ();    # pid -> MogileFS::Connection::Worker
 my %todie  = ();    # pid -> 1 (lists pids that we've asked to die)
 my %jobs   = ();    # jobname -> [ min, current ]
 
@@ -46,8 +46,36 @@ sub set_min_workers {
     # TODO: set allkipsup false, so spawner re-checks?
 }
 
+sub job_to_class_suffix {
+    my ($class, $job) = @_;
+    return {
+        queryworker => "Query",
+        delete      => "Delete",
+        replicate   => "Replicate",
+        reaper      => "Reaper",
+        monitor     => "Monitor",
+    }->{$job};
+}
+
+sub job_to_class {
+    my ($class, $job) = @_;
+    my $suffix = $class->job_to_class_suffix($job) or return "";
+    return "MogileFS::Worker::$suffix";
+}
+
 sub child_pids {
     return keys %child;
+}
+
+sub WatchDog {
+    foreach my $pid (keys %child) {
+        my MogileFS::Connection::Worker $child = $child{$pid};
+        my $healthy = $child->watchdog_check;
+        next if $healthy;
+
+        error("Watchdog killing worker $pid (" . $child->job . ")");
+        kill 9, $pid;
+    }
 }
 
 # returns a sub that Danga::Socket calls after each event loop round.
@@ -61,6 +89,8 @@ sub PostEventLoopChecker {
         return 1 unless $now > $lastspawntime;
         $lastspawntime = $now;
 
+        MogileFS::ProcManager->WatchDog;
+
         # see if anybody has died, but don't hang up on doing so
         my $pid = waitpid -1, WNOHANG;
         return 1 if $pid <= 0 && $allkidsup;
@@ -68,8 +98,9 @@ sub PostEventLoopChecker {
 
         # when a child dies, figure out what it was doing
         # and note that job has one less worker
-        my $job;
-        if ($pid > -1 && ($job = delete $child{$pid})) {
+        my $jobconn;
+        if ($pid > -1 && ($jobconn = delete $child{$pid})) {
+            my $job = $jobconn->job;
             my $extra = $todie{$pid} ? "expected" : "UNEXPECTED";
             error("Child $pid ($job) died: $? ($extra)");
             MogileFS::ProcManager->NoteDeadChild($pid);
@@ -91,9 +122,9 @@ sub PostEventLoopChecker {
             if ($need > 0) {
                 error("Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.");
                 for (1..$need) {
-                    my $cpid = make_new_child($job);
-                    return 1 unless $cpid;
-                    $child{$cpid} = $job;
+                    my $jobconn = make_new_child($job)
+                        or return 1;  # basically bail: true value keeps event loop running
+                    $child{$jobconn->pid} = $jobconn;
 
                     # now increase the count of processes currently doing this job
                     $jobstat->[1]++;
@@ -143,7 +174,7 @@ sub make_new_child {
         $worker_conn->pid($pid);
         $worker_conn->job($job);
         MogileFS::ProcManager->RegisterWorkerConn($worker_conn);
-        return $pid;  # TODO: return MogileFS::Connection::Worker (which has pid) instead of just $pid.  find caller(s).
+        return $worker_conn;
     }
 
     # as a child, we want to close these and ignore them
@@ -159,17 +190,9 @@ sub make_new_child {
     sigprocmask(SIG_UNBLOCK, $sigset)
         or return error("Can't unblock SIGINT for fork: $!");
 
-    my $class_suffix = {
-        queryworker => "Query",
-        delete      => "Delete",
-        replicate   => "Replicate",
-        reaper      => "Reaper",
-        monitor     => "Monitor",
-    }->{$job} or
-        die "No worker class defined for job '$job'\n";
-
     # now call our job function
-    my $class = "MogileFS::Worker::" . $class_suffix;
+    my $class = MogileFS::ProcManager->job_to_class($job)
+        or die "No worker class defined for job '$job'\n";
     my $worker = $class->new($childs_ipc);
 
     # set our frontend into child mode
@@ -207,7 +230,7 @@ sub foreach_pending_query {
     my ($class, $cb) = @_;
     foreach my $clq (@PendingQueries) {
         $cb->($clq->[0],  # client object,
-              $clq->[1],  # "cmd ip $query"
+              $clq->[1],  # "$ip $query"
               );
     }
 }
@@ -312,9 +335,9 @@ sub RegisterWorkerConn {
 sub EnqueueCommandRequest {
     my ($class, $line, $client) = @_;
     push @PendingQueries, [
-                        $client,
-                        "cmd " . ($client->peer_ip_string || '0.0.0.0') . " $line"
-                        ];
+                           $client,
+                           ($client->peer_ip_string || '0.0.0.0') . " $line"
+                           ];
     MogileFS::ProcManager->ProcessQueues;
 }
 
@@ -374,16 +397,16 @@ sub HandleQueryWorkerResponse {
     # the queryworker and need to pass it up the line
     return MogileFS::ProcManager->HandleChildRequest($worker, $line) if !$client;
 
-    # at this point it was a command response, but if the client has gone
-    # away, just reenqueue this query worker
-    return MogileFS::ProcManager->NoteIdleQueryWorker($worker) if $client->{closed};
-
     # out-of-band messages (not replies to requests) start with a colon:
     if ($line =~ /^:state_change (\w+) (\d+) (\w+)/) {
         my ($what, $whatid, $state) = ($1, $2, $3);
         state_change($what, $whatid, $state);
         return;
     }
+
+    # at this point it was a command response, but if the client has gone
+    # away, just reenqueue this query worker
+    return MogileFS::ProcManager->NoteIdleQueryWorker($worker) if $client->{closed};
 
     # <numeric id> [client-side time to complete] <response>
     my ($time, $id, $res);
@@ -513,14 +536,20 @@ sub HandleChildRequest {
         # queue to this person.
         MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_was_done $fid", $child);
 
-    } elsif ($cmd eq "still_alive") {
+    } elsif ($cmd eq ":ping") {
 
-        #warn sprintf("Job '%s' with pid %d is still alive at %d\n", $child->job, $child->pid, time());
+        # warn sprintf("Job '%s' with pid %d is still alive at %d\n", $child->job, $child->pid, time());
+
+        # this command expects a reply, either to die or stay alive.  beginning of worker's loops
         if (job_needs_reduction($child->job)) {
             MogileFS::ProcManager->AskWorkerToDie($child);
         } else {
             $child->write(":stay_alive\r\n");
         }
+
+    } elsif ($cmd eq ":still_alive") {
+
+        # a no-op
 
     } else {
         # unknown command
@@ -608,7 +637,8 @@ sub is_child {
 
 sub state_change {
     my ($what, $whatid, $state, $child) = @_;
-    warn "STATE CHANGE: $what<$whatid> = $state\n";
+    #warn "STATE CHANGE: $what<$whatid> = $state\n";
+    # TODO: can probably send this to all children now, not just certain types
     for my $type (qw(queryworker replicate)) {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":state_change $what $whatid $state", $child);
     }

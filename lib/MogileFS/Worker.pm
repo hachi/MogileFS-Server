@@ -32,6 +32,11 @@ sub send_to_parent {
     $self->{psock}->write("$_[0]\r\n");
 }
 
+# override in children
+sub watchdog_timeout {
+    return 10;
+}
+
 # should be overridden by workers to process worker-specific directives
 # from the parent process.  return 1 if you recognize the command, 0 otherwise.
 sub process_line {
@@ -70,7 +75,7 @@ sub read_from_parent {
 sub parent_ping {
     my $self = shift;
     my $psock = $self->{psock};
-    $self->send_to_parent('still_alive');
+    $self->send_to_parent(':ping');
 
     my $got_reply = 0;
     die "recursive parent_ping!" if $got_live_vs_die;

@@ -15,6 +15,10 @@ sub new {
     return $self;
 }
 
+sub watchdog_timeout {
+    30;
+}
+
 sub work {
     my $self = shift;
 

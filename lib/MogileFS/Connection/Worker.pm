@@ -11,6 +11,7 @@ use fields (
             'job',
             'pid',
             'reqid',
+            'last_alive',  # unixtime
             );
 
 sub new {
@@ -18,16 +19,32 @@ sub new {
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new( @_ );
 
-    # mark as not a worker by default
-    $self->{pid} = 0;
-    $self->{reqid} = 0;
-    $self->{job} = undef;
+    $self->{pid}        = 0;
+    $self->{reqid}      = 0;
+    $self->{job}        = undef;
+    $self->{last_alive} = time();
 
     return $self;
 }
 
+sub note_alive {
+    my $self = shift;
+    $self->{last_alive} = time();
+}
+
+sub watchdog_check {
+    my MogileFS::Connection::Worker $self = shift;
+
+    my $timeout               = $self->worker_class->watchdog_timeout;
+    my $time_since_last_alive = time() - $self->{last_alive};
+    return $time_since_last_alive < $timeout;
+}
+
 sub event_read {
     my MogileFS::Connection::Worker $self = shift;
+
+    # if we read data from it, it's not blocked on something else.
+    $self->note_alive;
 
     my $bref = $self->read(1024);
     return $self->close() unless defined $bref;
@@ -35,7 +52,7 @@ sub event_read {
 
     while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
         my $line = $1;
-        if ($self->job eq 'queryworker' && (substr($line, 0, 5) ne 'error')) {
+        if ($self->job eq 'queryworker' && $line !~ /^(?:\:|error)/) {
             MogileFS::ProcManager->HandleQueryWorkerResponse($self, $line);
         } else {
             MogileFS::ProcManager->HandleChildRequest($self, $line);
@@ -47,6 +64,11 @@ sub job {
     my MogileFS::Connection::Worker $self = shift;
     return $self->{job} unless @_;
     return $self->{job} = shift;
+}
+
+sub worker_class {
+    my MogileFS::Connection::Worker $self = shift;
+    return MogileFS::ProcManager->job_to_class($self->{job});
 }
 
 sub pid {

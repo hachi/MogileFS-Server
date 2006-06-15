@@ -2,6 +2,8 @@ package MogileFS::Worker::Query;
 # responds to queries from Mogile clients
 
 use strict;
+use warnings;
+
 use base 'MogileFS::Worker';
 use fields qw(querystarttime reqid);
 
@@ -15,13 +17,25 @@ sub new {
     return $self;
 }
 
+# no query should take 10 seconds, and we check in every 5 seconds.
+sub watchdog_timeout { 10 }
+
 sub work {
     my $self = shift;
     my $psock = $self->{psock};
-    while (defined (my $line = <$psock>)) {
-        $line =~ s/[\r\n]+$//;
-        $self->validate_dbh;
-        $self->process_generic_command(\$line) || $self->process_line(\$line);
+    while (1) {
+        my $rin = '';
+        vec($rin, fileno($psock), 1) = 1;
+        my $readable = select($rin, undef, undef, 5.0);
+        if ($readable) {
+            if (defined($psock) && (my $line = <$psock>)) {
+                $line =~ s/[\r\n]+$//;
+                $self->validate_dbh;
+                $self->process_generic_command(\$line) || $self->process_line(\$line);
+            }
+        } else {
+            $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
+        }
     }
 }
 
@@ -31,10 +45,10 @@ sub process_line {
 
     # see what kind of command this is
     return $self->err_line('unknown_command')
-        unless $$lineref =~ /^(\d+-\d+)?\s*(\S+)\s+(\S+)\s*(.*)/;
+        unless $$lineref =~ /^(\d+-\d+)?\s*(\S+)\s*(.*)/;
 
     $self->{reqid} = $1 || undef;
-    my ($cmd, $client_ip, $line) = ($2, $3, $4);
+    my ($client_ip, $line) = ($2, $3);
 
     # set global variables for zone determination
     Mgd::set_client_ip($client_ip);
@@ -50,7 +64,7 @@ sub process_line {
         my $cmd_handler = *{"cmd_$cmd"}{CODE};
         if ($cmd_handler) {
             my $args = decode_url_args(\$args);
-            Mgd::set_force_altzone(1) if $args->{zone} eq 'alt';
+            Mgd::set_force_altzone(1) if $args->{zone} && $args->{zone} eq 'alt';
             $cmd_handler->($self, $args);
             return;
         }
@@ -919,8 +933,10 @@ sub cmd_stats {
 
     # get names of all domains and classes for use later
     my %classes;
-    my $rows = $dbh->selectall_arrayref('SELECT class.dmid, namespace, classid, classname ' .
-                                        'FROM domain, class WHERE class.dmid = domain.dmid');
+    my $rows;
+
+    $rows = $dbh->selectall_arrayref('SELECT class.dmid, namespace, classid, classname ' .
+                                     'FROM domain, class WHERE class.dmid = domain.dmid');
     foreach my $row (@$rows) {
         $classes{$row->[0]}->{name} = $row->[1];
         $classes{$row->[0]}->{classes}->{$row->[2]} = $row->[3];
@@ -930,8 +946,8 @@ sub cmd_stats {
 
     # get host and device information with device status
     my %devices;
-    my $rows = $dbh->selectall_arrayref('SELECT device.devid, hostname, device.status ' .
-                                        'FROM device, host WHERE device.hostid = host.hostid');
+    $rows = $dbh->selectall_arrayref('SELECT device.devid, hostname, device.status ' .
+                                     'FROM device, host WHERE device.hostid = host.hostid');
     foreach my $row (@$rows) {
         $devices{$row->[0]}->{host} = $row->[1];
         $devices{$row->[0]}->{status} = $row->[2];
@@ -1003,7 +1019,7 @@ sub ok_line {
 
     my $args = shift;
     my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
-    $self->{psock}->write("${id}${delay}OK $argline\r\n");
+    $self->send_to_parent("${id}${delay}OK $argline");
     return 1;
 }
 
