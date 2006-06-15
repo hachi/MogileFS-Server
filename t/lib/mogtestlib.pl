@@ -58,6 +58,7 @@ sub create_temp_tracker {
 	}
         sleep 1;
     }
+    return undef;
 }
 
 package DBHandle;
@@ -98,7 +99,6 @@ sub pid { return $_[0]{pid} }
 sub DESTROY {
     my $self = shift;
     return unless $self->{pid};
-    warn "Killing $self->{pid}...\n";
     kill 15, $self->{pid};
 }
 

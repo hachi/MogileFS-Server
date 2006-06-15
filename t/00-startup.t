@@ -27,4 +27,5 @@ ok(!$rv, "database setup ran again without problems");
 
 my $tmptrack = create_temp_tracker($tempdb);
 
-pass("done");
+ok($tmptrack);
+

@@ -53,7 +53,7 @@ sub load_config {
                              'D|daemon'      => \$cmdline{daemonize},
                              'dsn=s'         => \$cmdline{db_dsn},
                              'dbuser=s'      => \$cmdline{db_user},
-                             'dbpass=s'      => \$cmdline{db_pass},
+                             'dbpass:s'      => \$cmdline{db_pass},
                              'user=s'        => \$cmdline{user},
                              'r|mogroot=s'   => \$cmdline{mog_root},
                              'p|confport=i'  => \$cmdline{conf_port},
