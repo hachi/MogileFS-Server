@@ -54,6 +54,7 @@ sub load_config {
                              'dsn=s'         => \$cmdline{db_dsn},
                              'dbuser=s'      => \$cmdline{db_user},
                              'dbpass=s'      => \$cmdline{db_pass},
+                             'user=s'        => \$cmdline{user},
                              'r|mogroot=s'   => \$cmdline{mog_root},
                              'p|confport=i'  => \$cmdline{conf_port},
                              'w|workers=i'   => \$cmdline{query_jobs},
@@ -121,6 +122,8 @@ sub load_config {
     $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
+
+    choose_value('user', '');
 }
 
 ### FUNCTION: choose_value( $name, $default[, $boolean] )

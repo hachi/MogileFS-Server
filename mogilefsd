@@ -16,10 +16,6 @@
 
 package Mgd;
 
-# don't run as root
-die "mogilefsd cannot be run as root\n"
-    if $< == 0;
-
 use strict;
 use Getopt::Long;
 use IO::Socket;
@@ -65,6 +61,11 @@ our $client_ip = undef; # client ip address
 our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
 
 MogileFS::Config->load_config;
+
+# don't run as root
+die "mogilefsd cannot be run as root\n"
+    if $< == 0 && MogileFS->config('user') ne "root";
+
 check_database();
 daemonize() if MogileFS->config("daemonize");
 

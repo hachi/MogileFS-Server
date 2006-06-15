@@ -31,9 +31,12 @@ sub create_temp_tracker {
     my $db = shift;
 
     my $pid = fork();
+    my $whoami = `whoami`;
+    chomp $whoami;
 
     unless ($pid) {
         exec("$Bin/../mogilefsd",
+	     ($whoami eq "root" ? "--user=root" : ()),
              "--skipconfig",
              "--dsn=" . $db->dsn,
              "--dbuser=" . $db->user,
