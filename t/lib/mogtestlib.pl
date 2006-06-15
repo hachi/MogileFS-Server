@@ -3,6 +3,7 @@ use warnings;
 use DBI;
 
 use FindBin qw($Bin);
+use IO::Socket::INET;
 
 sub create_temp_db {
     my $dbname = "tmp_mogiletest";
@@ -34,6 +35,14 @@ sub create_temp_tracker {
     my $whoami = `whoami`;
     chomp $whoami;
 
+    my $connect = sub {
+	return IO::Socket::INET->new(PeerAddr => "127.0.0.1:7001",
+				     Timeout  => 2);
+    };
+
+    my $conn = $connect->();
+    die "Failed:  tracker already running on port 7001?\n" if $conn;
+
     unless ($pid) {
         exec("$Bin/../mogilefsd",
 	     ($whoami eq "root" ? "--user=root" : ()),
@@ -43,9 +52,10 @@ sub create_temp_tracker {
              "--dbpass=" . $db->pass);
     }
 
-    for (1..10) {
-        my $pinged = kill 0, $pid;
-        print "ping $pid = $pinged\n";
+    for (1..3) {
+	if ($connect->()) {
+	    return TrackerHandle->new(pid => $pid);
+	}
         sleep 1;
     }
 }
@@ -76,5 +86,20 @@ sub dsn {
 sub user { "root" }
 *password = \&pass;
 sub pass { "" }
+
+package TrackerHandle;
+sub new {
+    my ($class, %args) = @_;
+    bless \%args, $class;
+}
+
+sub pid { return $_[0]{pid} }
+
+sub DESTROY {
+    my $self = shift;
+    return unless $self->{pid};
+    warn "Killing $self->{pid}...\n";
+    kill 15, $self->{pid};
+}
 
 1;
