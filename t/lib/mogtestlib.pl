@@ -47,6 +47,7 @@ sub create_temp_tracker {
         exec("$Bin/../mogilefsd",
 	     ($whoami eq "root" ? "--user=root" : ()),
              "--skipconfig",
+	     "--workers=2",
              "--dsn=" . $db->dsn,
              "--dbuser=" . $db->user,
              "--dbpass=" . $db->pass);
