@@ -34,7 +34,6 @@ our (
     $reaper_jobs,
     $monitor_jobs,
     $mog_root,
-    $worker_port,
     $min_free_space,
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
@@ -43,6 +42,8 @@ our (
 our $default_mindevcount;
 
 sub load_config {
+    my $dummy_workerport;
+
     # Command-line options will override
     Getopt::Long::Configure( "bundling" );
     Getopt::Long::GetOptions(
@@ -57,12 +58,16 @@ sub load_config {
                              'p|confport=i'  => \$cmdline{conf_port},
                              'w|workers=i'   => \$cmdline{query_jobs},
                              'no_http'       => \$cmdline{no_http},
-                             'workerport=i'  => \$cmdline{worker_port},
+                             'workerport=i'  => \$dummy_workerport,  # eat it for backwards compat
                              'maxdiskage=i'  => \$cmdline{max_disk_age},
                              'minfreespace=i' => \$cmdline{min_free_space},
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
                              );
+
+    # warn of old/deprecated options
+    warn "The command line option --workerport is no longer needed (and has no necessary replacement)\n"
+        if $dummy_workerport;
 
     $config = $DEFAULT_CONFIG if !$config && -r $DEFAULT_CONFIG;
 
@@ -110,7 +115,6 @@ sub load_config {
     $replicate_jobs = choose_value( 'replicate_jobs', 1 );
     $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
     $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
-    $worker_port    = choose_value( 'worker_port', 7200 );
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
     $DEBUG          = choose_value( 'debug', 0, 1 );

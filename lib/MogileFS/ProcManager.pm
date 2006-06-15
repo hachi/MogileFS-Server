@@ -121,17 +121,35 @@ sub make_new_child {
     sigprocmask(SIG_BLOCK, $sigset)
         or return error("Can't block SIGINT for fork: $!");
 
+    socketpair(my $parents_ipc, my $childs_ipc, AF_UNIX, SOCK_STREAM, PF_UNSPEC )
+        or die( "Sockpair failed" );
+
     return error("fork failed creating $job: $!")
         unless defined ($pid = fork);
 
+    # enable auto-flush, so it's not pipe-buffered between parent/child
+    select((select( $parents_ipc ), $|++)[0]);
+    select((select( $childs_ipc  ), $|++)[0]);
+
+    # if i'm the parent
     if ($pid) {
         sigprocmask(SIG_UNBLOCK, $sigset)
             or return error("Can't unblock SIGINT for fork: $!");
-        return $pid;
+
+        close($childs_ipc);  # unnecessary but explicit
+        IO::Handle::blocking($parents_ipc, 0);
+
+        my $worker_conn = MogileFS::Connection::Worker->new($parents_ipc);
+        $worker_conn->pid($pid);
+        $worker_conn->job($job);
+        MogileFS::ProcManager->RegisterWorkerConn($worker_conn);
+        return $pid;  # TODO: return MogileFS::Connection::Worker (which has pid) instead of just $pid.  find caller(s).
     }
 
     # as a child, we want to close these and ignore them
     Mgd::close_listeners();
+    close($parents_ipc);
+    undef $parents_ipc;
 
     $SIG{INT} = 'DEFAULT';
     $SIG{TERM} = 'DEFAULT';
@@ -140,19 +158,6 @@ sub make_new_child {
     # unblock signals
     sigprocmask(SIG_UNBLOCK, $sigset)
         or return error("Can't unblock SIGINT for fork: $!");
-
-    # try to create a connection to the parent.  we die here because
-    # we're the child and if we can't talk to the master we really need
-    # to die so that a child isn't just sitting around without communication
-    # to the parent.
-    my $psock = IO::Socket::INET->new(PeerAddr => "127.0.0.1",
-                                      PeerPort => MogileFS->config("worker_port"),
-                                      Type     => SOCK_STREAM,
-                                      Proto    => 'tcp',)
-        or die "Error creating socket to master: $@\n";
-
-    # advertise our pid/job to process manager now in parent
-    $psock->write("$$ $job\n");
 
     my $class_suffix = {
         queryworker => "Query",
@@ -165,7 +170,7 @@ sub make_new_child {
 
     # now call our job function
     my $class = "MogileFS::Worker::" . $class_suffix;
-    my $worker = $class->new($psock);
+    my $worker = $class->new($childs_ipc);
 
     # set our frontend into child mode
     MogileFS::ProcManager->SetAsChild($worker);
@@ -287,12 +292,21 @@ sub AddErrorWatcher {
     $ErrorsTo{$client->{fd}} = $client;
 }
 
-# take a new connection that we know is from one of our children, but
-# we're not sure what type of child, so just set it in read mode until
-# they tell us what they are
+# one-time initialization of a new worker connection
 sub RegisterWorkerConn {
     my MogileFS::Connection::Worker $worker = $_[1];
     $worker->watch_read(1);
+
+    #warn sprintf("Registering start-up of $worker (%s) [%d]\n", $worker->job, $worker->pid);
+
+    # now do any special case startup
+    if ($worker->job eq 'queryworker') {
+        MogileFS::ProcManager->NoteIdleQueryWorker($worker);
+    }
+    
+    # add to normal list
+    $ChildrenByJob{$worker->job}->{$worker->pid} = $worker;
+    
 }
 
 sub EnqueueCommandRequest {
@@ -475,20 +489,7 @@ sub HandleChildRequest {
     my MogileFS::Connection::Worker $child = $_[1];
     my $cmd = $_[2];
 
-    unless (defined $child->job) {
-        my ($pid, $job) = ($cmd =~ /^(\d+)\s+(.+)/);
-        $child->job($job);
-        $child->pid($pid);
-
-        # now do any special case startup
-        if ($job eq 'queryworker') {
-            MogileFS::ProcManager->NoteIdleQueryWorker($child);
-        }
-
-        # add to normal list
-        $ChildrenByJob{$job}->{$child->pid} = $child;
-        return;
-    }
+    die "Child $child with no pid?" unless $child->job;
 
     # at this point we've got a command of some sort
     if ($cmd =~ /^error (.+)$/i) {
