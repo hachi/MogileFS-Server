@@ -56,6 +56,7 @@ sub work {
             my %dev_down;  # devid -> 1 (when device times out due to EIO)
             my $done = 0;
             foreach my $dm (List::Util::shuffle(@$delmap)) {
+                $self->read_from_parent;
                 my ($fid, $devid) = @$dm;
 
                 # if no device is returned from the query above, that
@@ -76,6 +77,7 @@ sub work {
                 my $rv = 0;
                 if (my $urlref = Mgd::is_url($path)) {
                     # hit up the server and delete it
+                    # TODO: (optimization) use MogileFS->get_observed_state and don't try to delete things known to be down/etc
                     my $sock = IO::Socket::INET->new(PeerAddr => $urlref->[0],
                                                      PeerPort => $urlref->[1],
                                                      Timeout => 2);
@@ -88,7 +90,7 @@ sub work {
                     # send delete request
                     error("Sending delete for $path") if $Mgd::DEBUG >= 2;
                     $sock->write("DELETE $urlref->[2] HTTP/1.0\r\n\r\n");
-                    my $response = <$sock>;  # FIXME: could hang
+                    my $response = <$sock>;
                     if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
                         if (($1 >= 200 && $1 <= 299) || $1 == 404) {
                             # effectively means all went well
@@ -123,6 +125,31 @@ sub work {
                 $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
                          undef, $fid, $devid) if $rv;
             }
+
+            # also clean the tempfile table
+            #mysql> select * from tempfile where createtime < unix_timestamp() - 86400 limit 50;  
+            #+--------+------------+---------+------+---------+--------+
+            #| fid    | createtime | classid | dmid | dkey    | devids |
+            #+--------+------------+---------+------+---------+--------+
+            #|   3253 | 1149451058 |       1 |    1 | file574 | 1,2    |
+            #|   4559 | 1149451156 |       1 |    1 | file83  | 1,2    |
+            #|  11024 | 1149451697 |       1 |    1 | file836 | 2,1    |
+            #|  19885 | 1149454542 |       1 |    1 | file531 | 1,2    |
+
+            # BUT NOTE:
+            #    the fids might exist on one of the devices in devids column if we assigned them those,
+            #    they wrote some to one of them, then they died or for wahtever reason didn't create_close
+            #    to use, so we shouldn't delete from tempfile before going on a hunt of the missing fid.
+            #    perhaps we should just add to the file_on table for both devids, and let the regular delete
+            #    process discover via 404 that they're not there. 
+            # so we should:
+            #    select fid, devids from tempfile where createtime < unix_timestamp() - 86400
+            #    add file_on rows for both of those,
+            #    add fid to fids_to_delete table,
+            #    delete from tempfile where fid=?
+
+
+
         }
     }
 
