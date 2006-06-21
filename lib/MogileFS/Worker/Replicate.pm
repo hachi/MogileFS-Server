@@ -31,10 +31,8 @@ sub process_line {
     return 0;
 }
 
-
 sub work {
     my $self = shift;
-    my $psock = $self->{psock};
 
     # { fid => lastcheck }; instructs us not to replicate this fid... we will clear
     # out fids from this list that are expired
@@ -237,13 +235,12 @@ sub replicate {
 
         my $rv = undef;
         if (MogileFS::Config->http_mode) {
-            my $lastping = 0;
+            my $lastping = time();
             my $worker = MogileFS::ProcManager->is_child or die;
             $rv = http_copy($sdevid, $ddevid, $fid, sub {
                 my $now = time();
-                return if $now == $lastping;
+                return if $now == $lastping; # ping once per second
                 $worker->still_alive;
-                warn "still alive replicating in [$$] at $now.\n";
                 $lastping = $now;
             });
         } else {
@@ -344,7 +341,7 @@ sub http_copy {
         if $pipe_closed;
 
     # now read data and print while we're reading.
-    my ($data, $written, $remain) = ('', 0, 0, $clen);
+    my ($data, $written, $remain) = ('', 0, $clen);
     my $bytes_to_read = 1024*1024;  # read 1MB at a time until there's less than that remaining
     $bytes_to_read = $remain if $remain < $bytes_to_read;
 
@@ -354,7 +351,7 @@ sub http_copy {
         $bytes_to_read = $remain if $remain < $bytes_to_read;
 
         my $wbytes = $dsock->send($data);
-        $written += $wbytes;
+        $written  += $wbytes;
         return error("Error: wrote $wbytes; expected to write $bytes; failed putting to $dpath")
             unless $wbytes == $bytes;
         $intercopy_cb->();
