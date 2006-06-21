@@ -639,7 +639,7 @@ sub state_change {
     my ($what, $whatid, $state, $child) = @_;
     #warn "STATE CHANGE: $what<$whatid> = $state\n";
     # TODO: can probably send this to all children now, not just certain types
-    for my $type (qw(queryworker replicate)) {
+    for my $type (qw(queryworker replicate delete)) {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":state_change $what $whatid $state", $child);
     }
 }
