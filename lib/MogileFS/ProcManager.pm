@@ -463,9 +463,7 @@ sub ProcessQueues {
 
         # increment our counter so we know what request counter this is going out
         $worker->{reqid}++;
-
         $worker->write("$worker->{pid}-$worker->{reqid} $clref->[1]\r\n");
-        $worker->watch_read(1);
     }
 }
 
@@ -553,7 +551,9 @@ sub HandleChildRequest {
 
     } else {
         # unknown command
-        Mgd::error("Unknown command [$_[2]] from child; job=" . $child->job);
+        my $show = $cmd;
+        $show = substr($show, 0, 80) . "..." if length $cmd > 80;
+        Mgd::error("Unknown command [$show] from child; job=" . $child->job);
     }
 }
 

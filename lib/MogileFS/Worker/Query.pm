@@ -23,18 +23,29 @@ sub watchdog_timeout { 10 }
 sub work {
     my $self = shift;
     my $psock = $self->{psock};
+    my $rin = '';
+    vec($rin, fileno($psock), 1) = 1;
+    my $buf;
+
     while (1) {
-        my $rin = '';
-        vec($rin, fileno($psock), 1) = 1;
-        my $readable = select($rin, undef, undef, 5.0);
-        if ($readable) {
-            if (defined($psock) && (my $line = <$psock>)) {
-                $line =~ s/[\r\n]+$//;
-                $self->validate_dbh;
-                $self->process_generic_command(\$line) || $self->process_line(\$line);
-            }
-        } else {
+        my $rout;
+        unless (select($rout=$rin, undef, undef, 5.0)) {
             $self->still_alive;
+            next;
+        }
+            
+        my $newread;
+        my $rv = sysread($psock, $newread, 1024);
+        $buf .= $newread;
+
+        while ($buf =~ s/^(.+?)\r?\n//) {
+            my $line = $1;
+            $self->validate_dbh;
+            if ($self->process_generic_command(\$line)) {
+                $self->still_alive;  # no-op for watchdog
+            } else {
+                $self->process_line(\$line);
+            }
         }
     }
 }
@@ -1006,6 +1017,12 @@ sub cmd_stats {
     return $self->ok_line($ret);
 }
 
+sub cmd_noop {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+    return $self->ok_line;
+}
+
 sub ok_line {
     my MogileFS::Worker::Query $self = shift;
 
@@ -1067,7 +1084,7 @@ sub err_line {
 
     my $id = defined $self->{reqid} ? "$self->{reqid} " : '';
 
-    $self->{psock}->write("${id}${delay}ERR $err_code " . eurl($err_text) . "\r\n");
+    $self->send_to_parent("${id}${delay}ERR $err_code " . eurl($err_text));
     return 0;
 }
 

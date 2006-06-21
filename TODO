@@ -1,3 +1,11 @@
+-- replication policy error storm when a device is known to be observably down:
+
+[replicate(28037)] replication policy ran out of suggestions for us replicating fid 197214
+[replicate(28037)] replication policy ran out of suggestions for us replicating fid 197237
+[replicate(28037)] replication policy ran out of suggestions for us replicating fid 197219
+[replicate(28037)] replication policy ran out of suggestions for us replicating fid 197256
+[replicate(28037)] replication policy ran out of suggestions for us replicating fid 197226
+
 -- telnet to 7001 and send "!"<enter>  will crash.
 
 -- tempfile cleanup

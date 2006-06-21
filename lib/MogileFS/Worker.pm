@@ -1,7 +1,8 @@
 package MogileFS::Worker;
 use strict;
 use fields ('psock',              # socket for parent/child communications
-            'last_bcast_state'    # "{device|host}-$devid" => [$time, {alive|dead}]
+            'last_bcast_state',   # "{device|host}-$devid" => [$time, {alive|dead}]
+            'readbuf',            # unparsed data from parent
             );
 
 use MogileFS::Util qw(error);
@@ -15,7 +16,10 @@ sub new {
     $self = fields::new($self) unless ref $self;
 
     $self->{psock}            = $psock;
+    $self->{readbuf}          = '';
     $self->{last_bcast_state} = {};
+
+    IO::Handle::blocking($psock, 0);
     return $self;
 }
 
@@ -36,7 +40,24 @@ sub still_alive {
 
 sub send_to_parent {
     my $self = shift;
-    $self->{psock}->write("$_[0]\r\n");
+    my $write = "$_[0]\r\n";
+    my $totallen = length $write;
+    my $rv = syswrite($self->{psock}, $write);
+    return 1 if $rv == $totallen;
+    die "Error writing: $!" if $!;
+    
+    my $remain = $totallen - $rv;
+    my $offset = $rv;
+    my $rout = '';
+    vec($rout, fileno($self->{psock}), 1) = 1;
+    while ($remain > 0) {
+        select(undef, $rout, undef, undef) or next;
+        $rv = syswrite($self->{psock}, $write, $remain, $offset);
+        $remain -= $rv;
+        $offset += $rv;
+    }
+    die "remain is negative:  $remain" if $remain < 0;
+    return 1;
 }
 
 # override in children
@@ -55,26 +76,20 @@ sub read_from_parent {
     my $self = shift;
     my $psock = $self->{psock};
 
-    #warn "$self reading from parent...\n";
     # while things are immediately available,
-    my $buf;
     while (Mgd::wait_for_readability(fileno($psock), 0)) {
-        # FIXME: ghetto single byte line-reading.  need to make this
-        # non-blocket socketpair.  doing this for now to get the interface
-        # down, even if implementation sucks.
-        my $byte;
-        my $rv = sysread($psock, $byte, 1);
-        die "Didn't read a byte, got rv=$rv ($!)" unless $rv == 1;
-        $buf .= $byte;
+        my $buf;
+        my $rv = sysread($psock, $buf, 1024);
+        $self->{readbuf} .= $buf;
+        
+        while ($self->{readbuf} =~ s/^(.+?)\r?\n//) {
+            my $line = $1;
 
-        next unless $buf =~ s/^(.+?)\r?\n//;
-        my $line = $1;
-        #warn "  $self got line: [$line]\n";
-
-        next if $self->process_generic_command(\$line);
-        my $ok = $self->process_line(\$line);
-        unless ($ok) {
-            error("Unrecognized command from parent: $line");
+            next if $self->process_generic_command(\$line);
+            my $ok = $self->process_line(\$line);
+            unless ($ok) {
+                error("Unrecognized command from parent: $line");
+            }
         }
     }
 }
@@ -97,8 +112,8 @@ sub parent_ping {
         $loops++;
         select undef, undef, undef, 0.20;
         if ($loops > 5) {
-            warn "No simple reply from parent in $loops 0.2second loops.\n";
-            die "No answer in 4 seconds from parent" if $loops > 20;
+            warn "No simple reply from parent to child $self [$$] in $loops 0.2second loops.\n";
+            die "No answer in 4 seconds from parent to child $self [$$], dying" if $loops > 20;
         }
     }
 }

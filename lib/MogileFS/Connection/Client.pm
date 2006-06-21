@@ -23,7 +23,7 @@ sub event_read {
     my MogileFS::Connection::Client $self = shift;
 
     my $bref = $self->read(1024);
-    return $self->close() unless defined $bref;
+    return $self->close unless defined $bref;
     $self->{read_buf} .= $$bref;
 
     while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
