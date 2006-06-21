@@ -6,7 +6,7 @@ use fields ('psock',              # socket for parent/child communications
 
 use MogileFS::Util qw(error);
 use vars (
-          '$got_live_vs_die',    # local'ized scalarref flag for whether we've 
+          '$got_live_vs_die',    # local'ized scalarref flag for whether we've
                                  # gotten a live-vs-die instruction from parent
           );
 
@@ -25,6 +25,13 @@ sub validate_dbh {
 
 sub get_dbh {
     return Mgd::get_dbh();
+}
+
+# method that workers can call just to write something to the parent, so worker
+# doesn't get killed.  (during idle/slow operation, say)
+sub still_alive {
+    my $self = shift;
+    $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
 }
 
 sub send_to_parent {

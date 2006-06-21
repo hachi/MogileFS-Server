@@ -40,6 +40,7 @@
 -- make generic script to write out usage files for people not using mogstored
     -- or, let mogstored be run in 'usage' file writing only mode
 
+-- wake up deleter process?  totally overkill, but why not?
 
 * 404 storms during replicating:  (1.5 year old email, might be fixed, verify)
 

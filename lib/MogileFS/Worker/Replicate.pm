@@ -237,7 +237,15 @@ sub replicate {
 
         my $rv = undef;
         if (MogileFS::Config->http_mode) {
-            $rv = http_copy($sdevid, $ddevid, $fid);
+            my $lastping = 0;
+            my $worker = MogileFS::ProcManager->is_child or die;
+            $rv = http_copy($sdevid, $ddevid, $fid, sub {
+                my $now = time();
+                return if $now == $lastping;
+                $worker->still_alive;
+                warn "still alive replicating in [$$] at $now.\n";
+                $lastping = $now;
+            });
         } else {
             my $root = Mgd::mog_root();
             my $dst_path = $root . "/" . make_path($ddevid, $fid);
@@ -265,7 +273,9 @@ sub replicate {
 
 # copies a file from one Perlbal to another utilizing HTTP
 sub http_copy {
-    my ($sdevid, $ddevid, $fid) = @_;
+    my ($sdevid, $ddevid, $fid, $intercopy_cb) = @_;
+
+    $intercopy_cb ||= sub {};
 
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error = sub {
@@ -334,14 +344,20 @@ sub http_copy {
         if $pipe_closed;
 
     # now read data and print while we're reading.
-    my ($data, $read, $written) = ('', 0, 0);
-    while (!$pipe_closed && (my $bytes = $sock->read($data, $clen - $read))) {
+    my ($data, $written, $remain) = ('', 0, 0, $clen);
+    my $bytes_to_read = 1024*1024;  # read 1MB at a time until there's less than that remaining
+    $bytes_to_read = $remain if $remain < $bytes_to_read;
+
+    while (!$pipe_closed && (my $bytes = $sock->read($data, $bytes_to_read))) {
         # now we've read in $bytes bytes
-        $read += $bytes;
+        $remain -= $bytes;
+        $bytes_to_read = $remain if $remain < $bytes_to_read;
+
         my $wbytes = $dsock->send($data);
         $written += $wbytes;
         return error("Error: wrote $wbytes; expected to write $bytes; failed putting to $dpath")
             unless $wbytes == $bytes;
+        $intercopy_cb->();
     }
     return error("Error: wrote $written bytes, expected to write $clen")
         unless $written == $clen;

@@ -34,7 +34,7 @@ sub work {
                 $self->process_generic_command(\$line) || $self->process_line(\$line);
             }
         } else {
-            $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
+            $self->still_alive;
         }
     }
 }
