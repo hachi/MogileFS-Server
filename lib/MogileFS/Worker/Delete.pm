@@ -85,8 +85,9 @@ sub process_tempfiles {
     my ($self, $dbh) = @_;
 
     # dig up some temporary files to purge
-    my $tempfiles = $dbh->selectall_arrayref('SELECT fid, devids FROM tempfile ' .
-                                             'WHERE createtime < UNIX_TIMESTAMP() - 86400 LIMIT 50');
+    my $too_old = int($ENV{T_TEMPFILE_TOO_OLD}) || 3600;
+    my $tempfiles = $dbh->selectall_arrayref("SELECT fid, devids FROM tempfile " .
+                                             "WHERE createtime < UNIX_TIMESTAMP() - $too_old LIMIT 50");
     return 0 unless $tempfiles && @$tempfiles;
 
     # insert the right rows into file_on and file_to_delete and remove the
