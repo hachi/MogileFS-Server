@@ -61,7 +61,7 @@ sub work {
 
 sub process_tempfiles {
     # also clean the tempfile table
-    #mysql> select * from tempfile where createtime < unix_timestamp() - 86400 limit 50;  
+    #mysql> select * from tempfile where createtime < unix_timestamp() - 86400 limit 50;
     #+--------+------------+---------+------+---------+--------+
     #| fid    | createtime | classid | dmid | dkey    | devids |
     #+--------+------------+---------+------+---------+--------+
@@ -75,7 +75,7 @@ sub process_tempfiles {
     #    they wrote some to one of them, then they died or for wahtever reason didn't create_close
     #    to use, so we shouldn't delete from tempfile before going on a hunt of the missing fid.
     #    perhaps we should just add to the file_on table for both devids, and let the regular delete
-    #    process discover via 404 that they're not there. 
+    #    process discover via 404 that they're not there.
     # so we should:
     #    select fid, devids from tempfile where createtime < unix_timestamp() - 86400
     #    add file_on rows for both of those,
@@ -100,6 +100,8 @@ sub process_tempfiles {
             push @binds, $row->[0], $devid;
         }
     }
+
+    # TODO: error checking
     $dbh->do("INSERT INTO file_on (fid, devid) VALUES " . join(',', @questions), undef, @binds);
     $dbh->do("INSERT INTO file_to_delete VALUES " . join(',', map { "(?)" } @fids), undef, @fids);
     $dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fids) . ")");
