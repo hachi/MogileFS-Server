@@ -227,6 +227,7 @@ use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_
 #     weight_by_free => 1,      # find result weighted by free space
 #     max_disk_age => 5,        # minutes of age the last usage report can be before we ignore the disk
 #     not_on_hosts => [ 1, 2 ], # no devices on hosts 1 and 2
+#     must_be_alive => 1,       # if specified, device/host must be writeable (fully available)
 # );
 #
 # returns undef if no suitable device was found.  else, if you wanted an
@@ -266,8 +267,8 @@ sub find_deviceid {
                 $dev->{mb_free} < $opts{min_free_space};
 
         next if $opts{must_be_alive} &&
-            (MogileFS->observed_state("host", $dev->{hostid}) eq "dead" ||
-             MogileFS->observed_state("device", $dev->{devid}) eq "dead");
+            (MogileFS->observed_state("host", $dev->{hostid}) ne "writeable" ||
+             MogileFS->observed_state("device", $dev->{devid}) ne "writeable");
 
         # we get here, this is a suitable device
         push @list, $dev->{devid};
@@ -535,7 +536,7 @@ sub get_file_size {
     # did we timeout?
     unless (Mgd::wait_for_writeability(fileno($httpsock), $time_remain)) {
         if (my $worker = MogileFS::ProcManager->is_child) {
-            $worker->broadcast_host_error($dev->{hostid}) if $dev;
+            $worker->broadcast_host_unreachable($dev->{hostid}) if $dev;
         }
         return error("get_file_size() connect timeout for HTTP HEAD for size of $path");
     }
@@ -543,7 +544,7 @@ sub get_file_size {
     # did we fail to connect?  (got a RST, etc)
     unless (getpeername($httpsock)) {
         if (my $worker = MogileFS::ProcManager->is_child) {
-            $worker->broadcast_device_error($dev->{devid}) if $dev;
+            $worker->broadcast_device_unreachable($dev->{devid}) if $dev;
         }
         return error("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
@@ -897,6 +898,10 @@ my %obs_state;
 
 sub set_observed_state {
     my ($class, $what, $id, $state) = @_;
+    die "set_observed_state() with invalid what '$what', valid: host, device"
+        unless $what =~ /^(?:host|device)$/;
+    die "set_observed_state() with invalid state '$state', valid: writeable, readable, unreachable"
+        unless $state =~ /^(?:writeable|readable|unreachable)$/;
     $obs_state{"$what-$id"} = $state;
 }
 

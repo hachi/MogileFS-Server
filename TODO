@@ -12,10 +12,6 @@
 
 -- fix haphazard CapitalStyle vs capital_style in ProcManager for class methods
 
--- make monitor job try to do a PUT, to detect for read-only mode if kernel
-   fs remounted itself after an error.
-     -- propogate a different 'down' messaeg from 'readonly' observed state
-
 -- 'every' func should select on psock, to process parent-sent commands
    during worker's breaks
 
@@ -38,10 +34,6 @@
    reach parent faster.
 
 -- mb_asof handling in find_deviceid seems broken.  less than max age?  wrong units.
-
--- change 'observable_state' from 'alive/down' to 'reachable/unreachable' and
-   add in the concept of writable vs not too... so maybe writable/readable/unreachable
-   instead.
 
 -- make generic script to write out usage files for people not using mogstored
     -- or, let mogstored be run in 'usage' file writing only mode

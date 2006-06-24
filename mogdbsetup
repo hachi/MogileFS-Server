@@ -82,9 +82,12 @@ if (! $dbh) {
     $rdbh->do("GRANT ALL PRIVILEGES ON $args{dbname}.* TO $args{dbuser}\@'\%' IDENTIFIED BY ?",
              undef, $args{dbpass})
         or die "Failed to grant privileges: " . $rdbh->errstr . "\n";
+    $rdbh->do("GRANT ALL PRIVILEGES ON $args{dbname}.* TO $args{dbuser}\@'localhost' IDENTIFIED BY ?",
+             undef, $args{dbpass})
+        or die "Failed to grant privileges: " . $rdbh->errstr . "\n";
 
     $dbh = normal_conn() or
-        die "Failed to connect to MySQL w/ normal rights, as user $args{dbuser}: " . $dbh->errstr;
+        die "Failed to connect to MySQL w/ normal rights, as user $args{dbuser}: " . $DBI::errstr;
 }
 
 upgrade_database($args{dbhost}, $args{dbname}, $args{dbuser}, $args{dbpass})

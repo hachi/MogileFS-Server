@@ -26,7 +26,7 @@ sub work {
     my %last_db_update;  # devid -> time.  update db less often than poll interval.
 
     every(2.5, sub {
-	$self->parent_ping;
+        $self->parent_ping;
 
         # get db and note we're starting a run
         error("Monitor running; scanning usage files")
@@ -59,11 +59,11 @@ sub work {
             unless ($response->is_success) {
                 my $failed_after = $res_time - $start_time;
                 if ($failed_after < 0.5) {
-                    $self->broadcast_device_error($dev->{devid});
+                    $self->broadcast_device_unreachable($dev->{devid});
                     error("Port $port not listening on otherwise-alive machine $host->{hostip}?  Error was: " . $response->status_line);
                 } else {
                     $failed_after = sprintf("%.02f", $failed_after);
-                    $self->broadcast_host_error($dev->{hostid});
+                    $self->broadcast_host_unreachable($dev->{hostid});
                     $skip_host{$dev->{hostid}} = 1;
                     error("Timeout contacting machine $host->{hostip} for dev $dev->{devid}:  took $failed_after seconds out of $timeout allowed");
                 }
@@ -97,11 +97,28 @@ sub work {
                 $last_db_update{$dev->{devid}} = $now;
             }
 
-            # all's good
-            $self->broadcast_host_alive($dev->{hostid});
-            $self->broadcast_device_alive($dev->{devid});
-            error("dev$dev->{devid}: used = $used, total = $total")
-                if $Mgd::DEBUG >= 1;
+            # now we want to check if this device is writeable
+            my $puturl = "http://$host->{hostip}:$port/dev$dev->{devid}/test-write/test-write-$$-$now";
+            my $req = HTTP::Request->new(PUT => $puturl);
+            $req->content(<<EOREQUEST);
+## THIS IS AN AUTOMATICALLY GENERATED FILE USED TO TEST WRITEABILITY AND
+## WILL BE CLEANED BY THE MOGSTORED USAGE PROCESS
+EOREQUEST
+
+            # now, depending on what happens
+            my $resp = $ua->request($req);
+            if ($resp->is_success) {
+                $self->broadcast_host_writeable($dev->{hostid});
+                $self->broadcast_device_writeable($dev->{devid});
+                error("dev$dev->{devid}: used = $used, total = $total, writeable = 1")
+                    if $Mgd::DEBUG >= 1;
+            } else {
+                # merely readable
+                $self->broadcast_host_readable($dev->{hostid});
+                $self->broadcast_device_readable($dev->{devid});
+                error("dev$dev->{devid}: used = $used, total = $total, writeable = 0")
+                    if $Mgd::DEBUG >= 1;
+            }
         }
     });
 
