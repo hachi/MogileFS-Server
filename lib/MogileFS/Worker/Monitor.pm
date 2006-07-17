@@ -98,12 +98,18 @@ sub work {
             }
 
             # now we want to check if this device is writeable
-            my $puturl = "http://$host->{hostip}:$port/dev$dev->{devid}/test-write/test-write-$$-$now";
+            my $num = int(rand 10000);  # this was "$$-$now" before, but we don't yet have a cleaner in mogstored for these files
+            my $puturl = "http://$host->{hostip}:$port/dev$dev->{devid}/test-write/test-write-$num";
             my $req = HTTP::Request->new(PUT => $puturl);
             $req->content(<<EOREQUEST);
 ## THIS IS AN AUTOMATICALLY GENERATED FILE USED TO TEST WRITEABILITY AND
 ## WILL BE CLEANED BY THE MOGSTORED USAGE PROCESS
 EOREQUEST
+
+            # TODO: hosts aren't writable.  they're "available"
+            # TODO: re-check the file was written as put.
+            # TODO: put something unique in the file
+            # TODO: guard against race-conditions with double-check on failure
 
             # now, depending on what happens
             my $resp = $ua->request($req);
