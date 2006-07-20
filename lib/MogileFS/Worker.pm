@@ -127,11 +127,8 @@ sub broadcast_device_readable {
 sub broadcast_device_unreachable {
     $_[0]->_broadcast_state("device", $_[1], "unreachable");
 }
-sub broadcast_host_writeable {
-    $_[0]->_broadcast_state("host", $_[1], "writeable");
-}
-sub broadcast_host_readable {
-    $_[0]->_broadcast_state("host", $_[1], "readable");
+sub broadcast_host_reachable {
+    $_[0]->_broadcast_state("host", $_[1], "reachable");
 }
 sub broadcast_host_unreachable {
     $_[0]->_broadcast_state("host", $_[1], "unreachable");

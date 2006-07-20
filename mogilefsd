@@ -267,7 +267,7 @@ sub find_deviceid {
                 $dev->{mb_free} < $opts{min_free_space};
 
         next if $opts{must_be_alive} &&
-            (MogileFS->observed_state("host", $dev->{hostid}) ne "writeable" ||
+            (MogileFS->observed_state("host", $dev->{hostid}) ne "reachable" ||
              MogileFS->observed_state("device", $dev->{devid}) ne "writeable");
 
         # we get here, this is a suitable device
@@ -900,8 +900,10 @@ sub set_observed_state {
     my ($class, $what, $id, $state) = @_;
     die "set_observed_state() with invalid what '$what', valid: host, device"
         unless $what =~ /^(?:host|device)$/;
-    die "set_observed_state() with invalid state '$state', valid: writeable, readable, unreachable"
-        unless $state =~ /^(?:writeable|readable|unreachable)$/;
+    die "set_observed_state() with invalid device state '$state', valid: writeable, readable, unreachable"
+        if $what eq 'device' && $state !~ /^(?:writeable|readable|unreachable)$/;
+    die "set_observed_state() with invalid host state '$state', valid: reachable, unreachable"
+        if $what eq 'host' && $state !~ /^(?:reachable|unreachable)$/;
     $obs_state{"$what-$id"} = $state;
 }
 
