@@ -114,13 +114,13 @@ EOREQUEST
             # now, depending on what happens
             my $resp = $ua->request($req);
             if ($resp->is_success) {
-                $self->broadcast_host_writeable($dev->{hostid});
+                $self->broadcast_host_reachable($dev->{hostid});
                 $self->broadcast_device_writeable($dev->{devid});
                 error("dev$dev->{devid}: used = $used, total = $total, writeable = 1")
                     if $Mgd::DEBUG >= 1;
             } else {
                 # merely readable
-                $self->broadcast_host_readable($dev->{hostid});
+                $self->broadcast_host_reachable($dev->{hostid});
                 $self->broadcast_device_readable($dev->{devid});
                 error("dev$dev->{devid}: used = $used, total = $total, writeable = 0")
                     if $Mgd::DEBUG >= 1;

@@ -77,8 +77,8 @@ sub load_config {
         open my $cf, "<$config" or die "open: $config: $!";
 
         my $configLine = qr{
-            ^\s*                    # Leading space
-                (\w+)                   # Key
+            ^\s*                        # Leading space
+                ([\w.]+)                # Key
                 \s+ =? \s*              # space + optional equal + optional space
                 (.+?)                   # Value
                 \s*$                    # Trailing space
@@ -123,6 +123,9 @@ sub load_config {
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
+    # now load plugins
+    load_plugins($cfgfile{plugins}) if $cfgfile{plugins};
+
     choose_value('user', '');
 }
 
@@ -132,6 +135,14 @@ sub choose_value ($$;$) {
     return set_config($name, $cmdline{$name}) if defined $cmdline{$name};
     return set_config($name, $cfgfile{$name}) if defined $cfgfile{$name};
     return set_config($name, $default);
+}
+
+sub load_plugins {
+    my $plugins = shift;
+    foreach my $plugin (split(/\s*,\s*/, $plugins)) {
+        my $rv = eval "use MogileFS::Plugin::$plugin; MogileFS::Plugin::$plugin->load; 1;";
+        die "Unable to load $plugin: $@\n" unless $rv;
+    }
 }
 
 sub config {

@@ -123,8 +123,14 @@ sub cmd_create_open {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
+    # has to be filled out for some plugins
+    $args->{dmid} = $self->check_domain($args) or return 0;
+
+    # first, pass this to a hook to do any manipulations needed
+    MogileFS::run_global_hook('cmd_create_open', $args);
+
     # validate parameters
-    my $dmid = $self->check_domain($args) or return 0;
+    my $dmid = $args->{dmid};
     my $key = $args->{key} || "";
     my $multi = $args->{multi_dest} ? 1 : 0;
     my $fid = ($args->{fid} + 0) || undef; # we want it to be undef if they didn't give one
@@ -237,10 +243,15 @@ sub cmd_create_close {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    # validate parameters
-    my $dmid = $self->check_domain($args) or return 0;
-    my $key = $args->{key};
+    # has to be filled out for some plugins
+    $args->{dmid} = $self->check_domain($args) or return 0;
 
+    # call out to a hook that might modify the arguments for us
+    MogileFS::run_global_hook('cmd_create_close', $args);
+
+    # late validation of parameters
+    my $dmid = $args->{dmid};
+    my $key = $args->{key};
     my $fid = $args->{fid} or return $self->err_line("no_fid");
     my $devid = $args->{devid} or return $self->err_line("no_devid");
     my $path = $args->{path} or return $self->err_line("no_path");
@@ -299,6 +310,15 @@ sub cmd_create_close {
     $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
 
     if (Mgd::update_fid_devcount($fid)) {
+        # call the hook - if this fails, we need to back the file out
+        my $rv = MogileFS::run_global_hook('file_stored', $args);
+        if (defined $rv && ! $rv) { # undef = no hooks, 1 = success, 0 = failure
+            $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fid);
+            $dbh->do("DELETE FROM file WHERE fid=?", undef, $fid);
+            return $self->err_line("plugin_aborted");
+        }
+
+        # all went well
         return $self->ok_line();
     } else {
         # FIXME: handle this better
@@ -539,7 +559,7 @@ sub cmd_create_domain {
     return $self->err_line('domain_exists') if $dmid;
 
     # get the max domain id
-    my $maxid = $dbh->selectrow_array('SELECT MAX(dmid) FROM domain');
+    my $maxid = $dbh->selectrow_array('SELECT MAX(dmid) FROM domain') || 0;
     $dbh->do('INSERT INTO domain (dmid, namespace) VALUES (?, ?)',
              undef, $maxid + 1, $domain);
     return $self->err_line('failure') if $dbh->err;
@@ -616,7 +636,7 @@ sub cmd_create_class {
     } else {
         # get the max class id in this domain
         my $maxid = $dbh->selectrow_array
-            ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid);
+            ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
 
         # now insert the new class
         $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
@@ -798,12 +818,17 @@ sub cmd_get_paths {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $key = $args->{key};
+    # validate domain for plugins
+    $args->{dmid} = $self->check_domain($args) or return 0;
 
-    return $self->err_line("no_key") unless length($key);
+    # now invoke the plugin, abort if it tells us to
+    my $rv = MogileFS::run_global_hook('cmd_get_paths', $args);
+    return $self->err_line('plugin_aborted')
+        if defined $rv && ! $rv;
 
-    # validate domain
-    my $dmid = $self->check_domain($args) or return 0;
+    # validate parameters
+    my $dmid = $args->{dmid};
+    my $key = $args->{key} or return $self->err_line("no_key");
 
     # get DB handle
     my $dbh = Mgd::get_dbh() or
@@ -1064,17 +1089,19 @@ sub err_line {
         'invalid_mindevcount' => "The mindevcount must be at least 1",
         'key_exists' => "Target key name already exists; can't overwrite.",
         'no_class' => "No class provided",
+        'no_devices' => "No devices found to store file",
         'no_domain' => "No domain provided",
         'no_host' => "No host provided",
         'no_ip' => "IP required to create host",
         'no_port' => "Port required to create host",
         'none_match' => "No keys match that pattern and after-value (if any).",
+        'plugin_aborted' => "Action aborted by plugin",
         'state_too_high' => "Status cannot go from dead to alive; must use down",
         'unknown_command' => "Unknown server command",
         'unknown_host' => "Host not found",
         'unknown_state' => "Invalid/unknown state",
         'unreg_domain' => "Domain name invalid/not found",
-    }->{$err_code};
+    }->{$err_code} || "no text";
 
     my $delay = '';
     if ($self->{querystarttime}) {
@@ -1090,7 +1117,7 @@ sub err_line {
 
 sub eurl
 {
-    my $a = $_[0];
+    my $a = defined $_[0] ? $_[0] : "";
     $a =~ s/([^a-zA-Z0-9_\,\-.\/\\\: ])/uc sprintf("%%%02x",ord($1))/eg;
     $a =~ tr/ /+/;
     return $a;
