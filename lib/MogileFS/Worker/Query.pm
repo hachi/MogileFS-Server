@@ -20,6 +20,23 @@ sub new {
 # no query should take 10 seconds, and we check in every 5 seconds.
 sub watchdog_timeout { 10 }
 
+# called by plugins to register a command in the namespace
+sub register_command {
+    my ($cmd, $sub) = @_;
+
+    # validate the command, then convert it to the actual thing the user
+    # will be calling
+    return 0 unless $cmd =~ /^[\w\d]+$/;
+    $cmd = "plugin_$cmd";
+
+    # register in namespace with 'cmd_' which we will automatically find
+    no strict 'refs';
+    *{"cmd_$cmd"} = $sub;
+
+    # all's well
+    return 1;
+}
+
 sub work {
     my $self = shift;
     my $psock = $self->{psock};

@@ -913,6 +913,11 @@ sub observed_state {
     return $obs_state{"$what-$id"} || "";
 }
 
+sub register_worker_command {
+    # just pass this through to the Worker class
+    return MogileFS::Worker::Query::register_command(@_);
+}
+
 sub register_global_hook {
     $hooks{$_[0]} = $_[1];
     return 1;
