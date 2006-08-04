@@ -141,7 +141,8 @@ sub cmd_create_open {
     my $args = shift;
 
     # has to be filled out for some plugins
-    $args->{dmid} = $self->check_domain($args) or return 0;
+    $args->{dmid} = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
 
     # first, pass this to a hook to do any manipulations needed
     MogileFS::run_global_hook('cmd_create_open', $args);
@@ -261,7 +262,8 @@ sub cmd_create_close {
     my $args = shift;
 
     # has to be filled out for some plugins
-    $args->{dmid} = $self->check_domain($args) or return 0;
+    $args->{dmid} = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
 
     # call out to a hook that might modify the arguments for us
     MogileFS::run_global_hook('cmd_create_close', $args);
@@ -348,7 +350,8 @@ sub cmd_delete {
     my $args = shift;
 
     # validate parameters
-    my $dmid = $self->check_domain($args) or return 0;
+    my $dmid = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
     my $key = $args->{key};
     return $self->err_line("no_key") unless length($key);
 
@@ -414,7 +417,8 @@ sub cmd_list_keys {
     my $args = shift;
 
     # validate parameters
-    my $dmid = $self->check_domain($args) or return 0;
+    my $dmid = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
     my ($prefix, $after, $limit) = ($args->{prefix}, $args->{after}, $args->{limit});
     return $self->err_line("no_key") unless $prefix;
 
@@ -464,7 +468,8 @@ sub cmd_rename {
     my $args = shift;
 
     # validate parameters
-    my $dmid = $self->check_domain($args) or return 0;
+    my $dmid = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
     my ($fkey, $tkey) = ($args->{from_key}, $args->{to_key});
     return $self->err_line("no_key") unless $fkey && $tkey;
 
@@ -836,7 +841,8 @@ sub cmd_get_paths {
     my $args = shift;
 
     # validate domain for plugins
-    $args->{dmid} = $self->check_domain($args) or return 0;
+    $args->{dmid} = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
 
     # now invoke the plugin, abort if it tells us to
     my $rv = MogileFS::run_global_hook('cmd_get_paths', $args);
