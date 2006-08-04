@@ -326,10 +326,10 @@ sub RegisterWorkerConn {
     if ($worker->job eq 'queryworker') {
         MogileFS::ProcManager->NoteIdleQueryWorker($worker);
     }
-    
+
     # add to normal list
     $ChildrenByJob{$worker->job}->{$worker->pid} = $worker;
-    
+
 }
 
 sub EnqueueCommandRequest {
@@ -525,7 +525,7 @@ sub HandleChildRequest {
         # announce to the other replicators that this fid can't be reached, but note
         # that we don't actually drain the queue to the requestor, as the replicator
         # isn't in a place where it can accept a queue drain right now.
-        MogileFS::ProcManager->SendToChildrenByJob('replicate', "repl_unreachable $1", $child);
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_unreachable $1", $child);
 
     } elsif ($cmd =~ /^repl_i_did (\d+)/) {
         my $fid = $1;
@@ -557,26 +557,14 @@ sub HandleChildRequest {
     }
 }
 
+# Class method.
+#   ProcManager->ImmediateSendToChildrenByJob($class, $message, [ $child ])
 # given a job class, and a message, send it to all children of that job.  returns
 # the number of children the message was sent to.
-# arguments: ( jobclass, message, [ child ] )
+#
 # if child is specified, the message will be sent to members of the job class that
 # aren't that child.  so you can exclude the one that originated the message.
-sub SendToChildrenByJob {
-    my $childref = $ChildrenByJob{$_[1]};
-    return 0 unless defined $childref && %$childref;
-    my $msg = $_[2];
-
-    foreach my $child (values %$childref) {
-        # ignore the child specified as the third arg if one is sent
-        next if defined $_[3] && $_[3] == $child;
-
-        # send the message to this child
-        $child->enqueue_line($msg);
-    }
-    return scalar(keys %$childref);
-}
-
+#
 # doesn't add to queue of things child gets on next interactive command: writes immediately
 # (won't get in middle of partial write, though, as danga::socket queues things up)
 sub ImmediateSendToChildrenByJob {

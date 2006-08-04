@@ -122,7 +122,7 @@ sub handle_admin_command {
           # !to <jobclass> <message>
           # sends <message> to all children of <jobclass>
           if ($args =~ /^(\S+)\s+(.+)/) {
-              my $ct = MogileFS::ProcManager->SendToChildrenByJob($1, $2);
+              my $ct = MogileFS::ProcManager->ImmediateSendToChildrenByJob($1, $2);
               push @out, "Message sent to $ct children.";
 
           } else {
