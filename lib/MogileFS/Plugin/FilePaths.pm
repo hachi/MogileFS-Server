@@ -91,6 +91,38 @@ sub load {
         return 1;
     });
 
+    # now let's define the extra plugin commands that we allow people to interact with us
+    # just like with a regular MogileFS command
+    MogileFS::register_worker_command( 'list_directory', sub {
+        # get parameters
+        my MogileFS::Worker::Query $self = shift;
+        my $args = shift;
+
+        # verify domain firstly
+        my $dmid = $self->check_domain($args)
+            or return $self->err_line('domain_not_found');
+
+        # verify arguments - only one expected, make sure it starts with a /
+        my $path = $args->{arg1};
+        return $self->err_line('bad_params')
+            unless $args->{argcount} == 1 && $path && $path =~ /^\//;
+
+        # now find the id of the path
+        my $nodeid = MogileFS::Plugin::FilePaths::load_path( $dmid, $path );
+        return $self->err_line('path_not_found', 'Path provided was not found in database')
+            unless $nodeid;
+
+        # get files in path, return as an array
+        my %res;
+        my $ct = 0;
+        my @files = MogileFS::Plugin::FilePaths::list_directory( $nodeid );
+
+        # FIXME: finish implementing :-)
+
+        # blah blah blah
+        return $self->ok_line( \%res );
+    });
+
     # now we want to ensure that the database is setup for us
     # TODO: is there a better way to do this? a sort of mogpluginsetup command that
     # maybe should be written?
