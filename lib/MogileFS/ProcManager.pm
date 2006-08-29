@@ -651,7 +651,7 @@ sub send_invalidate {
 
 sub send_monitor_has_run {
     my $child = shift;
-    for my $type (qw(replicate checker)) {
+    for my $type (qw(replicate checker queryworker)) {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":monitor_has_run", $child);
     }
 }

@@ -4,6 +4,7 @@ use fields ('psock',              # socket for parent/child communications
             'last_bcast_state',   # "{device|host}-$devid" => [$time, {alive|dead}]
             'readbuf',            # unparsed data from parent
             'monitor_has_run',    # true once we've heard of the monitor job being alive
+            'last_ping',          # time we last said we're alive
             );
 
 use MogileFS::Util qw(error);
@@ -20,6 +21,7 @@ sub new {
     $self->{readbuf}          = '';
     $self->{last_bcast_state} = {};
     $self->{monitor_has_run}  = 0;
+    $self->{last_ping}        = 0;
 
     IO::Handle::blocking($psock, 0);
     return $self;
@@ -42,7 +44,11 @@ sub monitor_has_run {
 # doesn't get killed.  (during idle/slow operation, say)
 sub still_alive {
     my $self = shift;
-    $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
+    my $now = time();
+    if ($now > $self->{last_ping}) {
+        $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
+        $self->{last_ping} = $now;
+    }
 }
 
 sub send_to_parent {

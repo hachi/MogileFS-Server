@@ -38,6 +38,9 @@ sub process_line {
     return 0;
 }
 
+# replicator wants 
+sub watchdog_timeout { 30; }
+
 # { fid => lastcheck }; instructs us not to replicate this fid... we will clear
 # out fids from this list that are expired
 my %fidfailure;
@@ -222,6 +225,8 @@ sub replicate_using_devcounts {
         my $devcount = 1;
         while ($fixed < $LIMIT && $devcount < $min) {
             my $now = time();
+            $self->still_alive;
+
             my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
                                                 "AND devcount = ? AND length IS NOT NULL ".
                                                 "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
@@ -257,6 +262,7 @@ sub replicate_using_devcounts {
                 }
 
                 $self->read_from_parent;
+                $self->still_alive;
 
                 if (my $status = replicate($dbh, $fid, class => $mclass)) {
                     # $status is either 0 (failure, handled below), 1 (success, we actually
@@ -421,7 +427,6 @@ sub replicate {
 
         my $rv = undef;
         if (MogileFS::Config->http_mode) {
-            my $lastping = time();
             my $worker = MogileFS::ProcManager->is_child or die;
             $rv = http_copy(
                             sdevid       => $sdevid,
@@ -429,12 +434,7 @@ sub replicate {
                             fid          => $fid,
                             expected_len => undef,  # FIXME: get this info to pass along
                             errref       => \$copy_err,
-                            callback     => sub {
-                                my $now = time();
-                                return if $now == $lastping; # ping once per second
-                                $worker->still_alive;
-                                $lastping = $now;
-                            },
+                            callback     => sub { $worker->still_alive; },
                             );
             die "Bogus error code" if !$rv && $copy_err !~ /^(?:src|dest)_error$/;
         } else {

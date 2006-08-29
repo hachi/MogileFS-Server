@@ -167,6 +167,15 @@ sub cmd_create_open {
             or return $self->err_line("unreg_class");
     }
 
+    # if we haven't heard from the monitoring job yet, we need to chill a bit
+    # to prevent a race where we tell a user that we can't create a file when
+    # in fact we've just not heard from the monitor
+    while (! $self->monitor_has_run) {
+        $self->read_from_parent;
+        $self->still_alive;
+        sleep 1;
+    }
+
     # find a device to put this file on that has 100Mb free.
     my (@dests, @hosts);
     my $devs = Mgd::get_device_summary();
@@ -353,11 +362,18 @@ sub cmd_delete {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    # validate parameters
-    my $dmid = $self->check_domain($args)
+    # validate domain for plugins
+    $args->{dmid} = $self->check_domain($args)
         or return $self->err_line('domain_not_found');
-    my $key = $args->{key};
-    return $self->err_line("no_key") unless length($key);
+
+    # now invoke the plugin, abort if it tells us to
+    my $rv = MogileFS::run_global_hook('cmd_delete', $args);
+    return $self->err_line('plugin_aborted')
+        if defined $rv && ! $rv;
+
+    # validate parameters
+    my $dmid = $args->{dmid};
+    my $key = $args->{key} or return $self->err_line("no_key");
 
     # get DB handle
     my $dbh = Mgd::get_dbh() or

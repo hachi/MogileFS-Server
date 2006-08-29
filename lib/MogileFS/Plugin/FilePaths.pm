@@ -69,27 +69,10 @@ sub load {
         return 1;
     });
 
-    # and now the magic for getting files by a path
-    MogileFS::register_global_hook( 'cmd_get_paths', sub {
-        my $args = shift;
-
-        # ensure we got a valid seeming path and filename
-        my ($path, $filename) =
-            ($args->{key} =~ m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!) ? ($1, $2) : (undef, undef);
-        return 0 unless $path && $filename;
-
-        # now try to get the end of the path
-        my $parentnodeid = MogileFS::Plugin::FilePaths::load_path( $args->{dmid}, $path );
-        return 0 unless defined $parentnodeid;
-
-        # great, find this file
-        my $fid = MogileFS::Plugin::FilePaths::get_file_mapping( $args->{dmid}, $parentnodeid, $filename );
-        return 0 unless defined $fid && $fid > 0;
-
-        # now pretend they asked for it and continue
-        $args->{key} = "fid:$fid";
-        return 1;
-    });
+    # and now magic conversions that make the rest of the MogileFS commands work
+    # without having to understand how the path system works
+    MogileFS::register_global_hook( 'cmd_get_paths', \&_path_to_key );
+    MogileFS::register_global_hook( 'cmd_delete', \&_path_to_key );
 
     # now let's define the extra plugin commands that we allow people to interact with us
     # just like with a regular MogileFS command
@@ -204,7 +187,7 @@ sub _traverse_path {
     return $parentnodeid;
 }
 
-# checks to see if a node exists, and if not, creates it
+# checks to see if a node exists, and if not, creates it if $vivify is set
 sub _find_node {
     my ($dbh, $dmid, $parentnodeid, $node, $vivify) = @_;
     return undef unless $dbh && $dmid && defined $parentnodeid && $node;
@@ -257,6 +240,29 @@ sub get_file_mapping {
     return undef if $dbh->err;
     return undef unless $fid > 0;
     return $fid;
+}
+
+# generic sub that converts a file path to a key name that
+# MogileFS will understand
+sub _path_to_key {
+    my $args = shift;
+
+    # ensure we got a valid seeming path and filename
+    my ($path, $filename) =
+        ($args->{key} =~ m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!) ? ($1, $2) : (undef, undef);
+    return 0 unless $path && $filename;
+
+    # now try to get the end of the path
+    my $parentnodeid = MogileFS::Plugin::FilePaths::load_path( $args->{dmid}, $path );
+    return 0 unless defined $parentnodeid;
+
+    # great, find this file
+    my $fid = MogileFS::Plugin::FilePaths::get_file_mapping( $args->{dmid}, $parentnodeid, $filename );
+    return 0 unless defined $fid && $fid > 0;
+
+    # now pretend they asked for it and continue
+    $args->{key} = "fid:$fid";
+    return 1;
 }
 
 1;
