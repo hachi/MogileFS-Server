@@ -49,6 +49,7 @@ sub set_min_workers {
 sub job_to_class_suffix {
     my ($class, $job) = @_;
     return {
+        checker     => "Checker",
         queryworker => "Query",
         delete      => "Delete",
         replicate   => "Replicate",
@@ -397,6 +398,8 @@ sub HandleQueryWorkerResponse {
     # the queryworker and need to pass it up the line
     return MogileFS::ProcManager->HandleChildRequest($worker, $line) if !$client;
 
+    # FIXME: HOW IS THIS EVER CALLED?  things with colons never go to HandleQueryWorkerResponse.
+    #        see MogileFS::Connection::Worker
     # out-of-band messages (not replies to requests) start with a colon:
     if ($line =~ /^:state_change (\w+) (\d+) (\w+)/) {
         my ($what, $whatid, $state) = ($1, $2, $3);
@@ -460,6 +463,7 @@ sub ProcessQueues {
         # put in mapping and send data to worker
         push @$clref, Time::HiRes::gettimeofday();
         $Mappings{$worker->{fd}} = $clref;
+        $Stats{queries}++;
 
         # increment our counter so we know what request counter this is going out
         $worker->{reqid}++;
@@ -546,8 +550,13 @@ sub HandleChildRequest {
         }
 
     } elsif ($cmd eq ":still_alive") {
-
         # a no-op
+
+    } elsif ($cmd eq ":monitor_just_ran") {
+        send_monitor_has_run($child);
+
+    } elsif ($cmd =~ /^:invalidate_meta (\w+)/) {
+        send_invalidate($1, $child);
 
     } else {
         # unknown command
@@ -627,8 +636,23 @@ sub state_change {
     my ($what, $whatid, $state, $child) = @_;
     #warn "STATE CHANGE: $what<$whatid> = $state\n";
     # TODO: can probably send this to all children now, not just certain types
-    for my $type (qw(queryworker replicate delete)) {
+    for my $type (qw(queryworker replicate delete monitor checker)) {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":state_change $what $whatid $state", $child);
+    }
+}
+
+sub send_invalidate {
+    my ($what, $child) = @_;
+    # TODO: can probably send this to all children now, not just certain types
+    for my $type (qw(queryworker replicate delete monitor checker)) {
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":invalidate_meta_once $what", $child);
+    }
+}
+
+sub send_monitor_has_run {
+    my $child = shift;
+    for my $type (qw(replicate checker)) {
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":monitor_has_run", $child);
     }
 }
 

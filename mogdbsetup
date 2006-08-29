@@ -145,7 +145,7 @@ sub normal_conn {
 sub upgrade_database {
     my ($host, $name, $user, $pass) = @_;
 
-    my $SCHEMA_VERSION = 5;
+    my $SCHEMA_VERSION = 6;
     my $curver = schema_version();
 
     if ($curver == $SCHEMA_VERSION) {
@@ -345,6 +345,22 @@ sub upgrade_database {
    value   VARCHAR(255))");
 
     $run->("REPLACE INTO server_settings SET field='schema_version', value='$SCHEMA_VERSION'");
+
+    # nexttry is time to try to replicate it next.
+    #   0 means immediate.  it's only on one host.
+    #   1 means lower priority.  it's on 2+ but isn't happy where it's at.
+    #   unixtimestamp means at/after that time.  some previous error occurred.
+    # fromdevid, if not null, means which devid we should replicate from.  perhaps it's the only non-corrupt one.  otherwise, wherever.
+    # failcount.  how many times we've failed, just for doing backoff of nexttry.
+    # flags.  reserved for future use.
+    $run->("CREATE TABLE IF NOT EXISTS file_to_replicate (
+   fid        INT UNSIGNED NOT NULL PRIMARY KEY,
+   nexttry    INT UNSIGNED NOT NULL,
+   INDEX (nexttry),
+   fromdevid  INT UNSIGNED,
+   failcount  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+   flags      SMALLINT UNSIGNED NOT NULL DEFAULT 0
+   )");
 
     return 1;
 }

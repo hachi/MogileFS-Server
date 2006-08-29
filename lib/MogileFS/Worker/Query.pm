@@ -50,7 +50,7 @@ sub work {
             $self->still_alive;
             next;
         }
-            
+
         my $newread;
         my $rv = sysread($psock, $newread, 1024);
         $buf .= $newread;
@@ -126,12 +126,10 @@ sub cmd_clear_cache {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    if ($args->{devices} || $args->{all}) {
-        Mgd::invalidate_device_cache();
-    }
-    if ($args->{hosts} || $args->{all}) {
-        Mgd::invalidate_host_cache();
-    }
+    Mgd::invalidate_device_cache()  if $args->{devices} || $args->{all};
+    Mgd::invalidate_host_cache()    if $args->{hosts}   || $args->{all};
+    Mgd::invalidate_class_cache()   if $args->{class}   || $args->{all};
+    Mgd::invalidate_domain_cache()  if $args->{domain}  || $args->{all};
 
     return $self->ok_line;
 }
@@ -159,7 +157,7 @@ sub cmd_create_open {
         return $self->err_line("nodb");
 
     # figure out what classid this file is for
-    my $class = $args->{class};
+    my $class = $args->{class} || "";
     my $classid = 0;
     if (length($class)) {
         # TODO: cache this
@@ -172,13 +170,14 @@ sub cmd_create_open {
     # find a device to put this file on that has 100Mb free.
     my (@dests, @hosts);
     my $devs = Mgd::get_device_summary();
+
     while (scalar(@dests) < ($multi ? 3 : 1)) {
         my $devid = Mgd::find_deviceid(
-            random => 1,
-            weight_by_free => 1,
-            not_on_hosts => \@hosts,
-        );
-
+                                       random           => 1,
+                                       must_be_writeable => 1,
+                                       weight_by_free   => 1,
+                                       not_on_hosts     => \@hosts,
+                                       );
         last unless defined $devid;
 
         push @dests, $devid;
@@ -291,7 +290,7 @@ sub cmd_create_close {
 
     # if a temp file is closed without a provided-key, that means to
     # delete it.
-    unless (length($key)) {
+    unless (defined $key && length($key)) {
         # add to to-delete list
         $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fid);
         $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
@@ -325,6 +324,11 @@ sub cmd_create_close {
                       "  classid=?, devcount=0", undef,
                       $fid, $dmid, $key, $size, $trow->{classid});
     return $self->err_line("db_error") unless $rv;
+
+    # mark it as needing replicating:
+    $dbh->do("INSERT IGNORE INTO file_to_replicate ".
+             "SET fid=?, fromdevid=?, nexttry=0", undef, $fid, $devid);
+    return $self->err_line("db_error") if $dbh->err;
 
     $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
 
@@ -548,12 +552,7 @@ sub cmd_create_device {
         $hostid = $args->{hostid};
         return $self->err_line("unknown_hostid") unless $Mgd::cache_host{$hostid};
     } elsif (my $host = $args->{hostname}) {
-        while (my ($hid, $row) = each %Mgd::cache_host) {
-            if ($row->{hostname} eq $host) {
-                $hostid = $hid;
-                last;
-            }
-        }
+        $hostid = Mgd::host_id($host);
         return $self->err_line("unknown_host") unless $hostid;
     }
 
@@ -562,6 +561,7 @@ sub cmd_create_device {
     if ($dbh->err) {
         return $self->err_line("existing_devid");
     }
+    Mgd::invalidate_device_cache();
     return $self->ok_line;
 }
 
@@ -587,6 +587,7 @@ sub cmd_create_domain {
     return $self->err_line('failure') if $dbh->err;
 
     # return the domain id we created
+    Mgd::invalidate_domain_cache();
     return $self->ok_line({ domain => $domain });
 }
 
@@ -619,6 +620,7 @@ sub cmd_delete_domain {
     return $self->err_line('failure') if $dbh->err;
 
     # return the domain we nuked
+    Mgd::invalidate_domain_cache();
     return $self->ok_line({ domain => $domain });
 }
 
@@ -667,6 +669,7 @@ sub cmd_create_class {
     return $self->err_line('failure') if $dbh->err;
 
     # return success
+    Mgd::invalidate_class_cache();
     return $self->ok_line({ class => $class, mindevcount => $mindevcount, domain => $domain });
 }
 
@@ -708,6 +711,7 @@ sub cmd_delete_class {
     return $self->err_line('failure') if $dbh->err;
 
     # return the class we nuked
+    Mgd::invalidate_class_cache();
     return $self->ok_line({ domain => $domain, class => $class });
 }
 
@@ -754,7 +758,7 @@ sub cmd_create_host {
         $dbh->do("UPDATE host SET $set WHERE hostid = ?", undef, $hid);
     } else {
         # get the max host id in use (FIXME: racy!)
-        $hid = $dbh->selectrow_array('SELECT MAX(hostid) FROM host') + 1;
+        $hid = ($dbh->selectrow_array('SELECT MAX(hostid) FROM host') || 0) + 1;
 
         # now insert the new host
         $dbh->do("INSERT INTO host (hostid, status, http_port, http_get_port, hostname, hostip, altip, altmask, remoteroot) " .
@@ -942,6 +946,7 @@ sub cmd_set_weight {
     return $self->err_line('failure') if $dbh->err;
 
     # success, weight changed
+    Mgd::invalidate_device_cache();
     return $self->ok_line($ret);
 }
 
@@ -978,6 +983,7 @@ sub cmd_set_state {
     return $self->err_line('failure') if $dbh->err;
 
     # success, state changed
+    Mgd::invalidate_device_cache();
     return $self->ok_line($ret);
 }
 
@@ -1025,6 +1031,33 @@ sub cmd_stats {
             $ret->{"replication${count}files"} = $stat->[3];
         }
         $ret->{"replicationcount"} = $count;
+
+        # now we want to do the "new" replication stats
+        my $db_time = $dbh->selectrow_array('SELECT UNIX_TIMESTAMP()');
+        $stats = $dbh->selectall_arrayref('SELECT nexttry, COUNT(*) FROM file_to_replicate GROUP BY 1');
+        foreach my $stat (@$stats) {
+            if ($stat->[0] < 1000) {
+                # anything under 1000 is a specific state, so let's define those.  here's the list
+                # of short names to describe them.
+                my $name = {
+                    0 => 'newfile', # new files that need to be replicated
+                    1 => 'redo',    # files that need to go through replication again
+                }->{$stat->[0]} || "unknown";
+
+                # now put it in the output hashref.  note that we do += because we might
+                # have more than one group of unknowns.
+                $ret->{"to_replicate_$name"} += $stat->[1];
+
+            } elsif ($stat->[0] == MogileFS::Worker::Replicate::end_of_time()) {
+                $ret->{"to_replicate_manually"} = $stat->[1];
+
+            } elsif ($stat->[0] < $db_time) {
+                $ret->{"to_replicate_overdue"} += $stat->[1];
+
+            } else {
+                $ret->{"to_replicate_deferred"} += $stat->[1];
+            }
+        }
     }
 
     # file statistics (how many files there are and in what domains/classes)
@@ -1071,6 +1104,42 @@ sub cmd_noop {
     return $self->ok_line;
 }
 
+sub cmd_replicate_now {
+    my MogileFS::Worker::Query $self = shift;
+
+    my $dbh = Mgd::get_dbh()
+        or return $self->err_line('nodb');
+    my $rv = $dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() WHERE nexttry > UNIX_TIMESTAMP()");
+
+    return $self->err_line('db', $dbh->errstr) if $dbh->err;
+    return $self->ok_line({ count => int($rv) });
+}
+
+sub cmd_checker {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+
+    my $new_setting;
+    if ($args->{disable}) {
+        $new_setting = 'off';
+    } elsif ($args->{level}) {
+        # they want to turn it on or change the level, so let's ensure they
+        # specified a valid level
+        if (MogileFS::Worker::Checker::is_valid_level($args->{level})) {
+            $new_setting = $args->{level};
+        } else {
+            return $self->err_line('invalid_checker_level');
+        }
+    }
+
+    if (defined $new_setting) {
+        Mgd::set_server_setting('fsck_enable', $new_setting);
+        return $self->ok_line;
+    }
+
+    $self->err_line('failure');
+}
+
 sub ok_line {
     my MogileFS::Worker::Query $self = shift;
 
@@ -1099,6 +1168,7 @@ sub err_line {
         'class_exists' => "That class already exists in that domain",
         'class_has_files' => "Class still has files, uanble to delete",
         'class_not_found' => "Class not found",
+        'db' => "Database error",
         'domain_has_files' => "Domain still has files, uanble to delete",
         'domain_exists' => "That domain already exists",
         'domain_not_empty' => "Domain still has classes, unable to delete",
@@ -1109,6 +1179,7 @@ sub err_line {
         'host_not_empty' => "Unable to delete host; it contains devices still",
         'host_not_found' => "Host not found",
         'invalid_chars' => "Patterns must not contain backslashes (\\) or percent signs (%).",
+        'invalid_checker_level' => "Checker level invalid.  Please see documentation on this command.",
         'invalid_mindevcount' => "The mindevcount must be at least 1",
         'key_exists' => "Target key name already exists; can't overwrite.",
         'no_class' => "No class provided",

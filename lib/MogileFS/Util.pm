@@ -11,15 +11,22 @@ sub every {
     my ($delay, $code) = @_;
     while (1) {
         my $start = Time::HiRes::time();
+        my $explicit_sleep = undef;
 
         # run the code in a loop, so "next" will get out of it.
         foreach (1) {
-            $code->();
+            $code->(sub {
+                $explicit_sleep = shift;
+            });
         }
 
         my $took = Time::HiRes::time() - $start;
         my $sleep_for = $delay - $took;
-        Time::HiRes::sleep($sleep_for) if $sleep_for > 0;
+        if (defined $explicit_sleep) {
+            Time::HiRes::sleep($explicit_sleep);
+        } else {
+            Time::HiRes::sleep($sleep_for) if $sleep_for > 0;
+        }
     }
 }
 

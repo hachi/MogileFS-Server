@@ -33,6 +33,7 @@ our (
     $replicate_jobs,
     $reaper_jobs,
     $monitor_jobs,
+    $checker_jobs,
     $mog_root,
     $min_free_space,
     $max_disk_age,
@@ -64,6 +65,7 @@ sub load_config {
                              'minfreespace=i' => \$cmdline{min_free_space},
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
+                             'no_schema_check' => \$cmdline{no_schema_check},
                              );
 
     # warn of old/deprecated options
@@ -116,12 +118,15 @@ sub load_config {
     $replicate_jobs = choose_value( 'replicate_jobs', 1 );
     $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
     $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
+    $checker_jobs   = choose_value( 'checker_jobs', 1 );
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
-    $DEBUG          = choose_value( 'debug', 0, 1 );
+    $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0, 1 );
     $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
+
+    choose_value( 'no_schema_check', 0 );
 
     # now load plugins
     load_plugins($cfgfile{plugins}) if $cfgfile{plugins};
@@ -129,9 +134,9 @@ sub load_config {
     choose_value('user', '');
 }
 
-### FUNCTION: choose_value( $name, $default[, $boolean] )
-sub choose_value ($$;$) {
-    my ( $name, $default, $boolean ) = @_;
+### FUNCTION: choose_value( $name, $default )
+sub choose_value {
+    my ( $name, $default ) = @_;
     return set_config($name, $cmdline{$name}) if defined $cmdline{$name};
     return set_config($name, $cfgfile{$name}) if defined $cfgfile{$name};
     return set_config($name, $default);

@@ -24,7 +24,7 @@ if ($@) {
 
 my $opt_daemonize;
 my $opt_config;
-
+my $max_conns = 10000;
 my $http_listen = "0.0.0.0:7500";
 my $mgmt_listen = "0.0.0.0:7501";
 my $docroot     = "/var/mogdata";
@@ -35,6 +35,7 @@ my %config_opts = (
                    'httplisten=s' => \$http_listen,
                    'mgmtlisten=s' => \$mgmt_listen,
                    'docroot=s'    => \$docroot,
+                   'maxconns=i'    => \$max_conns,
                    );
 usage() unless Getopt::Long::GetOptions(%config_opts);
 
@@ -80,7 +81,7 @@ if ($opt_config) {
 
 # this is the perlbal configuration only.  not the mogstored configuration.
 my $pb_conf ||= "
-SERVER max_connections = 10000
+SERVER max_connections = $max_conns
 CREATE SERVICE mogstored
    SET role = web_server
    SET listen = $http_listen

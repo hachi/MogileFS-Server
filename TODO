@@ -1,3 +1,10 @@
+-- if create_open before monitor runs yet, block and wait for a round?  better than 'no_devices'
+   might need some marker for 'end of monitoring'?  or just wait until we have 1 or 3?
+   or if they asked for 3, only return 1 in that rare case, preferring latency to redundancy.
+   plus, we'd know that 1 is writable in last few seconds!
+
+-- update the 'repl' command for new file_to_replicate table
+
 -- replication policy error storm when a device is known to be observably down:
 
 [replicate(28037)] replication policy ran out of suggestions for us replicating fid 197214

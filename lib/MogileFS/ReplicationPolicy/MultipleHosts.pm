@@ -7,6 +7,7 @@ use strict;
 #   >0:     devid to replicate to.
 sub replicate_to {
     my ($class, %args) = @_;
+
     my $fid      = delete $args{fid};      # fid scalar to copy
     my $on_devs  = delete $args{on_devs};  # arrayref of device objects
     my $all_devs = delete $args{all_devs}; # hashref of { devid => devobj }
@@ -19,13 +20,17 @@ sub replicate_to {
     # number of devices we currently live on
     my $already_on = @$on_devs;
 
+    # FIXME: this is NOT true.  make sure it's on 2+ hosts at least, if min > 1.
+
     # replication good.
     return 0 if $already_on >= $min;
 
     # see which and how many unique hosts we're already on.
+    my %on_dev;
     my %on_host;
     foreach my $dev (@$on_devs) {
         $on_host{$dev->{hostid}} = 1;
+        $on_dev{$dev->{devid}} = 1;
     }
     my $uniq_hosts_on    = scalar keys %on_host;
     my $total_uniq_hosts = unique_hosts($all_devs);
@@ -37,7 +42,7 @@ sub replicate_to {
         $not_on_hosts = [ keys %on_host ];
     }
 
-    my @good_devids = grep { ! $failed->{$_} }
+    my @good_devids = grep { ! $failed->{$_} && ! $on_dev{$_} }
             Mgd::find_deviceid(
                                random         => 1,
                                not_on_hosts   => $not_on_hosts,

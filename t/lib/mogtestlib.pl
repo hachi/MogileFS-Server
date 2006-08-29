@@ -36,8 +36,8 @@ sub create_temp_tracker {
     chomp $whoami;
 
     my $connect = sub {
-	return IO::Socket::INET->new(PeerAddr => "127.0.0.1:7001",
-				     Timeout  => 2);
+        return IO::Socket::INET->new(PeerAddr => "127.0.0.1:7001",
+                                     Timeout  => 2);
     };
 
     my $conn = $connect->();
@@ -45,23 +45,54 @@ sub create_temp_tracker {
 
     unless ($pid) {
         exec("$Bin/../mogilefsd",
-	     ($whoami eq "root" ? "--user=root" : ()),
+             ($whoami eq "root" ? "--user=root" : ()),
              "--skipconfig",
-	     "--workers=2",
+             "--workers=2",
              "--dsn=" . $db->dsn,
              "--dbuser=" . $db->user,
              "--dbpass=" . $db->pass);
     }
 
     for (1..3) {
-	if ($connect->()) {
-	    return TrackerHandle->new(pid => $pid);
-	}
+        if ($connect->()) {
+            return TrackerHandle->new(pid => $pid);
+        }
         sleep 1;
     }
     return undef;
 }
 
+sub create_mogstored {
+    my ($ip, $root) = @_;
+
+    my $pid = fork();
+
+    my $connect = sub {
+        return IO::Socket::INET->new(PeerAddr => "$ip:7500",
+                                     Timeout  => 2);
+    };
+
+    my $conn = $connect->();
+    die "Failed:  tracker already running on port 7500?\n" if $conn;
+
+    unless ($pid) {
+        exec("$Bin/../mogstored",
+             "--httplisten=$ip:7500",
+             "--mgmtlisten=$ip:7501",
+             "--maxconns=1000",  # because we're not root, put it below 1024
+             "--docroot=$root");
+    }
+
+    for (1..12) {
+        if ($connect->()) {
+            return MogstoredHandle->new(pid => $pid, ip => $ip, root => $root);
+        }
+        select undef, undef, undef, 0.25;
+    }
+    return undef;
+}
+
+############################################################################
 package DBHandle;
 sub new {
     my ($class, $name) = @_;
@@ -89,7 +120,8 @@ sub user { "root" }
 *password = \&pass;
 sub pass { "" }
 
-package TrackerHandle;
+############################################################################
+package ProcessHandle;
 sub new {
     my ($class, %args) = @_;
     bless \%args, $class;
@@ -101,6 +133,61 @@ sub DESTROY {
     my $self = shift;
     return unless $self->{pid};
     kill 15, $self->{pid};
+}
+
+
+############################################################################
+
+package TrackerHandle;
+use base 'ProcessHandle';
+
+sub ipport {
+    my $self = shift;
+    return "127.0.0.1:7001";
+}
+
+sub mogadm {
+    my $self = shift;
+    my @args = @_;
+    unshift @args, "$FindBin::Bin/../../utils/mogadm", "--trackers=" . $self->ipport;
+#    use Data::Dumper;
+#    print Dumper(\@args);
+    my $rv = system(@args);
+    return !$rv;
+}
+
+############################################################################
+package MogstoredHandle;
+use base 'ProcessHandle';
+
+# this space intentionally left blank.  all in super class for now.
+
+############################################################################
+package MogPath;
+sub new {
+    my ($class, $url) = @_;
+    return bless {
+        url => $url,
+    }, $class;
+}
+
+sub host {
+    my $self = shift;
+    my ($host1) = $self->{url} =~ m!^http://(.+:\d+)!;
+    return $host1
+}
+
+sub device {
+    my $self = shift;
+    my ($dev) = $self->{url} =~ m!dev(\d+)!;
+    return $dev
+}
+
+sub path {
+    my $self = shift;
+    my $path = $self->{url};
+    $path =~ s!^http://(.+:\d+)!!;
+    return $path;
 }
 
 1;

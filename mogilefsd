@@ -44,6 +44,7 @@ use MogileFS::Worker::Delete;
 use MogileFS::Worker::Replicate;
 use MogileFS::Worker::Reaper;
 use MogileFS::Worker::Monitor;
+use MogileFS::Worker::Checker;
 use MogileFS::ProcManager;
 use MogileFS::Config;
 
@@ -51,7 +52,7 @@ use MogileFS::ReplicationPolicy::MultipleHosts;
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
-use constant SCHEMA_VERSION => 5;
+use constant SCHEMA_VERSION => 6;
 
 my %streamcache;    # host -> IO::Socket::INET to mogstored
 our $starttime = time(); # time we got going
@@ -74,6 +75,7 @@ MogileFS::ProcManager->set_min_workers('delete'      => MogileFS->config('delete
 MogileFS::ProcManager->set_min_workers('replicate'   => MogileFS->config('replicate_jobs'));
 MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
 MogileFS::ProcManager->set_min_workers('monitor'     => MogileFS->config('monitor_jobs'));
+MogileFS::ProcManager->set_min_workers('checker'     => MogileFS->config('checker_jobs'));
 
 # open up our log
 openlog('mogilefsd', 'pid', 'daemon');
@@ -236,13 +238,18 @@ use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_
 sub find_deviceid {
     my %opts = ( @_ );
 
+    # validate we're getting called with known parameters
+    my %valid_keys = map { $_ => 1 } qw( random min_free_space weight_by_free max_disk_age not_on_hosts must_be_writeable must_be_readable ); 
+    warn "invalid key $_ in call to find_deviceid\n"
+        foreach grep { ! $valid_keys{$_} } keys %opts;
+
     # copy down global minimum free space if not specified
     $opts{min_free_space} ||= MogileFS->config("min_free_space");
     $opts{max_disk_age}   ||= MogileFS->config("max_disk_age");
     if ($opts{max_disk_age}) {
         $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
     }
-    $opts{must_be_alive}  = 1 unless defined $opts{must_be_alive};
+    $opts{must_be_alive} = 1 unless defined $opts{must_be_alive};
 
     # setup for iterating over devices
     my $devs = Mgd::get_device_summary();
@@ -265,10 +272,12 @@ sub find_deviceid {
                 $dev->{mb_asof} < $opts{max_disk_age};
         next if $opts{min_free_space} && $dev->{mb_total} &&
                 $dev->{mb_free} < $opts{min_free_space};
-
-        next if $opts{must_be_alive} &&
+        next if $opts{must_be_writeable} &&
             (MogileFS->observed_state("host", $dev->{hostid}) ne "reachable" ||
              MogileFS->observed_state("device", $dev->{devid}) ne "writeable");
+        next if $opts{must_be_readable} &&
+            (MogileFS->observed_state("host", $dev->{hostid}) ne "reachable" ||
+             MogileFS->observed_state("device", $dev->{devid}) ne "readable");
 
         # we get here, this is a suitable device
         push @list, $dev->{devid};
@@ -279,7 +288,6 @@ sub find_deviceid {
     if ($opts{weight_by_free}) {
         my $rand = int(rand($total_free));
         my $cur = 0;
-
         foreach my $devid (@list) {
             $cur += $devs->{$devid}->{mb_free};
             return $devid if $cur >= $rand;
@@ -307,11 +315,16 @@ sub get_device_summary {
 
     # now override device status with host status if the host status is less than the device status
     Mgd::check_host_cache();
+
     foreach my $devid (keys %dev) {
         # makes others have an easier time of finding devices by free space
         $dev{$devid}->{mb_free} = $dev{$devid}->{mb_total} - $dev{$devid}->{mb_used};
 
-        my $host_status = $cache_host{$dev{$devid}->{hostid}}->{status};
+        my $host = $cache_host{$dev{$devid}->{hostid}};
+        die "No host for dev $devid (host $dev{$devid}->{hostid})" unless $host;
+        my $host_status = $host->{status};
+        die "No status" unless $host_status =~ /^\w+$/;
+
         if ($dev{$devid}->{status} eq 'alive' && $host_status ne 'alive') {
             $dev{$devid}->{status} = $host_status;
         } elsif ($dev{$devid}->{status} eq 'down' && $host_status eq 'dead') {
@@ -323,10 +336,27 @@ sub get_device_summary {
     return $cache_device_summary = \%dev;
 }
 
+sub invalidate_class_cache {
+    # FIXME: no cache yet exists
+}
+
+sub invalidate_domain_cache {
+    $domaincachetime = 0;
+    %domaincache = ();
+
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->invalidate_meta("domain");
+    }
+}
+
 sub invalidate_device_cache {
     # so next time it's invalid and won't be used old
     $cache_device_summary_time = 0;
     $cache_device_summary = undef;
+
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->invalidate_meta("device");
+    }
 }
 
 # FIXME: this should propogate to parent, and send messages down to
@@ -336,23 +366,32 @@ sub invalidate_host_cache {
     # so next time it's invalid and won't be used old
     $cache_host_time = 0;
     %cache_host = ();
+
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->invalidate_meta("host");
+    }
 }
 
-sub check_host_cache {
-    my $now = time;
-    return if $cache_host_time > $now - 5;
-
+sub reload_host_cache {
     %cache_host = ();
     my $dbh = get_dbh();
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
                             "hostip, http_port, http_get_port, remoteroot, altip, altmask FROM host");
     $sth->execute;
     while (my $host = $sth->fetchrow_hashref) {
+        die unless $host->{status} =~ /^\w+$/;
         $cache_host{$host->{hostid}} = $host;
         $cache_host{$host->{hostid}}->{mask} = Net::Netmask->new2($host->{altmask})
             if $host->{altip} && $host->{altmask};
     }
-    $cache_host_time = $now;
+    $cache_host_time = time();
+    return \%cache_host;
+}
+
+sub check_host_cache {
+    my $now = time();
+    return if $cache_host_time > $now - 5;
+    reload_host_cache();
 }
 
 sub key_filerow {
@@ -619,14 +658,24 @@ sub host_id {
     my $host = shift;
     return undef unless $host;
 
+    my $hostid = undef;
+    my $find = sub {
+        foreach my $id (keys %Mgd::cache_host) {
+            next unless $Mgd::cache_host{$id}->{hostname} eq $host;
+            $hostid = $id;
+            last;
+        }
+    };
+
+    # reload if it's been awhile
     Mgd::check_host_cache();
+    $find->();
+    return $hostid if $hostid;
 
-    foreach my $hostid (keys %Mgd::cache_host) {
-        return $hostid
-            if $Mgd::cache_host{$hostid}->{hostname} eq $host;
-    }
-
-    return undef;
+    # force a reload
+    Mgd::reload_host_cache();
+    $find->();
+    return $hostid;
 }
 
 sub domain_id {
@@ -884,12 +933,42 @@ run 'mogdbsetup'.
 }
     }
 
-    my $sversion = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field='schema_version'") || 0;
-    unless ($sversion == SCHEMA_VERSION) {
+    my $sversion = get_server_setting('schema_version') || 0;
+    unless ($sversion == SCHEMA_VERSION || MogileFS::Config->config('no_schema_check')) {
         my $exp = SCHEMA_VERSION;
         die "Server's database schema version of $sversion doesn't match expected value of $exp.  Halting.\n\n".
             "Please run mogdbsetup to upgrade your schema.\n";
     }
+}
+
+# set_server_setting( key, value )
+#   set value to undef to remove whatever is presently stored; returns 1 on success or
+#   undef on error
+sub set_server_setting {
+    my ($key, $val) = @_;
+    return unless $key;
+
+    my $dbh = Mgd::get_dbh()
+        or return undef;
+
+    if (defined $val) {
+        $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
+    } else {
+        $dbh->do("DELETE FROM server_settings WHERE field=?", undef, $key);
+    }
+
+    return undef if $dbh->err;
+    return 1;
+}
+
+# get_server_setting( key )
+#   get value of server setting, undef on error (or no result)
+sub get_server_setting {
+    my $dbh = Mgd::get_dbh()
+        or return undef;
+    my $ret = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?", undef, shift);
+    return undef if $dbh->err;
+    return $ret;
 }
 
 package MogileFS;
