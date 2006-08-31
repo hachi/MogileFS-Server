@@ -256,7 +256,7 @@ sub check_fid {
     return $retunlock->(TEMPORARY, "sorry, $level mode is not implemented yet");
 }
 
-sub watchdog_timeout { 15 }
+sub watchdog_timeout { 30 }
 
 1;
 
