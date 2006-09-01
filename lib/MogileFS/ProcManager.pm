@@ -558,6 +558,11 @@ sub HandleChildRequest {
     } elsif ($cmd =~ /^:invalidate_meta (\w+)/) {
         send_invalidate($1, $child);
 
+    } elsif ($cmd =~ /^:set_config_from_child (\S+) (.+)/) {
+        # and this will rebroadcast it to all other children
+        # (including the one that just set it to us, but eh)
+        MogileFS::Config->set_config($1, $2);
+
     } else {
         # unknown command
         my $show = $cmd;
@@ -638,6 +643,15 @@ sub state_change {
     # TODO: can probably send this to all children now, not just certain types
     for my $type (qw(queryworker replicate delete monitor checker)) {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":state_change $what $whatid $state", $child);
+    }
+}
+
+sub send_to_all_children {
+    shift if @_ == 2;
+    my $msg = shift;
+
+    foreach my $child (values %child) {
+        $child->write("$msg\r\n");
     }
 }
 

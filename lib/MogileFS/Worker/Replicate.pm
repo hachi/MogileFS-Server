@@ -35,10 +35,18 @@ sub process_line {
         return 1;
     }
 
+    # telnet to main port and do:
+    #    !to replicate repl_compat {0,1}
+    # to change it in realtime, without restarting.
+    if ($$lineref =~ /^repl_compat (\d+)/) {
+        MogileFS::Config->set_config("old_repl_compat", $1);
+        return 1;
+    }
+
     return 0;
 }
 
-# replicator wants 
+# replicator wants
 sub watchdog_timeout { 30; }
 
 # { fid => lastcheck }; instructs us not to replicate this fid... we will clear
@@ -87,7 +95,9 @@ sub work {
         $self->replicate_using_torepl_table;
 
         # this finds stuff to replicate based on the devcounts.  (old style)
-        $self->replicate_using_devcounts;
+        if (MogileFS::Config->config("old_repl_compat")) {
+            $self->replicate_using_devcounts;
+        }
 
     });
 }

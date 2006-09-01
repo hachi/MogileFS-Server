@@ -1,8 +1,10 @@
 package MogileFS::Config;
 use strict;
 require Exporter;
+use MogileFS::ProcManager;
+
 our @ISA = qw(Exporter);
-our @EXPORT = qw($DEBUG config);
+our @EXPORT = qw($DEBUG config set_config);
 
 our ($DEFAULT_CONFIG, $DEFAULT_MOG_ROOT, $MOG_ROOT, $MOGSTORED_STREAM_PORT, $DEBUG, $USE_HTTP);
 $DEBUG = 0;
@@ -12,6 +14,21 @@ $MOGSTORED_STREAM_PORT = 7501;
 
 my %conf;
 sub set_config {
+    shift if @_ == 3;
+    my ($k, $v) = @_;
+
+    # if a child, propogate to parent
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->send_to_parent(":set_config_from_child $k $v");
+    } else {
+        MogileFS::ProcManager->send_to_all_children(":set_config_from_parent $k $v");
+    }
+
+    return set_config_no_broadcast($k, $v);
+}
+
+sub set_config_no_broadcast {
+    shift if @_ == 3;
     my ($k, $v) = @_;
     return $conf{$k} = $v;
 }
@@ -38,6 +55,7 @@ our (
     $min_free_space,
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
+    $old_repl_compat,
    );
 
 our $default_mindevcount;
@@ -66,6 +84,7 @@ sub load_config {
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
                              'no_schema_check' => \$cmdline{no_schema_check},
+                             'old_repl_compat=i' => \$cmdline{old_repl_compat},
                              );
 
     # warn of old/deprecated options
@@ -126,6 +145,8 @@ sub load_config {
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
+    $old_repl_compat = choose_value( 'old_repl_compat', 1 );
+
     choose_value( 'no_schema_check', 0 );
 
     # now load plugins
@@ -151,7 +172,8 @@ sub load_plugins {
 }
 
 sub config {
-    my ($class, $k) = @_;
+    shift if @_ == 2;
+    my $k = shift;
     die "No config variable '$k'" unless defined $conf{$k};
     return $conf{$k};
 }

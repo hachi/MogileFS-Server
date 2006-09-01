@@ -201,6 +201,11 @@ sub process_generic_command {
         return 1;
     }
 
+    if ($$lineref =~ /^:set_config_from_parent (\S+) (.+)/) {
+        # the 'no_broadcast' API keeps us from looping forever.
+        MogileFS::Config->set_config_no_broadcast($1, $2);
+        return 1;
+    }
     # TODO: warn on unknown commands?
 
     return 0;
