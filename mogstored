@@ -79,8 +79,13 @@ if ($opt_config) {
     }
 }
 
+# set number of AIO threads, between 10-100.
+my $aio_threads = disks($docroot) * 10 || 10;
+$aio_threads = 100 if $aio_threads > 100;
+
 # this is the perlbal configuration only.  not the mogstored configuration.
 my $pb_conf ||= "
+SERVER aio_threads = $aio_threads
 SERVER max_connections = $max_conns
 CREATE SERVICE mogstored
    SET role = web_server
@@ -184,6 +189,12 @@ Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
 
 # now start the main loop
 Perlbal::run();
+
+sub disks {
+    my $root = shift;
+    opendir(my $dh, $root) or die "Failed to open docroot: $root: $!";
+    return scalar grep { /^dev\d+$/ } readdir($dh);
+}
 
 #############################################################################
 ### simple package for handling the stream request port

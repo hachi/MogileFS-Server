@@ -1,3 +1,6 @@
+2006-09-04:
+        * set aio_threads as a function of number of disks
+
 2005-08-10:
         * write out usage files for devices, even if they're not on their own mount point.
           also explicitly include the '-k' flag to df, so we know they're KiB.
