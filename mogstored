@@ -57,7 +57,6 @@ BEGIN {
             $OPTMOD_LINUX_AIO = 0;
         }
     }
-    $OPTMOD_LINUX_AIO = $OPTMOD_IO_AIO = 0;
     unless ($OPTMOD_LINUX_AIO || $OPTMOD_IO_AIO) {
         if ($ENV{'MOGSTORED_RUN_WITHOUT_AIO'}) {
             warn("WARNING:  Running without async IO.  Won't run well with many clients.\n");
