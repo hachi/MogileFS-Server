@@ -14,12 +14,59 @@ use strict;
 use lib 'lib';
 use Perlbal;
 use IO::Socket::INET;
+use POSIX qw(ENOENT EACCES EBADF);
+use Fcntl qw(SEEK_CUR SEEK_SET SEEK_END O_RDWR O_CREAT O_TRUNC);
 
 # test to see if we have a new enough Perlbal.pm.  because until
 # Perlbal 1.43 there was no proper '$VERSION' in the module.
 eval { Perlbal::AIO::aio_stat(".", sub {}); };
 if ($@) {
     die "CPAN module Perlbal too old.  Need 1.3 or later. $@";
+}
+
+# verify their Linux::AIO or IO::AIO works.  Perlbal 1.51 does this,
+# but just copying it here so people don't need to upgrade for this
+# one check.  also because the rules are different:  in Perlbal
+# it's understandable to not have working in AIO, in mogstored
+# it's essentially required, except for dev and light testing.
+BEGIN {
+    my $OPTMOD_IO_AIO        = eval "use IO::AIO 1.6 (); 1;";
+    my $OPTMOD_LINUX_AIO     = eval "use Linux::AIO 1.71 (); 1;";
+    if ($OPTMOD_LINUX_AIO) {
+        my $good = 0;
+        Linux::AIO::aio_open("/tmp/$$-" . rand() . "-bogusdir/bogusfile-$$", O_RDWR|O_CREAT|O_TRUNC, 0, sub {
+            $good = 1 if $_[0] < 0 && $! == ENOENT;
+        });
+        while (Linux::AIO::nreqs()) {
+            my $rfd = "";
+            vec ($rfd, Linux::AIO::poll_fileno(), 1) = 1;
+            select $rfd, undef, undef, undef;
+            Linux::AIO::poll_cb();
+        }
+        unless ($good) {
+            # pretend that they don't have Linux::AIO, but only bitch at them if they don't have IO::AIO ...
+            if ($OPTMOD_IO_AIO) {
+                $Perlbal::AIO_MODE = "ioaio";
+            } else {
+                warn("WARNING:  Your installation of Linux::AIO doesn't work.\n".
+                     "          You seem to have installed it without 'make test',\n".
+                     "          or you ignored the failing tests.  I'm going to ignore\n".
+                     "          that you have it and proceed without async IO.  The\n".
+                     "          modern replacement to Linux::AIO is IO::AIO.\n");
+            }
+            $OPTMOD_LINUX_AIO = 0;
+        }
+    }
+    $OPTMOD_LINUX_AIO = $OPTMOD_IO_AIO = 0;
+    unless ($OPTMOD_LINUX_AIO || $OPTMOD_IO_AIO) {
+        if ($ENV{'MOGSTORED_RUN_WITHOUT_AIO'}) {
+            warn("WARNING:  Running without async IO.  Won't run well with many clients.\n");
+        } else {
+            die("ERROR: IO::AIO not installed, so async IO not available.  Refusing to run\n".
+                "       unless you set the environment variable MOGSTORED_RUN_WITHOUT_AIO=1\n");
+        }
+    }
+
 }
 
 my $opt_daemonize;
@@ -106,6 +153,7 @@ unless (Perlbal::Socket->WatchedSockets() > 0) {
 }
 
 if ($opt_daemonize) {
+    die "mogstored won't daemonize with \$ENV{MOGSTORED_RUN_WITHOUT_AIO} set.\n" if $ENV{'MOGSTORED_RUN_WITHOUT_AIO'};
     Perlbal::daemonize();
 } else {
     print "Running.\n";

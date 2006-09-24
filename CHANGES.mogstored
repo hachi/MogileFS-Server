@@ -1,3 +1,6 @@
+2006-09-23:
+        * refuse to start up with missing Linux::AIO/IO::AIO or broken Linux::AIO
+
 2006-09-04:
         * set aio_threads as a function of number of disks
 
