@@ -1,3 +1,6 @@
+2006-07 -> 2006-09
+        -- major refactoring/cleanup/new features ("MogileFS 2.0")
+
 2006-03-01 (Brad)
         -- fix dataloss bug when the 'tempfile' table is Innodb and the
            server is restarted while the tempfile table is empty.
