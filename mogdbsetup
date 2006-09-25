@@ -16,6 +16,7 @@ my %args = (
 my $opt_help;
 my $opt_verbose = 0;
 my $opt_yes = 0;
+my $opt_noschemabump;
 
 usage()
     unless GetOptions(
@@ -28,6 +29,7 @@ usage()
                       "help"             => \$opt_help,
                       "verbose"          => \$opt_verbose,
                       "yes"              => \$opt_yes,
+                      "noschemabump"     => \$opt_noschemabump,
                       );
 
 usage() if $opt_help;
@@ -174,7 +176,8 @@ sub upgrade_database {
         }
 
         status("Running SQL: $sql;");
-        $dbh->do($sql);
+        $dbh->do($sql) or
+            die("Failed to run upgrade SQL:  " . $dbh->errstr);
     };
 
     # classes are tied to domains.  domains can have classes of items
@@ -344,8 +347,6 @@ sub upgrade_database {
    field   VARCHAR(50) PRIMARY KEY,
    value   VARCHAR(255))");
 
-    $run->("REPLACE INTO server_settings SET field='schema_version', value='$SCHEMA_VERSION'");
-
     # nexttry is time to try to replicate it next.
     #   0 means immediate.  it's only on one host.
     #   1 means lower priority.  it's on 2+ but isn't happy where it's at.
@@ -361,6 +362,12 @@ sub upgrade_database {
    failcount  TINYINT UNSIGNED NOT NULL DEFAULT 0,
    flags      SMALLINT UNSIGNED NOT NULL DEFAULT 0
    )");
+
+    if ($opt_noschemabump) {
+        warn "\n*\n* Per your request, NOT UPGRADING to $SCHEMA_VERSION.  I assume you understand why.\n*\n";
+    } else {
+        $run->("REPLACE INTO server_settings SET field='schema_version', value='$SCHEMA_VERSION'");
+    }
 
     return 1;
 }
