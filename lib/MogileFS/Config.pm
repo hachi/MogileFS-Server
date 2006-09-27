@@ -69,7 +69,7 @@ sub load_config {
                              'c|config=s'    => \$config,
                              's|skipconfig'  => \$skipconfig,
                              'd|debug+'      => \$cmdline{debug},
-                             'D|daemon'      => \$cmdline{daemonize},
+                             'D|daemonize'   => \$cmdline{daemonize},
                              'dsn=s'         => \$cmdline{db_dsn},
                              'dbuser=s'      => \$cmdline{db_user},
                              'dbpass:s'      => \$cmdline{db_pass},
