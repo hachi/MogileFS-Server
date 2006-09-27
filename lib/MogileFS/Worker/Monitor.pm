@@ -36,7 +36,10 @@ sub work {
 
         # get a current list of devices
         my $devs = Mgd::get_device_summary();
-        next unless $devs && %$devs;
+        unless ($devs && %$devs) {
+            $self->send_to_parent(":monitor_just_ran");
+            next;
+        }
 
         # now iterate over devices
         my %skip_host;  # hostid -> 1 if already noted dead.
