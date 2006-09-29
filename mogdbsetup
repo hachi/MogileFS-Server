@@ -299,9 +299,7 @@ sub upgrade_database {
    UNIQUE     (hostip),
    altip      VARCHAR(15),
    UNIQUE     (altip),
-   altmask    VARCHAR(18),
-
-   remoteroot  VARCHAR(60)
+   altmask    VARCHAR(18)
 )");
 
 # disks
