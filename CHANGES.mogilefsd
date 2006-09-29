@@ -1,3 +1,6 @@
+2006-09-29
+        -- remove non-HTTP mode ("NFS mode") from the server
+
 2006-07 -> 2006-09
         -- major refactoring/cleanup/new features ("MogileFS 2.0")
 

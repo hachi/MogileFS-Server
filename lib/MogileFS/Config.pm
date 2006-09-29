@@ -6,7 +6,7 @@ use MogileFS::ProcManager;
 our @ISA = qw(Exporter);
 our @EXPORT = qw($DEBUG config set_config);
 
-our ($DEFAULT_CONFIG, $DEFAULT_MOG_ROOT, $MOG_ROOT, $MOGSTORED_STREAM_PORT, $DEBUG, $USE_HTTP);
+our ($DEFAULT_CONFIG, $DEFAULT_MOG_ROOT, $MOG_ROOT, $MOGSTORED_STREAM_PORT, $DEBUG);
 $DEBUG = 0;
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $DEFAULT_MOG_ROOT = "/mnt/mogilefs";
@@ -77,7 +77,7 @@ sub load_config {
                              'r|mogroot=s'   => \$cmdline{mog_root},
                              'p|confport=i'  => \$cmdline{conf_port},
                              'w|workers=i'   => \$cmdline{query_jobs},
-                             'no_http'       => \$cmdline{no_http},
+                             'no_http'       => \$cmdline{no_http},  # OLD, we just eat it to shut it up.
                              'workerport=i'  => \$dummy_workerport,  # eat it for backwards compat
                              'maxdiskage=i'  => \$cmdline{max_disk_age},
                              'minfreespace=i' => \$cmdline{min_free_space},
@@ -141,7 +141,7 @@ sub load_config {
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
     $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0, 1 );
-    $USE_HTTP       = ! choose_value( 'no_http', 0, 1);
+
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
@@ -177,8 +177,6 @@ sub config {
     die "No config variable '$k'" unless defined $conf{$k};
     return $conf{$k};
 }
-
-sub http_mode   { return $USE_HTTP; }
 
 1;
 

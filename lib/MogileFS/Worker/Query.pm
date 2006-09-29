@@ -764,7 +764,7 @@ sub cmd_create_host {
         # to the database columns, see if this argument was passed (so we don't
         # overwrite other things), and then quote the input and set it
         my %map = ( ip => 'hostip', port => 'http_port', getport => 'http_get_port',
-                    altip => 'altip', altmask => 'altmask', root => 'remoteroot',
+                    altip => 'altip', altmask => 'altmask',
                     status => 'status', );
         my $set = join(', ', map { $map{$_} . " = " . $dbh->quote($args->{$_}) }
                              grep { exists $args->{$_} }
@@ -777,9 +777,9 @@ sub cmd_create_host {
         $hid = ($dbh->selectrow_array('SELECT MAX(hostid) FROM host') || 0) + 1;
 
         # now insert the new host
-        $dbh->do("INSERT INTO host (hostid, status, http_port, http_get_port, hostname, hostip, altip, altmask, remoteroot) " .
-                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                 undef, $hid, map { $args->{$_} } qw(status port getport host ip altip altmask root));
+        $dbh->do("INSERT INTO host (hostid, status, http_port, http_get_port, hostname, hostip, altip, altmask) " .
+                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                 undef, $hid, map { $args->{$_} } qw(status port getport host ip altip altmask));
     }
     return $self->err_line('failure') if $dbh->err;
 

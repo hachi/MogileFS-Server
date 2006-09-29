@@ -239,7 +239,7 @@ sub find_deviceid {
     my %opts = ( @_ );
 
     # validate we're getting called with known parameters
-    my %valid_keys = map { $_ => 1 } qw( random min_free_space weight_by_free max_disk_age not_on_hosts must_be_writeable must_be_readable ); 
+    my %valid_keys = map { $_ => 1 } qw( random min_free_space weight_by_free max_disk_age not_on_hosts must_be_writeable must_be_readable );
     warn "invalid key $_ in call to find_deviceid\n"
         foreach grep { ! $valid_keys{$_} } keys %opts;
 
@@ -376,7 +376,7 @@ sub reload_host_cache {
     %cache_host = ();
     my $dbh = get_dbh();
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
-                            "hostip, http_port, http_get_port, remoteroot, altip, altmask FROM host");
+                            "hostip, http_port, http_get_port, altip, altmask FROM host");
     $sth->execute;
     while (my $host = $sth->fetchrow_hashref) {
         die unless $host->{status} =~ /^\w+$/;
@@ -438,10 +438,8 @@ my %head_socket;                # host:port => [$pid, $time, $socket]
 sub get_file_size {
     my ($path, $dev) = @_;  # dev is optional.  will be used to send out errors if present.
 
-    # quick case -- just a file on disk
     unless ($path =~ m!^http://([^:/]+)(?::(\d+))?(/.+)$!) {
-        my $root = MogileFS->config("root");
-        return -s "$root/$path"
+        die "Bogus URL.\n";
     }
     my ($host, $port, $uri) = ($1, $2, $3);
 
@@ -851,50 +849,23 @@ sub make_full_url {
     return "http://$host:$port$path";
 }
 
+sub make_path {
+    return Mgd::make_full_url(@_);
+}
+
+sub make_get_path {
+    return Mgd::make_full_url(@_, 1);
+}
+
 # if given an HTTP URL, break it down into [ host, port, URI ], else
-# returns undef
+# returns die, because we don't support non-http-mode anymore
 sub is_url {
     my $path = shift;
     if ($path =~ m!^http://(.+?)(?::(\d+))?(/.+)$!) {
         return [ $1, $2 || 80, $3 ];
     }
-    return undef;
+    Carp::croak("Bogus URL: $path");
 }
-
-sub make_path {
-    # jump out if we should be using HTTP stuff
-    return Mgd::make_full_url(@_) if MogileFS::Config::http_mode();
-
-    my ($devid, $fid) = @_;
-
-    my $dsum = get_device_summary();
-    my $dinfo = $dsum->{$devid};
-    return undef unless $dinfo;
-    my $hostname = hostid_name($dinfo->{hostid});
-
-    my $nfid = sprintf '%010d', $fid;
-    my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
-
-    my $path = "$hostname/dev$devid/$b/$mmm/$ttt/$nfid.fid";
-    make_dirs( MogileFS->config('root') . "/$path" ) or return undef;
-
-    return $path;
-}
-
-sub make_get_path {
-    # the get path only changes for HTTP mode
-    return Mgd::make_path(@_) unless MogileFS::Config::http_mode();
-    return Mgd::make_full_url(@_, 1);
-}
-
-sub make_dirs
-{
-    my $filename = shift;
-    my $dir = File::Basename::dirname($filename);
-    eval { File::Path::mkpath($dir, 0, 0775); };
-    return $@ ? 0 : 1;
-}
-
 
 sub update_fid_devcount {
     my ($fid, $no_lock) = @_;

@@ -435,24 +435,16 @@ sub replicate {
             $sdevid = @choices[int(rand(scalar @choices))];
         }
 
-        my $rv = undef;
-        if (MogileFS::Config->http_mode) {
-            my $worker = MogileFS::ProcManager->is_child or die;
-            $rv = http_copy(
-                            sdevid       => $sdevid,
-                            ddevid       => $ddevid,
-                            fid          => $fid,
-                            expected_len => undef,  # FIXME: get this info to pass along
-                            errref       => \$copy_err,
-                            callback     => sub { $worker->still_alive; },
-                            );
-            die "Bogus error code" if !$rv && $copy_err !~ /^(?:src|dest)_error$/;
-        } else {
-            my $root = Mgd::mog_root();
-            my $dst_path = $root . "/" . make_path($ddevid, $fid);
-            my $src_path = $root . "/" . make_path($sdevid, $fid);
-            $rv = File::Copy::copy($src_path, $dst_path);
-        }
+        my $worker = MogileFS::ProcManager->is_child or die;
+        my $rv = http_copy(
+                           sdevid       => $sdevid,
+                           ddevid       => $ddevid,
+                           fid          => $fid,
+                           expected_len => undef,  # FIXME: get this info to pass along
+                           errref       => \$copy_err,
+                           callback     => sub { $worker->still_alive; },
+                           );
+        die "Bogus error code" if !$rv && $copy_err !~ /^(?:src|dest)_error$/;
 
         unless ($rv) {
             error("Failed copying fid $fid from devid $sdevid to devid $ddevid (error type: $copy_err)");
