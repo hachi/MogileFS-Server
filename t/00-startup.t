@@ -5,11 +5,11 @@ use warnings;
 use Test::More 'no_plan';
 use FindBin qw($Bin);
 
-use lib "$Bin/../../api/perl";
+use lib "$Bin/../../api/perl/lib";
 BEGIN {
-    $ENV{PERL5LIB} = "$Bin/../../api/perl" . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
+    $ENV{PERL5LIB} = "$Bin/../../api/perl/lib" . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
 }
-use MogileFS;
+use MogileFS::Client;
 
 require 't/lib/mogtestlib.pl';
 
@@ -75,10 +75,10 @@ ok($tmptrack->mogadm("device", "add", "hostB", 4), "created dev4 on hostB");
 #ok($tmptrack->mogadm("device", "mark", "hostB", 3, "alive"), "dev3 alive");
 #ok($tmptrack->mogadm("device", "mark", "hostB", 4, "alive"), "dev4 alive");
 
-my $mogc = MogileFS->new(
-                         domain => "testdom",
-                         hosts  => [ "127.0.0.1:7001" ],
-                         );
+my $mogc = MogileFS::Client->new(
+                                 domain => "testdom",
+                                 hosts  => [ "127.0.0.1:7001" ],
+                                 );
 
 
 sleep 3;  # sleep 3 seconds to wait for monitor to see devices are alive.
