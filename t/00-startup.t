@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More 'no_plan';
+use Test::More tests => 32;
 use FindBin qw($Bin);
 
 use lib "$Bin/../../api/perl/lib";
