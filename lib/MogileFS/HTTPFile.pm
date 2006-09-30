@@ -29,10 +29,31 @@ sub at {
     return $self;
 }
 
-# return MogileFS::Device object, which the HTTP file is on.
-sub device {
+sub device_id {
+    my $self = shift;
+    return $self->{devid} if $self->{devid};
+    $self->{url} =~ /\bdev(\d+)\b/
+        or die "Can't find device from URL: $self->{url}\n";
+    return $self->{devid} = $1;
+}
+
+sub host_id {
     my $self = shift;
 
+    # TODO: kinda gross, replace with MogileFS::Host and MogileFS::Device
+    # objects...
+    my $devsum = Mgd::get_device_summary();
+    my $devid  = $self->dev_id;
+    return 0 unless $devsum->{$devid};
+    return $devsum->{$devid}{hostid};
+}
+
+# return MogileFS::Device object
+sub device {
+}
+
+# return MogileFS::Host object
+sub host {
 }
 
 # returns 0 on error, advertising error
@@ -170,8 +191,7 @@ sub size {
     # did we timeout?
     unless (Mgd::wait_for_writeability(fileno($httpsock), $time_remain)) {
         if (my $worker = MogileFS::ProcManager->is_child) {
-            my $dev = $self->device;
-            $worker->broadcast_host_unreachable($dev);
+            $worker->broadcast_host_unreachable($self->host_id);
         }
         return error("get_file_size() connect timeout for HTTP HEAD for size of $path");
     }
@@ -179,8 +199,7 @@ sub size {
     # did we fail to connect?  (got a RST, etc)
     unless (getpeername($httpsock)) {
         if (my $worker = MogileFS::ProcManager->is_child) {
-            my $dev = $self->device;
-            $worker->broadcast_device_unreachable($dev);
+            $worker->broadcast_device_unreachable($self->dev_id);
         }
         return error("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
