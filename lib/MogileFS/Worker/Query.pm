@@ -315,7 +315,7 @@ sub cmd_create_close {
     }
 
     # get size of file and verify that it matches what we were given, if anything
-    my $size = Mgd::get_file_size($path);
+    my $size = MogileFS::HTTPFile->at($path)->size;
 
     return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
         if $args->{size} && ($args->{size} != $size);
@@ -917,7 +917,7 @@ sub cmd_get_paths {
         next unless
             $ret->{paths}        ||
             $args->{noverify}    ||
-            Mgd::get_file_size($path, $dev) == $filerow->{length};
+            MogileFS::HTTPFile->at($path)->size == $filerow->{length};
 
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;

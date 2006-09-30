@@ -2,6 +2,7 @@ CHANGES.mogilefsd
 CHANGES.mogstored
 doc/fsck-notes.txt
 lib/MogileFS/Class.pm
+lib/MogileFS/HTTPFile.pm
 lib/MogileFS/Config.pm
 lib/MogileFS/Connection/Client.pm
 lib/MogileFS/Connection/Worker.pm
@@ -25,7 +26,6 @@ mogautomount
 mogdbsetup
 mogilefsd
 mogstored
-refactor.diff
 t/00-startup.t
 t/lib/mogtestlib.pl
 TODO
