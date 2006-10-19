@@ -57,10 +57,10 @@ sub work {
 
         while ($buf =~ s/^(.+?)\r?\n//) {
             my $line = $1;
-            $self->validate_dbh;
             if ($self->process_generic_command(\$line)) {
                 $self->still_alive;  # no-op for watchdog
             } else {
+                $self->validate_dbh;
                 $self->process_line(\$line);
             }
         }
@@ -1177,6 +1177,7 @@ sub ok_line {
 # second argument: optional error text.  text will be taken from code if no text provided.
 sub err_line {
     my MogileFS::Worker::Query $self = shift;
+
     my $err_code = shift;
     my $err_text = shift || {
         'after_mismatch' => "Pattern does not match the after-value?",
@@ -1240,7 +1241,7 @@ sub decode_url_args
     my $ret = {};
 
     my $pair;
-    my @pairs = split(/&/, $$buffer);
+    my @pairs = grep { $_ } split(/&/, $$buffer);
     my ($name, $value);
     foreach $pair (@pairs)
     {
