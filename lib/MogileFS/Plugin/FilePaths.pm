@@ -119,7 +119,7 @@ sub load {
                     nodeid BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
                     dmid SMALLINT UNSIGNED NOT NULL,
                     parentnodeid BIGINT UNSIGNED NOT NULL,
-                    nodename VARCHAR(255) NOT NULL,
+                    nodename VARCHAR(255) BINARY NOT NULL,
                     fid BIGINT UNSIGNED,
                     PRIMARY KEY (nodeid),
                     UNIQUE KEY (dmid, parentnodeid, nodename)
