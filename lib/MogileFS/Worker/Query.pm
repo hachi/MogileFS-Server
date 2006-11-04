@@ -101,6 +101,29 @@ sub process_line {
     return $self->err_line('unknown_command');
 }
 
+# this is a half-finished command.  in particular, errors tend to
+# crash the parent or child or something.  it's a quick hack for a quick
+# ops task that needs done.
+sub cmd_httpcopy {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+    my $sdevid = $args->{sdevid};
+    my $ddevid = $args->{ddevid};
+    my $fid    = $args->{fid};
+
+    my $err;
+    my $rv = MogileFS::Worker::Replicate::http_copy(sdevid => $sdevid,
+                                                    ddevid => $ddevid,
+                                                    fid    => $fid,
+                                                    errref => \$err);
+    if ($rv) {
+        MogileFS::Worker::Replicate::add_file_on($fid, $ddevid);
+        return $self->ok_line;
+    } else {
+        return $self->err_line("copy_err", $err);
+    }
+}
+
 # returns 0 on error, or dmid of domain
 sub check_domain {
     my MogileFS::Worker::Query $self = shift;
