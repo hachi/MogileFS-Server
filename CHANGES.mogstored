@@ -1,3 +1,6 @@
+2006-11-05:
+        * set aio threads after daemonizing.  needed by Linux::AIO/IO::AIO, it seems?
+
 2006-09-23:
         * refuse to start up with missing Linux::AIO/IO::AIO or broken Linux::AIO
 

@@ -130,8 +130,7 @@ my $aio_threads = disks($docroot) * 10 || 10;
 $aio_threads = 100 if $aio_threads > 100;
 
 # this is the perlbal configuration only.  not the mogstored configuration.
-my $pb_conf ||= "
-SERVER aio_threads = $aio_threads
+my $pb_conf = "
 SERVER max_connections = $max_conns
 CREATE SERVICE mogstored
    SET role = web_server
@@ -157,6 +156,9 @@ if ($opt_daemonize) {
 } else {
     print "Running.\n";
 }
+
+# for some reason, have to set aio threads after daemonizing
+Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
 
 # register our disk usage callback to get disk usage and keep an eye on how we're doing
 Perlbal::Socket::register_callback(1, sub {
