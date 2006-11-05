@@ -2,6 +2,7 @@ package MogileFS::HTTPFile;
 use strict;
 use Carp qw(croak);
 use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
+use MogileFS::Util qw(error);
 
 # (caching the connection used for HEAD requests)
 my %head_socket;                # host:port => [$pid, $time, $socket]
