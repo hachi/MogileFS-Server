@@ -5,9 +5,6 @@ use strict;
 use base 'MogileFS::Worker';
 use MogileFS::Util qw(error);
 
-use POSIX ":sys_wait_h"; # argument for waitpid
-use POSIX;
-
 # we select 1000 but only do a random 100 of them, to allow
 # for stateless paralleism
 use constant LIMIT => 1000;
@@ -151,49 +148,35 @@ sub process_deletes {
         }
 
         my $rv = 0;
-        if (my $urlref = Mgd::is_url($path)) {
-            # hit up the server and delete it
-            # TODO: (optimization) use MogileFS->get_observed_state and don't try to delete things known to be down/etc
-            my $sock = IO::Socket::INET->new(PeerAddr => $urlref->[0],
-                                             PeerPort => $urlref->[1],
-                                             Timeout => 2);
-            unless ($sock) {
-                # timeout or something, mark this device as down for now and move on
+        my $urlref = Mgd::is_url($path);
+
+        # hit up the server and delete it
+        # TODO: (optimization) use MogileFS->get_observed_state and don't try to delete things known to be down/etc
+        my $sock = IO::Socket::INET->new(PeerAddr => $urlref->[0],
+                                         PeerPort => $urlref->[1],
+                                         Timeout => 2);
+        unless ($sock) {
+            # timeout or something, mark this device as down for now and move on
+            $dev_down{$devid} = 1;
+            next;
+        }
+
+        # send delete request
+        error("Sending delete for $path") if $Mgd::DEBUG >= 2;
+        $sock->write("DELETE $urlref->[2] HTTP/1.0\r\n\r\n");
+        my $response = <$sock>;
+        if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
+            if (($1 >= 200 && $1 <= 299) || $1 == 404) {
+                # effectively means all went well
+                $rv = 1;
+            } else {
+                # remote file system error?  mark node as down
+                error("Error: unlink failure: $path: $1");
                 $dev_down{$devid} = 1;
                 next;
             }
-
-            # send delete request
-            error("Sending delete for $path") if $Mgd::DEBUG >= 2;
-            $sock->write("DELETE $urlref->[2] HTTP/1.0\r\n\r\n");
-            my $response = <$sock>;
-            if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-                if (($1 >= 200 && $1 <= 299) || $1 == 404) {
-                    # effectively means all went well
-                    $rv = 1;
-                } else {
-                    # remote file system error?  mark node as down
-                    error("Error: unlink failure: $path: $1");
-                    $dev_down{$devid} = 1;
-                    next;
-                }
-            } else {
-                error("Error: unknown response line: $response");
-            }
         } else {
-            # do normal unlink
-            $rv = unlink "$Mgd::MOG_ROOT/$path";
-
-            # device is timing out.  take note of it and
-            # continue dealing with other deletes
-            if (! $rv) {
-                if ($! == EIO) {
-                    $dev_down{$devid} = 1;
-                    next;
-                } elsif ($! == ENOENT) {
-                    $rv = 1;  # count non-existent file as deleted
-                }
-            }
+            error("Error: unknown response line: $response");
         }
 
         # if we deleted it, or it didn't exist, consider it
