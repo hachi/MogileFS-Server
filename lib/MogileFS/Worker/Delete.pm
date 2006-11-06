@@ -121,6 +121,7 @@ sub process_deletes {
     my %dev_down;  # devid -> 1 (when device times out due to EIO)
     my $done = 0;
     foreach my $dm (List::Util::shuffle(@$delmap)) {
+        $self->still_alive;
         $self->read_from_parent;
         my ($fid, $devid) = @$dm;
 
