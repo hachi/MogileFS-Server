@@ -21,6 +21,8 @@ sub new {
     return $self;
 }
 
+sub watchdog_timeout { 60 }
+
 sub work {
     my $self = shift;
 
@@ -140,6 +142,14 @@ sub process_deletes {
         last if ++$done > PER_BATCH;
 
         my $path = Mgd::make_path($devid, $fid);
+
+        # dormando: "There are cases where make_path can return undefined,
+        # Mogile appears to try to replicate to bogus devices sometimes?"
+        unless ($path) {
+            error("in deleter, make_path(devid=$devid, fid=$fid) returned nothing");
+            next;
+        }
+
         my $rv = 0;
         if (my $urlref = Mgd::is_url($path)) {
             # hit up the server and delete it
