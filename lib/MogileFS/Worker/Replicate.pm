@@ -551,7 +551,7 @@ sub http_copy {
 
     # okay, now get the file
     my $sock = IO::Socket::INET->new(PeerAddr => $shost, PeerPort => $sport, Timeout => 2)
-        or return error("Unable to create socket to $shost:$sport for $spath");
+        or return $src_error->("Unable to create source socket to $shost:$sport for $spath");
     $sock->write("GET $spath HTTP/1.0\r\n\r\n");
     return error("Pipe closed retrieving $spath from $shost:$sport")
         if $pipe_closed;
@@ -577,7 +577,7 @@ sub http_copy {
 
     # open target for put
     my $dsock = IO::Socket::INET->new(PeerAddr => $dhost, PeerPort => $dport, Timeout => 2)
-        or return $dest_error->("Unable to create socket to $dhost:$dport for $dpath");
+        or return $dest_error->("Unable to create dest socket to $dhost:$dport for $dpath");
     $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen\r\n\r\n")
         or return $dest_error->("Unable to write data to $dpath on $dhost:$dport");
     return $dest_error->("Pipe closed during write to $dpath on $dhost:$dport")
