@@ -93,6 +93,13 @@ sub read_from_parent {
     while (Mgd::wait_for_readability(fileno($psock), 0)) {
         my $buf;
         my $rv = sysread($psock, $buf, 1024);
+        if (!$rv) {
+            if (defined $rv) {
+                die "While reading pipe from parent, got EOF.  Parent's gone.  Quitting.\n";
+            } else {
+                die "Error reading pipe from parent: $!\n";
+            }
+        }
         $self->{readbuf} .= $buf;
 
         while ($self->{readbuf} =~ s/^(.+?)\r?\n//) {

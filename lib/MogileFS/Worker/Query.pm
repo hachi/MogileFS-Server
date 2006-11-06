@@ -53,6 +53,13 @@ sub work {
 
         my $newread;
         my $rv = sysread($psock, $newread, 1024);
+        if (!$rv) {
+            if (defined $rv) {
+                die "While reading pipe from parent, got EOF.  Parent's gone.  Quitting.\n";
+            } else {
+                die "Error reading pipe from parent: $!\n";
+            }
+        }
         $buf .= $newread;
 
         while ($buf =~ s/^(.+?)\r?\n//) {
