@@ -444,7 +444,7 @@ sub replicate {
                            errref       => \$copy_err,
                            callback     => sub { $worker->still_alive; },
                            );
-        die "Bogus error code" if !$rv && $copy_err !~ /^(?:src|dest)_error$/;
+        die "Bogus error code: $copy_err" if !$rv && $copy_err !~ /^(?:src|dest)_error$/;
 
         unless ($rv) {
             error("Failed copying fid $fid from devid $sdevid to devid $ddevid (error type: $copy_err)");
