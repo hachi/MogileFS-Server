@@ -103,7 +103,9 @@ sub process_line {
 
 # this is a half-finished command.  in particular, errors tend to
 # crash the parent or child or something.  it's a quick hack for a quick
-# ops task that needs done.
+# ops task that needs done.  note in particular how it reaches across
+# package boundaries into an API that the Replicator probably doesn't
+# want exposed.
 sub cmd_httpcopy {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
@@ -172,8 +174,9 @@ sub cmd_create_open {
     my $dmid = $args->{dmid};
     my $key = $args->{key} || "";
     my $multi = $args->{multi_dest} ? 1 : 0;
-    my $fid = ($args->{fid} + 0) || undef; # we want it to be undef if they didn't give one
-                                           # and we want to force it numeric...
+
+    # we want it to be undef if not explicit, else force to numeric
+    my $fid = $args->{fid} ? int($args->{fid}) : undef;
 
     # get DB handle
     my $dbh = Mgd::get_dbh() or
