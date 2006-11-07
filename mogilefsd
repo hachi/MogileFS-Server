@@ -593,7 +593,7 @@ sub vivify_directories {
     #    http://10.0.0.26:7500/dev2/0/000
     #    http://10.0.0.26:7500/dev2/0/000/148
 
-    return 0 unless $path =~ /^http/;  # TODO: file-based mode?  naah.  should deprecate non-HTTP mode.
+    die "non-HTTP mode no longer supported" unless $path =~ /^http/;
     return 0 unless $path =~ m!/dev(\d+)/(\d+)/(\d\d\d)/(\d\d\d)/\d+\.fid$!;
     my ($devid, $p1, $p2, $p3) = ($1, $2, $3, $4);
     my @need;
