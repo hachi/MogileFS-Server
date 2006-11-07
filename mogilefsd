@@ -617,6 +617,11 @@ sub vivify_directories {
         print $sock "MKCOL $path HTTP/1.0\r\n".
             "Content-Length: 0\r\n\r\n";
         my $ans = <$sock>;
+        # TODO: do something smarter here w/ the response.  for
+        # instance, if mogstored says 400 bad request, we could learn
+        # that this host isn't DAV, so therefore its PUTs must
+        # auto-vivify directories as needed, and we could turn off
+        # this entire function for those hosts.
         $dir_made{$path} = [$depth, $now];
     }
 
