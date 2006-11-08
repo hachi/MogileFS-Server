@@ -23,9 +23,8 @@ WriteMakefile(
     EXE_FILES               => $exefiles,
     PREREQ_PM               => {
         'Danga::Socket'    => '1.22',
-        'Perlbal'          => 0,    # FIXME: add version to Perlbal (added as of Perlbal 1.43)
-                                    # but really we're going to make Perlbal.pm optional, for running mogstored
-                                    # in only-monitor/usage-writeout mode.  so maybe not.
+        'Perlbal'          => '1.52',  # Future: make Perlbal optional, for running mogstored
+                                       # in only-monitor/usage-writeout mode.
         'Sys::Syslog'      => 0,
         'Getopt::Long'     => 0,
         'Symbol'           => 0,

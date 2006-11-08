@@ -44,7 +44,7 @@ sub host_id {
     # TODO: kinda gross, replace with MogileFS::Host and MogileFS::Device
     # objects...
     my $devsum = Mgd::get_device_summary();
-    my $devid  = $self->dev_id;
+    my $devid  = $self->device_id;
     return 0 unless $devsum->{$devid};
     return $devsum->{$devid}{hostid};
 }
@@ -200,7 +200,7 @@ sub size {
     # did we fail to connect?  (got a RST, etc)
     unless (getpeername($httpsock)) {
         if (my $worker = MogileFS::ProcManager->is_child) {
-            $worker->broadcast_device_unreachable($self->dev_id);
+            $worker->broadcast_device_unreachable($self->device_id);
         }
         return error("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
