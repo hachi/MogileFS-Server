@@ -10,6 +10,10 @@ use MogileFS::Util qw(error);
 use constant LIMIT => 1000;
 use constant PER_BATCH => 100;
 
+# TODO: use LWP and persistent connections to do deletes.  less local ports used.
+# TODO: reschedule deletes for future if things fail
+# TODO: respect dead/readonly devices.
+
 sub new {
     my ($class, $psock) = @_;
     my $self = fields::new($class);
@@ -102,8 +106,8 @@ sub process_tempfiles {
     }
 
     # TODO: error checking
-    $dbh->do("INSERT INTO file_on (fid, devid) VALUES " . join(',', @questions), undef, @binds);
-    $dbh->do("INSERT INTO file_to_delete VALUES " . join(',', map { "(?)" } @fids), undef, @fids);
+    $dbh->do("INSERT IGNORE INTO file_on (fid, devid) VALUES " . join(',', @questions), undef, @binds);
+    $dbh->do("INSERT IGNORE INTO file_to_delete VALUES " . join(',', map { "(?)" } @fids), undef, @fids);
     $dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fids) . ")");
     return 1;
 }
