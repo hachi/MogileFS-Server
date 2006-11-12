@@ -78,6 +78,7 @@ sub pid {
 }
 
 sub event_hup { my $self = shift; $self->close; }
+sub event_err { my $self = shift; $self->close; }
 
 sub close {
     # mark us as being dead
