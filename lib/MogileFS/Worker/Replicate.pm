@@ -10,8 +10,6 @@ use fields (
 use List::Util ();
 use MogileFS::Util qw(error every);
 use MogileFS::Class;
-use POSIX ":sys_wait_h"; # argument for waitpid
-use POSIX;
 
 # setup the value used in a 'nexttry' field to indicate that this item will never
 # actually be tried again and require some sort of manual intervention.

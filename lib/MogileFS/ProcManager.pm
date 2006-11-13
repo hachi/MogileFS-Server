@@ -1,8 +1,7 @@
 package MogileFS::ProcManager;
 use strict;
 use warnings;
-use POSIX;
-use POSIX ":sys_wait_h"; # argument for waitpid
+use POSIX qw(:sys_wait_h sigprocmask SIGINT SIG_BLOCK SIG_UNBLOCK);
 use Symbol;
 use Socket;
 

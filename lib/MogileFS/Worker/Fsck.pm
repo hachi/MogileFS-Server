@@ -4,8 +4,6 @@ use strict;
 use base 'MogileFS::Worker';
 use MogileFS::Util qw(every error);
 
-use POSIX;
-
 sub watchdog_timeout {
     30;
 }

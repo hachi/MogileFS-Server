@@ -4,8 +4,6 @@ use strict;
 use base 'MogileFS::Worker';
 use MogileFS::Util qw(every error);
 
-use POSIX;
-
 sub new {
     my ($class, $psock) = @_;
     my $self = fields::new($class);

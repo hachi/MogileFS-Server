@@ -6,7 +6,6 @@ use base 'MogileFS::Worker';
 use MogileFS::Util qw( every error );
 use List::Util ();
 use LWP::UserAgent;
-use POSIX;
 use Time::HiRes ();
 
 use constant SUCCESS => 0;
