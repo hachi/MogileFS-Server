@@ -2,7 +2,7 @@
 
 use strict;
 use warnings;
-use Test::More tests => 32;
+use Test::More;
 use FindBin qw($Bin);
 
 use lib "$Bin/../../api/perl/lib";
@@ -20,6 +20,14 @@ require 't/lib/mogtestlib.pl';
 # mogilefsd startup,
 # add file,
 # etc
+
+my $rootdbh = eval { root_dbh(); };
+if ($rootdbh) {
+    plan tests => 32;
+} else {
+    plan skip_all => "Can't connect to local MySQL as root user.";
+    exit 0;
+}
 
 my $tempdb = create_temp_db();
 isa_ok $tempdb, "DBHandle";

@@ -12,7 +12,7 @@ sub create_temp_db {
 }
 
 my $rootdbh;
-sub _root_dbh {
+sub root_dbh {
     return $rootdbh ||= DBI->connect("DBI:mysql:mysql", "root", "", { RaiseError => 1 })
         or die "Couldn't connect to database";
 }
@@ -20,12 +20,12 @@ sub _root_dbh {
 sub create_mysql_db {
     my $dbname = shift;
     drop_mysql_db($dbname);
-    _root_dbh()->do("CREATE DATABASE $dbname");
+    root_dbh()->do("CREATE DATABASE $dbname");
 }
 
 sub drop_mysql_db {
     my $dbname = shift;
-    _root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
+    root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
 }
 
 sub create_temp_tracker {
