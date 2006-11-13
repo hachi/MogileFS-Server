@@ -131,7 +131,7 @@ sub process_deletes {
         $self->still_alive;
         $self->read_from_parent;
         my ($fid, $devid) = @$dm;
-        error("deleting fid $fid, on devid $devid...");
+        error("deleting fid $fid, on devid $devid...") if $Mgd::DEBUG >= 2;
 
         my $done_with_fid = sub {
             my $reason = shift;
@@ -153,7 +153,7 @@ sub process_deletes {
                      "VALUES (?,UNIX_TIMESTAMP()+$secs)", undef,
                      $fid);
             dbcheck($dbh, "Failure to insert into file_to_delete_later");
-            error("delete of fid $fid rescheduled: $reason");
+            error("delete of fid $fid rescheduled: $reason") if $Mgd::DEBUG >= 2;
             $done_with_fid->("rescheduled");
         };
 
