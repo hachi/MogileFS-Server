@@ -17,6 +17,14 @@ use POSIX;
 # actually be tried again and require some sort of manual intervention.
 use constant ENDOFTIME => 2147483647;
 
+# { fid => lastcheck }; instructs us not to replicate this fid... we will clear
+# out fids from this list that are expired
+my %fidfailure;
+
+# { fid => 1 }; used to keep track of fids we find in the unreachable_fids table
+my %unreachable;
+my $dbh;
+
 sub end_of_time { ENDOFTIME; }
 
 sub new {
@@ -35,6 +43,11 @@ sub process_line {
         return 1;
     }
 
+    if ($$lineref =~ /^repl_unreachable (\d+)/) {
+        $unreachable{$1} = 1;
+        return 1;
+    }
+
     # telnet to main port and do:
     #    !to replicate repl_compat {0,1}
     # to change it in realtime, without restarting.
@@ -48,14 +61,6 @@ sub process_line {
 
 # replicator wants
 sub watchdog_timeout { 30; }
-
-# { fid => lastcheck }; instructs us not to replicate this fid... we will clear
-# out fids from this list that are expired
-my %fidfailure;
-
-# { fid => 1 }; used to keep track of fids we find in the unreachable_fids table
-my %unreachable;
-my $dbh;
 
 sub work {
     my $self = shift;
@@ -504,17 +509,16 @@ sub http_copy {
 
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error_unreachable = sub {
-        if ($_[0]) {
-            my $worker = MogileFS::ProcManager->is_child;
-            $worker->send_to_parent("repl_unreachable $fid");
+        my $worker = MogileFS::ProcManager->is_child;
+        $worker->send_to_parent(":repl_unreachable $fid");
 
-            # update database table
-            Mgd::validate_dbh();
-            my $dbh = Mgd::get_dbh();
-            $dbh->do("REPLACE INTO unreachable_fids VALUES ($fid, UNIX_TIMESTAMP())");
-        }
+        # update database table
+        Mgd::validate_dbh();
+        my $dbh = Mgd::get_dbh();
+        $dbh->do("REPLACE INTO unreachable_fids VALUES ($fid, UNIX_TIMESTAMP())");
+
         $$errref = "src_error" if $errref;
-        return error($_[1]);
+        return error("Fid $fid unreachable while replicating: $_[0]");
     };
 
     my $dest_error = sub {
@@ -564,15 +568,15 @@ sub http_copy {
         last unless length $line;
         if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
             # make sure we get a good response
-            return $error_unreachable->(1, "Error: Resource http://$shost:$sport$spath failed: HTTP $1")
+            return $error_unreachable->("Error: Resource http://$shost:$sport$spath failed: HTTP $1")
                 unless $1 >= 200 && $1 <= 299;
         }
         next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
         $clen = $1;
     }
-    return $error_unreachable->(1, "File $spath has a content-length of 0; unable to replicate")
+    return $error_unreachable->("File $spath has a content-length of 0; unable to replicate")
         unless $clen;
-    return $error_unreachable->(1, "File $spath has unexpected content-length of $clen, not $expected_clen")
+    return $error_unreachable->("File $spath has unexpected content-length of $clen, not $expected_clen")
         if defined $expected_clen && $clen != $expected_clen;
 
     # open target for put

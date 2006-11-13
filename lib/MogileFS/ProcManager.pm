@@ -525,7 +525,7 @@ sub HandleChildRequest {
         my ($what, $whatid, $state) = ($1, $2, $3);
         state_change($what, $whatid, $state, $child);
 
-    } elsif ($cmd =~ /^repl_unreachable (\d+)/) {
+    } elsif ($cmd =~ /^:repl_unreachable (\d+)/) {
         # announce to the other replicators that this fid can't be reached, but note
         # that we don't actually drain the queue to the requestor, as the replicator
         # isn't in a place where it can accept a queue drain right now.
@@ -582,13 +582,14 @@ sub HandleChildRequest {
 # doesn't add to queue of things child gets on next interactive command: writes immediately
 # (won't get in middle of partial write, though, as danga::socket queues things up)
 sub ImmediateSendToChildrenByJob {
-    my $childref = $ChildrenByJob{$_[1]};
+    my ($class, $dest_class, $msg, $exclude_child) = @_;
+
+    my $childref = $ChildrenByJob{$dest_class};
     return 0 unless defined $childref && %$childref;
-    my $msg = $_[2];
 
     foreach my $child (values %$childref) {
         # ignore the child specified as the third arg if one is sent
-        next if defined $_[3] && $_[3] == $child;
+        next if $exclude_child && $exclude_child == $child;
 
         # send the message to this child
         $child->write("$msg\r\n");
