@@ -40,6 +40,15 @@ sub monitor_has_run {
     return $self->{monitor_has_run} ? 1 : 0;
 }
 
+sub wait_for_monitor {
+    my $self = shift;
+    while (! $self->monitor_has_run) {
+        $self->read_from_parent;
+        $self->still_alive;
+        sleep 1;
+    }
+}
+
 # method that workers can call just to write something to the parent, so worker
 # doesn't get killed.  (during idle/slow operation, say)
 sub still_alive {

@@ -5,7 +5,7 @@ use Time::HiRes;
 
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT_OK = qw(error daemonize weighted_list every);
+our @EXPORT_OK = qw(error daemonize weighted_list every dbcheck);
 
 sub every {
     my ($delay, $code) = @_;
@@ -114,6 +114,14 @@ sub weighted_list {
 
     push @ret, $getone->() while @list;
     return @ret;
+}
+
+sub dbcheck {
+    my ($dbh, $errmsg) = @_;
+    return unless $dbh->err;
+    $errmsg .= ": " . $dbh->err . ": " . $dbh->errstr;
+    error($errmsg);  # propogate to parent for listeners
+    die $errmsg;
 }
 
 1;

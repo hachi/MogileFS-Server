@@ -147,7 +147,9 @@ sub normal_conn {
 sub upgrade_database {
     my ($host, $name, $user, $pass) = @_;
 
-    my $SCHEMA_VERSION = 6;
+    my $SCHEMA_VERSION = 7;
+    # schema history:
+    #   7: adds file_to_delete_later table
     my $curver = schema_version();
 
     if ($curver == $SCHEMA_VERSION) {
@@ -360,6 +362,13 @@ sub upgrade_database {
    failcount  TINYINT UNSIGNED NOT NULL DEFAULT 0,
    flags      SMALLINT UNSIGNED NOT NULL DEFAULT 0
    )");
+
+    $run->("CREATE TABLE IF NOT EXISTS file_to_delete_later (
+   fid  INT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid),
+   delafter INT UNSIGNED NOT NULL,
+   INDEX (delafter)
+)");
 
     if ($opt_noschemabump) {
         warn "\n*\n* Per your request, NOT UPGRADING to $SCHEMA_VERSION.  I assume you understand why.\n*\n";
