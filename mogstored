@@ -234,7 +234,7 @@ sub reap_iostat {
         Danga::Socket->AddTimer(1, \&setup_iostat); # Schedule a new process to be launched in 1 second.
     }
 
-    Danga::Socket->AddTimer(1, \&reap_iostat);
+    Danga::Socket->AddTimer(1, \&reap_iostat) if keys %iostat_children;
 }
 
 sub setup_iostat {
@@ -242,7 +242,10 @@ sub setup_iostat {
     pipe (my $stderr_r, my $stderr_w);
     my $pid = fork;
 
-    return unless defined $pid;
+    unless (defined $pid) {
+        warn "Fork failed: $!";
+        return;
+    }
 
     if ($pid) {
         # Parent
@@ -252,8 +255,10 @@ sub setup_iostat {
         IO::Handle::blocking($stdout_r, 0);
         IO::Handle::blocking($stderr_r, 0);
 
+        # Check if there are any existing children (and thus, reapers) before we add the current one.
+        Danga::Socket->AddTimer(1, \&reap_iostat) unless keys %iostat_children;
         $iostat_children{$pid} = time;
-        reap_iostat;
+
         Danga::Socket->AddOtherFds(fileno($stdout_r), sub {
             sysread($stdout_r, my $buffer, 10240);
             print "IOSTAT: { $buffer }\n";
