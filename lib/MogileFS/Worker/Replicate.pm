@@ -369,15 +369,14 @@ sub replicate {
     return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock $lockname")
         unless $lock;
 
-    # learn what devices this file is already on
-    my $on_count = 0;
-    my @dead_devid;   # list of dead devids.  FIXME: do something with this?
-    my @exist_devid;  # list of existing devids
+    # learn what this devices file is already on
+    my @on_devs;       # all devices fid is on, reachable or not.
+    my @dead_devid;    # list of dead devids.  FIXME: do something with this?
+    my @on_up_devid;   # subset of @on_devs:  just devs that are alive or readonly
 
     my $sth = $dbh->prepare("SELECT devid FROM file_on WHERE fid=?");
     $sth->execute($fid);
     die $dbh->errstr if $dbh->err;
-    my @on_devs;
     while (my ($devid) = $sth->fetchrow_array) {
         my $d = $devs->{$devid};
         push @on_devs, $d;
@@ -385,15 +384,14 @@ sub replicate {
             push @dead_devid, $devid;
             next;
         }
-        $on_count++;
-        push @exist_devid, $devid;
+        push @on_up_devid, $devid;
     }
 
-    return $retunlock->(0, "no_source",   "Source is no longer available replicating $fid") if $on_count == 0;
-    return $retunlock->(0, "source_down", "No eligible devices available replicating $fid") if @exist_devid == 0;
+    return $retunlock->(0, "no_source",   "Source is no longer available replicating $fid") if @on_devs == 0;
+    return $retunlock->(0, "source_down", "No alive devices available replicating $fid") if @on_up_devid == 0;
 
     # if they requested a specific source, that source must be up.
-    if ($sdevid && ! grep { $_ == $sdevid} @exist_devid) {
+    if ($sdevid && ! grep { $_ == $sdevid} @on_up_devid) {
         return $retunlock->(0, "source_down", "Requested replication source device $sdevid not available");
     }
 
@@ -433,7 +431,7 @@ sub replicate {
         # find where we're replicating from
         unless ($fixed_source) {
             # TODO: use an observed good device+host as source to start.
-            my @choices = grep { ! $source_failed{$_} } @exist_devid;
+            my @choices = grep { ! $source_failed{$_} } @on_up_devid;
             return $retunlock->(0, "source_down", "No devices available replicating $fid") unless @choices;
             $sdevid = @choices[int(rand(scalar @choices))];
         }
