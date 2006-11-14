@@ -182,6 +182,15 @@ sub cmd_create_open {
     my $key = $args->{key} || "";
     my $multi = $args->{multi_dest} ? 1 : 0;
 
+    # optional profiling of stages, if $args->{debug_profile}
+    my @profpoints;  # array of [point,hires-starttime]
+    my $profstart = sub {
+        my $pt = shift;
+        push @profpoints, [$pt, Time::HiRes::time()];
+    };
+    $profstart = sub {} unless $args->{debug_profile};
+    $profstart->("begin");
+
     # we want it to be undef if not explicit, else force to numeric
     my $fid = $args->{fid} ? int($args->{fid}) : undef;
 
@@ -203,6 +212,7 @@ sub cmd_create_open {
     # if we haven't heard from the monitoring job yet, we need to chill a bit
     # to prevent a race where we tell a user that we can't create a file when
     # in fact we've just not heard from the monitor
+    $profstart->("wait_monitor");
     while (! $self->monitor_has_run) {
         $self->read_from_parent;
         $self->still_alive;
@@ -213,6 +223,7 @@ sub cmd_create_open {
     my (@dests, @hosts);
     my $devs = Mgd::get_device_summary();
 
+    $profstart->("find_deviceid");
     while (scalar(@dests) < ($multi ? 3 : 1)) {
         my $devid = Mgd::find_deviceid(
                                        random           => 1,
@@ -257,6 +268,7 @@ sub cmd_create_open {
     };
 
     # if the fid is in use, do something
+    $profstart->("check_fid_in_use");
     while ($fid_in_use->($fid)) {
         return $self->err_line("fid_in_use") if $explicit_fid_used;
 
@@ -274,27 +286,45 @@ sub cmd_create_open {
 
     # make sure directories exist for client to be able to PUT into
     foreach my $devid (@dests) {
+        $profstart->("vivify_dir_on_dev$devid");
         my $path = Mgd::make_path($devid, $fid);
         Mgd::vivify_directories($path);
     }
 
-    # original single path support
-    return $self->ok_line({
-        fid => $fid,
-        devid => $dests[0],
-        path => Mgd::make_path($dests[0], $fid),
-    }) unless $multi;
+    $profstart->("end");
 
-    # multiple path support
-    my $ct = 0;
-    my $res = {};
-    foreach my $devid (@dests) {
-        $ct++;
-        $res->{"devid_$ct"} = $devid;
-        $res->{"path_$ct"} = Mgd::make_path($devid, $fid);
+    # common reply variables
+    my $res = {
+        fid => $fid,
+    };
+
+    # add profiling data
+    if (@profpoints) {
+        $res->{profpoints} = 0;
+        for (my $i=0; $i<$#profpoints; $i++) {
+            my $ptnum = ++$res->{profpoints};
+            $res->{"prof_${ptnum}_name"} = $profpoints[$i]->[0];
+            $res->{"prof_${ptnum}_time"} =
+                sprintf("%0.03f",
+                        $profpoints[$i+1]->[1] - $profpoints[$i]->[1]);
+        }
     }
-    $res->{fid} = $fid;
-    $res->{dev_count} = $ct;
+
+    # add path info
+    if ($multi) {
+        my $ct = 0;
+        my $res = {};
+        foreach my $devid (@dests) {
+            $ct++;
+            $res->{"devid_$ct"} = $devid;
+            $res->{"path_$ct"} = Mgd::make_path($devid, $fid);
+        }
+        $res->{dev_count} = $ct;
+    } else {
+        $res->{devid} = $dests[0];
+        $res->{path}  = Mgd::make_path($dests[0], $fid);
+    }
+
     return $self->ok_line($res);
 }
 
@@ -1245,7 +1275,7 @@ sub err_line {
         'unknown_host' => "Host not found",
         'unknown_state' => "Invalid/unknown state",
         'unreg_domain' => "Domain name invalid/not found",
-    }->{$err_code} || "no text";
+    }->{$err_code} || $err_code;
 
     my $delay = '';
     if ($self->{querystarttime}) {
