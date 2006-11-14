@@ -313,7 +313,6 @@ sub cmd_create_open {
     # add path info
     if ($multi) {
         my $ct = 0;
-        my $res = {};
         foreach my $devid (@dests) {
             $ct++;
             $res->{"devid_$ct"} = $devid;
