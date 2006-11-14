@@ -13,7 +13,7 @@ eval 'exec /usr/bin/perl -w -S $0 ${1+"$@"}'
 use strict;
 use lib 'lib';
 use IO::Socket::INET;
-use POSIX qw(ENOENT EACCES EBADF);
+use POSIX qw(ENOENT EACCES EBADF WNOHANG);
 use Fcntl qw(SEEK_CUR SEEK_SET SEEK_END O_RDWR O_CREAT O_TRUNC);
 use Perlbal 1.52;
 
@@ -212,6 +212,81 @@ Perlbal::Socket::register_callback(1, sub {
     }
     return 60;
 });
+
+my %iostat_children;
+
+sub reap_iostat {
+    local $!;
+    local $?;
+
+    foreach my $pid (keys %iostat_children) {
+        my $rv = waitpid($pid, WNOHANG);
+        next unless ($rv == -1 or $rv > 0); # If process is still running, then we want to ignore it.
+
+        if ($rv == -1) {
+            warn "Someone else reaped PID:$pid, exit status was lost.";
+        }
+
+        if ($rv > 0) {
+            warn "Reaped PID:$pid with exit status $?";
+        }
+
+        Danga::Socket->AddTimer(1, \&setup_iostat); # Schedule a new process to be launched in 1 second.
+    }
+
+    Danga::Socket->AddTimer(1, \&reap_iostat);
+}
+
+sub setup_iostat {
+    pipe (my $stdout_r, my $stdout_w);
+    pipe (my $stderr_r, my $stderr_w);
+    my $pid = fork;
+
+    return unless defined $pid;
+
+    if ($pid) {
+        # Parent
+        close $stdout_w;
+        close $stderr_w;
+
+        IO::Handle::blocking($stdout_r, 0);
+        IO::Handle::blocking($stderr_r, 0);
+
+        $iostat_children{$pid} = time;
+        reap_iostat;
+        Danga::Socket->AddOtherFds(fileno($stdout_r), sub {
+            sysread($stdout_r, my $buffer, 10240);
+            print "IOSTAT: { $buffer }\n";
+        });
+        Danga::Socket->AddOtherFds(fileno($stderr_r), sub {
+            sysread($stderr_r, my $buffer, 10240);
+            print STDERR "IOSTAT ERROR: { $buffer }\n";
+        });
+
+        return;
+    }
+
+    close $stdout_r;
+    close $stderr_r;
+
+    IO::Handle::blocking($stdout_w, 0);
+    IO::Handle::blocking($stderr_w, 0);
+
+    close STDIN;
+    close STDOUT;
+    close STDERR;
+
+    # We probably can't see errors on these calls.
+    open STDIN, '<', '/dev/null'    or die "Couldn't open STDIN for reading from /dev/null";
+    open STDOUT, '>&', $stdout_w    or die "Couldn't dup pipe for use as STDOUT";
+    open STDERR, '>&', $stderr_w    or die "Couldn't dup pipe for use as STDERR";
+
+    exec 'iostat', '1';
+    die "Exec failed: $!";
+    CORE::exit; # No really, we can't stay running even if someone changes how die works.
+}
+
+0 && setup_iostat;
 
 # setup a new socket for handling size requests
 my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
