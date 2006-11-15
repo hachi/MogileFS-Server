@@ -161,11 +161,30 @@ if ($opt_daemonize) {
 # for some reason, have to set aio threads after daemonizing
 Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
 
+my %osdevnum_to_device;
+
+sub populate_osdevnums {
+    %osdevnum_to_device = ();
+    if (open my $mounts, '<', '/proc/mounts') {
+        while (my $line = <$mounts>) {
+            next unless $line;
+            my ($device, $mountpoint) = split /\s+/, $line;
+            next unless $device && $mountpoint;
+            my ($osdevnum) = stat($mountpoint);
+            $osdevnum_to_device{$osdevnum} = $device;
+        }
+    }
+}
+
+my %devnum_to_device;
+
 # register our disk usage callback to get disk usage and keep an eye on how we're doing
 Perlbal::Socket::register_callback(1, sub {
     my $err = sub { Perlbal::log('crit', $_[0]); return 60; };
     my $path = Perlbal->service('mogstored')->{docroot};
     $path =~ s!/$!!;
+
+    populate_osdevnums;
 
     # find all devices below us
     my @devnum;
@@ -176,7 +195,12 @@ Perlbal::Socket::register_callback(1, sub {
         $err->("Failed to open $path: $!");
     }
 
+    %devnum_to_device = ();
+
     foreach my $devnum (@devnum) {
+        my ($osdevnum) = stat("$path/$devnum");
+        $devnum_to_device{$devnum} = $osdevnum_to_device{$osdevnum};
+
         my $rval = `df -k -l -P $path/$devnum`;
         foreach my $l (split /\r?\n/, $rval) {
             next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
@@ -319,12 +343,18 @@ sub iostat_stdout {
 
     sysread($sock, my $new_buffer, 10240);
     $$bufref .= $new_buffer;
-    if ($$bufref =~ s/Device: [^\n]+? \%util\n//x) {
 
-    }
+    while ($$bufref =~ m/.+\n/) {
+        if ($$bufref =~ s/.*?Device: [^\n]+? \%util \n//sx) {
+            next;
+        }
 
-    foreach my $out_sock (values %iostat_listeners) {
-        $out_sock->write($new_buffer);
+        if ($$bufref =~ s/^ (\S+) .* ([\d.]+) \n//x) {
+            my ($device, $util) = ($1, $2);
+            foreach my $out_sock (values %iostat_listeners) {
+                $out_sock->write("Device: $device Util: $util\n");
+            }
+        }
     }
 }
 
