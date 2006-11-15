@@ -3,6 +3,7 @@ package MogileFS::Worker::Monitor;
 use strict;
 use base 'MogileFS::Worker';
 use MogileFS::Util qw(every error);
+use MogileFS::IOStatWatcher;
 
 sub new {
     my ($class, $psock) = @_;
@@ -23,8 +24,17 @@ sub work {
     my %last_db_update;  # devid -> time.  update db less often than poll interval.
     my %last_test_write; # devid -> time.  time we last tried writing to a device.
 
+    my $iow = MogileFS::IOStatWatcher->new;
+    $iow->on_line(sub {
+        my ($line) = @_;
+        $line =~ s/\s+$//;
+        warn "IOWatcher: [$line]\n";
+    });
+
     every(2.5, sub {
         $self->parent_ping;
+
+        $iow->run_event_loop_a_bit;
 
         # get db and note we're starting a run
         error("Monitor running; scanning usage files")
@@ -41,14 +51,18 @@ sub work {
 
         # now iterate over devices
         my %skip_host;  # hostid -> 1 if already noted dead.
+        my %seen_hosts; # IP -> 1
         foreach my $dev (values %$devs) {
             next if $dev->{status} =~ /^dead|down$/;
             next if $skip_host{$dev->{hostid}};
+
+            $iow->run_event_loop_a_bit;
 
             my $host = $Mgd::cache_host{$dev->{hostid}};
             my $port = $host->{http_port};
             my $get_port = $host->{http_get_port} || $port;
             my $url = "http://$host->{hostip}:$get_port/dev$dev->{devid}/usage";
+            $seen_hosts{$host->{hostip}} = 1;
 
             # now try to get the data with a short timeout
             my $timeout = 2;
@@ -139,6 +153,8 @@ sub work {
             error("dev$dev->{devid}: used = $used, total = $total, writeable = 0")
                 if $Mgd::DEBUG >= 1;
         }
+
+        $iow->set_hosts(keys %seen_hosts);
 
         # announce to the parent that we've run
         $self->send_to_parent(":monitor_just_ran");

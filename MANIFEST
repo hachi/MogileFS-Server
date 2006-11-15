@@ -4,6 +4,7 @@ doc/fsck-notes.txt
 lib/MogileFS/Class.pm
 lib/MogileFS/Device.pm
 lib/MogileFS/HTTPFile.pm
+lib/MogileFS/IOStatWatcher.pm
 lib/MogileFS/Config.pm
 lib/MogileFS/Connection/Client.pm
 lib/MogileFS/Connection/Worker.pm
