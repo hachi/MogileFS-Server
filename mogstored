@@ -214,6 +214,21 @@ Perlbal::Socket::register_callback(1, sub {
 });
 
 my %iostat_children;
+# PID => CODEREF
+# Process ID of child, and CODEREF to be executed for cleanup.
+my %iostat_listeners;
+
+sub iostat_subscribe {
+    my $sock = shift;
+    $iostat_listeners{fileno($sock->sock)} = $sock;
+}
+
+sub iostat_unsubscribe {
+    my $sock = shift;
+    my $fdno = fileno($sock->sock);
+    return unless defined $fdno;
+    delete $iostat_listeners{$fdno};
+}
 
 sub reap_iostat {
     local $!;
@@ -257,16 +272,19 @@ sub setup_iostat {
 
         # Check if there are any existing children (and thus, reapers) before we add the current one.
         Danga::Socket->AddTimer(1, \&reap_iostat) unless keys %iostat_children;
-        $iostat_children{$pid} = time;
+        $iostat_children{$pid} = sub {
+            my $otherfds = Danga::Socket->OtherFds;
+            delete $otherfds->{fileno($stdout_r)};
+            delete $otherfds->{fileno($stderr_r)};
+        };
 
-        Danga::Socket->AddOtherFds(fileno($stdout_r), sub {
-            sysread($stdout_r, my $buffer, 10240);
-            print "IOSTAT: { $buffer }\n";
-        });
-        Danga::Socket->AddOtherFds(fileno($stderr_r), sub {
-            sysread($stderr_r, my $buffer, 10240);
-            print STDERR "IOSTAT ERROR: { $buffer }\n";
-        });
+        Danga::Socket->AddOtherFds(fileno($stdout_r),
+                                   sub { iostat_stdout_initial_read($stdout_r, \my $stdout_buffer) },
+                                   );
+
+        Danga::Socket->AddOtherFds(fileno($stderr_r),
+                                   sub { iostat_stderr($stderr_r) },
+                                   );
 
         return;
     }
@@ -286,9 +304,47 @@ sub setup_iostat {
     open STDOUT, '>&', $stdout_w    or die "Couldn't dup pipe for use as STDOUT";
     open STDERR, '>&', $stderr_w    or die "Couldn't dup pipe for use as STDERR";
 
-    exec 'iostat', '1';
-    die "Exec failed: $!";
-    CORE::exit; # No really, we can't stay running even if someone changes how die works.
+    exec 'iostat', '-dx', '1';
+    warn "Exec failed: $!";
+    print "ERR $!";
+    CORE::exit; # We can't stay running, no matter what.
+}
+
+sub iostat_stdout_initial_read {
+    my $stdout_r = shift;
+    my $bufref = shift;
+
+    sysread($stdout_r, my $new_buffer, 10240);
+    $$bufref .= $new_buffer;
+
+    if ($$bufref =~ m/^ERR\s+(.*)$/) {
+        
+    }
+
+    Danga::Socket->AddOtherFds(fileno($stdout_r),
+                               sub { iostat_stdout($stdout_r, $bufref) }
+                               );
+}
+
+sub iostat_stdout {
+    my $sock = shift;
+    my $bufref = shift;
+
+    sysread($sock, my $new_buffer, 10240);
+    $$bufref .= $new_buffer;
+    if ($$bufref =~ s/Device: [^\n]+? \%util\n//x) {
+
+    }
+
+    foreach my $out_sock (values %iostat_listeners) {
+        $out_sock->write($new_buffer);
+    }
+}
+
+sub iostat_stderr {
+    my $sock = shift;
+    sysread($sock, my $buffer, 10240);
+    print "IOSTAT ERROR: { $buffer }\n";
 }
 
 0 && setup_iostat;
@@ -378,6 +434,9 @@ sub event_read {
                 my $size = -e _ ? -s _ : -1;
                 $self->write("$uri $size\r\n");
             });
+        } elsif ($cmd =~ /^watch$/i) {
+            $self->watch_read(0);
+            main::iostat_subscribe($self);
         } else {
             # we don't understand this so pass it on to manage command interface
             my @out;
@@ -399,6 +458,11 @@ sub as_string {
     $ret .= "; size_requests=$self->{count}";
 
     return $ret;
+}
+
+sub close {
+    my SideChannelClient $self = shift;
+    main::iostat_unsubscribe($self);
 }
 
 # Local Variables:
