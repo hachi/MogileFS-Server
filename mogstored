@@ -254,7 +254,6 @@ sub reap_iostat {
 
 sub setup_iostat {
     pipe (my $stdout_r, my $stdout_w);
-    pipe (my $stderr_r, my $stderr_w);
     my $pid = fork;
 
     unless (defined $pid) {
@@ -265,44 +264,32 @@ sub setup_iostat {
     if ($pid) {
         # Parent
         close $stdout_w;
-        close $stderr_w;
 
         IO::Handle::blocking($stdout_r, 0);
-        IO::Handle::blocking($stderr_r, 0);
 
         # Check if there are any existing children (and thus, reapers) before we add the current one.
         Danga::Socket->AddTimer(1, \&reap_iostat) unless keys %iostat_children;
         $iostat_children{$pid} = sub {
             my $otherfds = Danga::Socket->OtherFds;
             delete $otherfds->{fileno($stdout_r)};
-            delete $otherfds->{fileno($stderr_r)};
         };
 
         Danga::Socket->AddOtherFds(fileno($stdout_r),
                                    sub { iostat_stdout_initial_read($stdout_r, \my $stdout_buffer) },
                                    );
 
-        Danga::Socket->AddOtherFds(fileno($stderr_r),
-                                   sub { iostat_stderr($stderr_r) },
-                                   );
-
         return;
     }
 
     close $stdout_r;
-    close $stderr_r;
 
     IO::Handle::blocking($stdout_w, 0);
-    IO::Handle::blocking($stderr_w, 0);
 
     close STDIN;
     close STDOUT;
-    close STDERR;
 
-    # We probably can't see errors on these calls.
     open STDIN, '<', '/dev/null'    or die "Couldn't open STDIN for reading from /dev/null";
     open STDOUT, '>&', $stdout_w    or die "Couldn't dup pipe for use as STDOUT";
-    open STDERR, '>&', $stderr_w    or die "Couldn't dup pipe for use as STDERR";
 
     exec 'iostat', '-dx', '1';
     warn "Exec failed: $!";
@@ -339,12 +326,6 @@ sub iostat_stdout {
     foreach my $out_sock (values %iostat_listeners) {
         $out_sock->write($new_buffer);
     }
-}
-
-sub iostat_stderr {
-    my $sock = shift;
-    sysread($sock, my $buffer, 10240);
-    print "IOSTAT ERROR: { $buffer }\n";
 }
 
 0 && setup_iostat;
