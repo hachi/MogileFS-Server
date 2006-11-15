@@ -165,7 +165,7 @@ my %osdevnum_to_device;
 
 sub populate_osdevnums {
     %osdevnum_to_device = ();
-    if (open my $mounts, '<', '/proc/mounts') {
+    if (open my $mounts, '<', '/etc/mtab') {
         while (my $line = <$mounts>) {
             next unless $line;
             my ($device, $mountpoint) = split /\s+/, $line;
@@ -344,16 +344,26 @@ sub iostat_stdout {
     sysread($sock, my $new_buffer, 10240);
     $$bufref .= $new_buffer;
 
+    my %utilization;
+
     while ($$bufref =~ m/.+\n/) {
         if ($$bufref =~ s/.*?Device: [^\n]+? \%util \n//sx) {
             next;
         }
 
-        if ($$bufref =~ s/^ (\S+) .* ([\d.]+) \n//x) {
-            my ($device, $util) = ($1, $2);
-            foreach my $out_sock (values %iostat_listeners) {
-                $out_sock->write("Device: $device Util: $util\n");
-            }
+        if ($$bufref =~ s/^ (\S+) .*? ([\d.]+) \n//x) {
+            my ($osdevice, $util) = ("/dev/$1", $2);
+            $utilization{$osdevice} = $util;
+        }
+
+    }
+
+    while (my ($devnum, $device) = each %devnum_to_device) {
+        $device ||= '-';
+        my $util = $utilization{$device} || '-';
+
+        foreach my $out_sock (values %iostat_listeners) {
+            $out_sock->write("$devnum\t$device\t$util\n");
         }
     }
 }
