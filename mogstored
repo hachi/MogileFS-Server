@@ -63,12 +63,14 @@ BEGIN {
 
 my $opt_daemonize;
 my $opt_config;
+my $opt_iostat;
 my $max_conns = 10000;
 my $http_listen = "0.0.0.0:7500";
 my $mgmt_listen = "0.0.0.0:7501";
 my $docroot     = "/var/mogdata";
 
 my %config_opts = (
+                   'iostat'       => \$opt_iostat,
                    'daemonize|d'  => \$opt_daemonize,
                    'config=s'     => \$opt_config,
                    'httplisten=s' => \$http_listen,
@@ -270,6 +272,7 @@ sub reap_iostat {
             warn "Reaped PID:$pid with exit status $?";
         }
 
+        delete $iostat_children{$pid};
         Danga::Socket->AddTimer(1, \&setup_iostat); # Schedule a new process to be launched in 1 second.
     }
 
@@ -317,8 +320,8 @@ sub setup_iostat {
 
     exec 'iostat', '-dx', '1';
     warn "Exec failed: $!";
-    print "ERR $!";
-    CORE::exit; # We can't stay running, no matter what.
+    print "ERR $!\n";
+    POSIX::_exit(0); # We can't stay running, no matter what.
 }
 
 sub iostat_stdout_initial_read {
@@ -366,9 +369,13 @@ sub iostat_stdout {
             $out_sock->write("$devnum\t$device\t$util\n");
         }
     }
+
+    foreach my $out_sock (values %iostat_listeners) {
+        $out_sock->write(".\n");
+    }
 }
 
-0 && setup_iostat;
+setup_iostat if $opt_iostat;
 
 # setup a new socket for handling size requests
 my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
