@@ -480,6 +480,7 @@ sub as_string {
 sub close {
     my SideChannelClient $self = shift;
     main::iostat_unsubscribe($self);
+    $self->SUPER::close;
 }
 
 # Local Variables:
