@@ -264,16 +264,8 @@ sub reap_iostat {
         my $rv = waitpid($pid, WNOHANG);
         next unless ($rv == -1 or $rv > 0); # If process is still running, then we want to ignore it.
 
-        if ($rv == -1) {
-            warn "Someone else reaped PID:$pid, exit status was lost.";
-        }
-
-        if ($rv > 0) {
-            warn "Reaped PID:$pid with exit status $?";
-        }
-
         delete $iostat_children{$pid};
-        Danga::Socket->AddTimer(1, \&setup_iostat); # Schedule a new process to be launched in 1 second.
+        Danga::Socket->AddTimer(1, \&setup_iostat) if $opt_iostat; # Schedule a new process to be launched in 1 second.
     }
 
     Danga::Socket->AddTimer(1, \&reap_iostat) if keys %iostat_children;
@@ -302,7 +294,7 @@ sub setup_iostat {
         };
 
         Danga::Socket->AddOtherFds(fileno($stdout_r),
-                                   sub { iostat_stdout_initial_read($stdout_r, \my $stdout_buffer) },
+                                   sub { iostat_stdout($stdout_r, \my $stdout_buffer) },
                                    );
 
         return;
@@ -314,30 +306,19 @@ sub setup_iostat {
 
     close STDIN;
     close STDOUT;
+    close STDERR;
 
+    # We may not be able to see errors beyond this point
     open STDIN, '<', '/dev/null'    or die "Couldn't open STDIN for reading from /dev/null";
     open STDOUT, '>&', $stdout_w    or die "Couldn't dup pipe for use as STDOUT";
+    open STDERR, '>', '/dev/null'   or die "Couldn't open STDOUT for writing to /dev/null";
 
+    select((select(STDOUT), $|++)[0]);
+
+    no warnings; # Prevent the "Statement may not be reached, do you mean 'system' instead of 'exec'" warning.
     exec 'iostat', '-dx', '1';
-    warn "Exec failed: $!";
     print "ERR $!\n";
     POSIX::_exit(0); # We can't stay running, no matter what.
-}
-
-sub iostat_stdout_initial_read {
-    my $stdout_r = shift;
-    my $bufref = shift;
-
-    sysread($stdout_r, my $new_buffer, 10240);
-    $$bufref .= $new_buffer;
-
-    if ($$bufref =~ m/^ERR\s+(.*)$/) {
-        
-    }
-
-    Danga::Socket->AddOtherFds(fileno($stdout_r),
-                               sub { iostat_stdout($stdout_r, $bufref) }
-                               );
 }
 
 sub iostat_stdout {
@@ -357,8 +338,14 @@ sub iostat_stdout {
         if ($$bufref =~ s/^ (\S+) .*? ([\d.]+) \n//x) {
             my ($osdevice, $util) = ("/dev/$1", $2);
             $utilization{$osdevice} = $util;
+            next;
         }
 
+        if ($$bufref =~ s/^ERR\s+(.*)$//) {
+            $opt_iostat = 0;
+            return;
+        }
+        warn "Unable to grok: '$$bufref'";
     }
 
     while (my ($devnum, $device) = each %devnum_to_device) {
@@ -463,6 +450,10 @@ sub event_read {
                 $self->write("$uri $size\r\n");
             });
         } elsif ($cmd =~ /^watch$/i) {
+            unless ($opt_iostat) {
+                $self->write("ERR iostat unavailable\r\n");
+                next;
+            }
             $self->watch_read(0);
             main::iostat_subscribe($self);
         } else {
