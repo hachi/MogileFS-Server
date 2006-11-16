@@ -239,10 +239,8 @@ Perlbal::Socket::register_callback(1, sub {
     return 60;
 });
 
-my %iostat_children;
-# PID => CODEREF
-# Process ID of child, and CODEREF to be executed for cleanup.
-my %iostat_listeners;
+my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
+my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
 
 sub iostat_subscribe {
     my $sock = shift;
