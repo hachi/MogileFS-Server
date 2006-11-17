@@ -241,6 +241,7 @@ Perlbal::Socket::register_callback(1, sub {
 
 my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
 my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
+my $iostat_available = $opt_iostat; # Boolean indiciating if iostat is actually available for use.
 
 sub iostat_subscribe {
     my $sock = shift;
@@ -263,7 +264,7 @@ sub reap_iostat {
         next unless ($rv == -1 or $rv > 0); # If process is still running, then we want to ignore it.
 
         delete $iostat_children{$pid};
-        Danga::Socket->AddTimer(1, \&setup_iostat) if $opt_iostat; # Schedule a new process to be launched in 1 second.
+        Danga::Socket->AddTimer(1, \&setup_iostat) if $iostat_available; # Schedule a new process to be launched in 1 second.
     }
 
     Danga::Socket->AddTimer(1, \&reap_iostat) if keys %iostat_children;
@@ -340,7 +341,7 @@ sub iostat_stdout {
         }
 
         if ($$bufref =~ s/^ERR\s+(.*)$//) {
-            $opt_iostat = 0;
+            $iostat_available = 0;
             return;
         }
         warn "Unable to grok: '$$bufref'";
@@ -448,7 +449,7 @@ sub event_read {
                 $self->write("$uri $size\r\n");
             });
         } elsif ($cmd =~ /^watch$/i) {
-            unless ($opt_iostat) {
+            unless ($iostat_available) {
                 $self->write("ERR iostat unavailable\r\n");
                 next;
             }
