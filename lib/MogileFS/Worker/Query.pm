@@ -502,7 +502,6 @@ sub cmd_list_keys {
     my $dmid = $self->check_domain($args)
         or return $self->err_line('domain_not_found');
     my ($prefix, $after, $limit) = ($args->{prefix}, $args->{after}, $args->{limit});
-    return $self->err_line("no_key") unless $prefix;
 
     # now validate that after matches prefix
     return $self->err_line('after_mismatch')
@@ -517,10 +516,12 @@ sub cmd_list_keys {
 
     # now fix the input... prefix always ends with a % so that it works
     # in a LIKE call, and after is either blank or something
+    $prefix ||= '';
     $prefix .= '%';
     $after ||= '';
     $limit ||= 1000;
     $limit += 0;
+    $limit = 1000 if $limit > 1000;
 
     # get DB handle
     my $dbh = Mgd::get_dbh() or
