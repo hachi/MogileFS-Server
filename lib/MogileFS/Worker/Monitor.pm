@@ -2,7 +2,8 @@ package MogileFS::Worker::Monitor;
 
 use strict;
 use base 'MogileFS::Worker';
-use MogileFS::Util qw(every error);
+use Danga::Socket;
+use MogileFS::Util qw(error);
 use MogileFS::IOStatWatcher;
 
 sub new {
@@ -24,17 +25,21 @@ sub work {
     my %last_db_update;  # devid -> time.  update db less often than poll interval.
     my %last_test_write; # devid -> time.  time we last tried writing to a device.
 
+    Danga::Socket->ResetPoller;
+    Danga::Socket->Reset;
+
     my $iow = MogileFS::IOStatWatcher->new;
-    $iow->on_line(sub {
-        my ($line) = @_;
-        $line =~ s/\s+$//;
-        warn "IOWatcher: [$line]\n";
+    $iow->on_stats(sub {
+        my ($host, $stats) = @_;
+#        use Data::Dumper;
+#        warn "IOWatcher: [$host] " . Dumper($stats) . "\n";
     });
 
-    every(2.5, sub {
+    # Create a closure that contains ourself
+    my $main_monitor;
+    $main_monitor = sub {
+        Danga::Socket->AddTimer(2.5, $main_monitor);
         $self->parent_ping;
-
-        $iow->run_event_loop_a_bit;
 
         # get db and note we're starting a run
         error("Monitor running; scanning usage files")
@@ -55,8 +60,6 @@ sub work {
         foreach my $dev (values %$devs) {
             next if $dev->{status} =~ /^dead|down$/;
             next if $skip_host{$dev->{hostid}};
-
-            $iow->run_event_loop_a_bit;
 
             my $host = $Mgd::cache_host{$dev->{hostid}};
             my $port = $host->{http_port};
@@ -158,8 +161,11 @@ sub work {
 
         # announce to the parent that we've run
         $self->send_to_parent(":monitor_just_ran");
-    });
+    };
 
+    $main_monitor->();
+
+    Danga::Socket->EventLoop;
 }
 
 1;
