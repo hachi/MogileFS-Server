@@ -56,7 +56,6 @@ sub new {
     my $hostspec = shift;
     my $watcher = shift;
 
-    warn "Connecting to $hostspec";
     my $sock = IO::Socket::INET->new(
                                      PeerAddr => $hostspec,
                                      PeerPort => 7501,
