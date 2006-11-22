@@ -31,13 +31,5 @@ WriteMakefile(
         'Net::Netmask'     => 0,
         fields            => 0,
     },
-    dist                    => {
-        CI                      => "cvs commit",
-        RCS_LABEL               => 'cvs tag RELEASE_$(VERSION_SYM)',
-        SUFFIX                  => ".gz",
-        DIST_DEFAULT            => 'all tardist',
-        COMPRESS                => "gzip",
-    },
-
 );
 
