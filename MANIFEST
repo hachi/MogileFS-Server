@@ -3,6 +3,7 @@ CHANGES.mogstored
 doc/fsck-notes.txt
 lib/MogileFS/Class.pm
 lib/MogileFS/Device.pm
+lib/MogileFS/Host.pm
 lib/MogileFS/HTTPFile.pm
 lib/MogileFS/IOStatWatcher.pm
 lib/MogileFS/Config.pm

@@ -50,6 +50,7 @@ use MogileFS::Config;
 use MogileFS::HTTPFile;
 use MogileFS::Class;
 use MogileFS::Device;
+use MogileFS::Host;
 
 use MogileFS::ReplicationPolicy::MultipleHosts;
 
