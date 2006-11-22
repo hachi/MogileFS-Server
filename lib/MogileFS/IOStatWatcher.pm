@@ -26,6 +26,18 @@ sub got_stats {
     $self->{on_stats}->($host, $stats);
 }
 
+sub got_error {
+    my ($self, $host) = @_;
+    Danga::Socket->AddTimer(60, sub {
+        $self->{hosts}->{$host} = MogileFS::IOStatWatch::Client->new($host, $self);
+    });
+}
+
+sub got_disconnect {
+    my ($self, $host) = @_;
+    $self->{hosts}->{$host} = MogileFS::IOStatWatch::Client->new($host, $self);
+}
+
 sub on_stats {
     my ($self, $cb) = @_;
     $self->{on_stats} = $cb;
@@ -37,13 +49,14 @@ use strict;
 use warnings;
 
 use base 'Danga::Socket';
-use fields qw(host watcher buffer);
+use fields qw(host watcher buffer active);
 
 sub new {
     my MogileFS::IOStatWatch::Client $self = shift;
     my $hostspec = shift;
     my $watcher = shift;
 
+    warn "Connecting to $hostspec";
     my $sock = IO::Socket::INET->new(
                                      PeerAddr => $hostspec,
                                      PeerPort => 7501,
@@ -66,6 +79,7 @@ sub new {
 
 sub event_write {
     my MogileFS::IOStatWatch::Client $self = shift;
+    $self->{active} = 1;
     $self->write("watch\n");
     $self->watch_write(0); # I hope I can safely assume that 6 characters will write properly.
 }
@@ -92,6 +106,26 @@ sub event_read {
         }
         $self->{watcher}->got_stats($self->{host}, \%stats);
     }
+}
+
+sub event_err {
+    my MogileFS::IOStatWatch::Client $self = shift;
+    $self->{watcher}->got_error($self->{host});
+}
+
+sub event_hup {
+    my MogileFS::IOStatWatch::Client $self = shift;
+    $self->{watcher}->got_error($self->{host});
+}
+
+sub close {
+    my MogileFS::IOStatWatch::Client $self = shift;
+    if ($self->{active}) {
+        $self->{watcher}->got_disconnect($self->{host});
+    } else {
+        $self->{watcher}->got_error($self->{host});
+    }
+    $self->SUPER::close(@_);
 }
 1;
 
