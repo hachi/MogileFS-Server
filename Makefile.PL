@@ -25,7 +25,7 @@ WriteMakefile(
         'Danga::Socket'    => '1.22',
         'Perlbal'          => '1.52',  # Future: make Perlbal optional, for running mogstored
                                        # in only-monitor/usage-writeout mode.
-        'Sys::Syslog'      => 0,
+        'Sys::Syslog'      => '0.22',
         'Getopt::Long'     => 0,
         'Symbol'           => 0,
         'Net::Netmask'     => 0,
