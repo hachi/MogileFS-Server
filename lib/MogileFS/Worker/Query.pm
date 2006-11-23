@@ -503,16 +503,18 @@ sub cmd_list_keys {
         or return $self->err_line('domain_not_found');
     my ($prefix, $after, $limit) = ($args->{prefix}, $args->{after}, $args->{limit});
 
-    # now validate that after matches prefix
-    return $self->err_line('after_mismatch')
-        if $after && $after !~ /^$prefix/;
+    if ($prefix) {
+        # now validate that after matches prefix
+        return $self->err_line('after_mismatch')
+            if $after && $after !~ /^$prefix/;
 
-    # verify there are no % or \ characters
-    return $self->err_line('invalid_chars')
-        if $prefix =~ /[%\\]/;
+        # verify there are no % or \ characters
+        return $self->err_line('invalid_chars')
+            if $prefix =~ /[%\\]/;
 
-    # escape underscores
-    $prefix =~ s/_/\\_/g;
+        # escape underscores
+        $prefix =~ s/_/\\_/g;
+    }
 
     # now fix the input... prefix always ends with a % so that it works
     # in a LIKE call, and after is either blank or something
