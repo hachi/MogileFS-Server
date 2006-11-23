@@ -30,14 +30,20 @@ sub every {
     }
 }
 
+our $last_error;
 sub error {
+    my ($errmsg) = @_;
+    $last_error = $errmsg;
     if (my $worker = MogileFS::ProcManager->is_child) {
-        $worker->send_to_parent("error $_[0]");
+        $worker->send_to_parent("error $errmsg");
     } else {
-        MogileFS::ProcManager->NoteError(\$_[0]);
-        Mgd::log('debug', $_[0]);
+        MogileFS::ProcManager->NoteError(\$errmsg);
+        Mgd::log('debug', $errmsg);
     }
     return 0;
+}
+sub last_error {
+    return $last_error;
 }
 
 sub daemonize {

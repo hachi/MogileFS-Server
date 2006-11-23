@@ -379,6 +379,11 @@ sub cmd_create_close {
     # get size of file and verify that it matches what we were given, if anything
     my $size = MogileFS::HTTPFile->at($path)->size;
 
+    if ($args->{size} > 0 && $size == 0) {
+        my $lasterr = MogileFS::Util::last_error();
+        return $self->err_line("size_verify_error", "Expected: $args->{size}; actual: 0 (error); path: $path; error: $lasterr")
+    }
+
     return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
         if $args->{size} && ($args->{size} != $size);
 

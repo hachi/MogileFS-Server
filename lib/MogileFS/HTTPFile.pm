@@ -120,13 +120,18 @@ sub size {
             }
         }
 
-        # now we know there's readable data
+        # now we know there's readable data (pseudo-gross: we assume
+        # if we were readable, the whole line is ready.  this is a
+        # poor mix of low-level IO and buffered, blocking stdio but in
+        # practice it works...)
         my $line = <$sock>;
         return undef unless defined $line;
         return undef unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
         return error("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
             if $1 ne $uri;
-        return 0 if $2 < 0;   # backchannel sends back -1 on errors, which we need to map to 0
+        # backchannel sends back -1 on non-existent file, which we map to the defined value '0'
+        return error("mogstored stream says $path doesn't exist") if $2 < 0;
+        # otherwise, return byte size of file
         return $2+0;
     };
 
@@ -138,6 +143,9 @@ sub size {
         if ($!) {
             undef $streamcache{$host};
         } elsif ($rv != $reqlen) {
+            # FIXME: perhaps we shouldn't error here, but instead
+            # treat the cached socket as bogus and reconnect?  never
+            # seen that happen, though.
             return error("send() didn't return expected length ($rv, not $reqlen) for $path");
         } else {
             # success
@@ -181,13 +189,14 @@ sub size {
         }
     }
 
-    # try HTTP
-    $start_connecting_to_http->();  # this will only work once anyway, if we already started above.
-
     # failure case: use a HEAD request to get the size of the file:
     # give them 2 seconds to connect to server, unless we'd already timed out earlier
     my $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
-    return 0 if $time_remain <= 0;
+    return error("timed out on stream size check of $path, not doing HEAD")
+        if $time_remain <= 0;
+
+    # try HTTP (this will only work once anyway, if we already started above)
+    $start_connecting_to_http->();
 
     # did we timeout?
     unless (Mgd::wait_for_writeability(fileno($httpsock), $time_remain)) {
@@ -205,10 +214,10 @@ sub size {
         return error("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
 
-    my $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
-
     $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
-    return 0 if $time_remain <= 0;
+    return error("no time remaining to write HEAD request to $path") if $time_remain <= 0;
+
+    my $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
     return error("get_file_size() read timeout ($time_remain) for HTTP HEAD for size of $path")
         unless Mgd::wait_for_readability(fileno($httpsock), $time_remain);
 
