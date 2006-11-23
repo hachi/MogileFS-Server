@@ -2,7 +2,7 @@ package MogileFS::Worker::Monitor;
 
 use strict;
 use base 'MogileFS::Worker';
-use Danga::Socket;
+use Danga::Socket 1.55;
 use MogileFS::Util qw(error);
 use MogileFS::IOStatWatcher;
 
@@ -25,7 +25,6 @@ sub work {
     my %last_db_update;  # devid -> time.  update db less often than poll interval.
     my %last_test_write; # devid -> time.  time we last tried writing to a device.
 
-    Danga::Socket->ResetPoller;
     Danga::Socket->Reset;
 
     my $iow = MogileFS::IOStatWatcher->new;
