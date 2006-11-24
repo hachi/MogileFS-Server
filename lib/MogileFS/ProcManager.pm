@@ -397,15 +397,6 @@ sub HandleQueryWorkerResponse {
     # the queryworker and need to pass it up the line
     return MogileFS::ProcManager->HandleChildRequest($worker, $line) if !$client;
 
-    # FIXME: HOW IS THIS EVER CALLED?  things with colons never go to HandleQueryWorkerResponse.
-    #        see MogileFS::Connection::Worker
-    # out-of-band messages (not replies to requests) start with a colon:
-    if ($line =~ /^:state_change (\w+) (\d+) (\w+)/) {
-        my ($what, $whatid, $state) = ($1, $2, $3);
-        state_change($what, $whatid, $state);
-        return;
-    }
-
     # at this point it was a command response, but if the client has gone
     # away, just reenqueue this query worker
     return MogileFS::ProcManager->NoteIdleQueryWorker($worker) if $client->{closed};
@@ -425,7 +416,7 @@ sub HandleQueryWorkerResponse {
     }
 
     # now time this interval and add to @RecentQueries
-    my $tinterval = Time::HiRes::tv_interval([$starttime]);
+    my $tinterval = Time::HiRes::time() - $starttime;
     push @RecentQueries, sprintf("%s %.4f %s", $jobstr, $tinterval, $time);
     shift @RecentQueries if scalar(@RecentQueries) > 50;
 
@@ -460,12 +451,14 @@ sub ProcessQueues {
         }
 
         # put in mapping and send data to worker
-        push @$clref, Time::HiRes::gettimeofday();
+        push @$clref, Time::HiRes::time();
         $Mappings{$worker->{fd}} = $clref;
         $Stats{queries}++;
 
         # increment our counter so we know what request counter this is going out
         $worker->{reqid}++;
+        # so we're writing a string of the form:
+        #     123-455 10.2.3.123 get_paths foo=bar&blah=bar\r\n
         $worker->write("$worker->{pid}-$worker->{reqid} $clref->[1]\r\n");
     }
 }
