@@ -164,8 +164,47 @@ if ($opt_daemonize) {
 Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
 
 my %on_death;  # pid -> subref  (to run when pid dies)
-
+my %devnum_to_device;
 my %osdevnum_to_device;
+my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
+my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
+my $iostat_available = $opt_iostat; # Boolean indiciating if iostat is actually available for use.
+
+start_disk_usage_process();
+setup_iostat() if $opt_iostat;
+harvest_dead_children();
+
+# setup a new socket for handling size requests
+my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
+                                   Type      => SOCK_STREAM,
+                                   Proto     => 'tcp',
+                                   Blocking  => 0,
+                                   Reuse     => 1,
+                                   Listen    => 10 )
+    or die "Error creating management socket: $@\n";
+
+# in Perl 5.6, we weren't always seeing this turned off by IO::Socket
+# so we have to do it manually here just to be sure.
+IO::Handle::blocking($server, 0);
+
+# accept handler for new workers
+my $accept_handler = sub {
+    my $csock = $server->accept or return;
+    IO::Handle::blocking($csock, 0);
+    my $client = SideChannelClient->new($csock);
+    $client->watch_read(1);
+};
+
+# add to fd list so this one gets processed
+Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
+
+# now start the main loop
+Perlbal::run();
+
+
+############################################################################
+# main:: functions
+############################################################################
 
 sub populate_osdevnums {
     %osdevnum_to_device = ();
@@ -188,8 +227,6 @@ sub harvest_dead_children {
     }
     Danga::Socket->AddTimer(1, \&harvest_dead_children);
 }
-
-my %devnum_to_device;
 
 # returns $pid of child, if parent, else runs child.
 sub start_disk_usage_process {
@@ -271,10 +308,6 @@ sub look_at_disk_usage {
         }
     }
 }
-
-my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
-my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
-my $iostat_available = $opt_iostat; # Boolean indiciating if iostat is actually available for use.
 
 sub iostat_subscribe {
     my $sock = shift;
@@ -394,37 +427,6 @@ sub iostat_stdout {
     }
 }
 
-start_disk_usage_process();
-setup_iostat() if $opt_iostat;
-harvest_dead_children();
-
-# setup a new socket for handling size requests
-my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
-                                   Type      => SOCK_STREAM,
-                                   Proto     => 'tcp',
-                                   Blocking  => 0,
-                                   Reuse     => 1,
-                                   Listen    => 10 )
-    or die "Error creating management socket: $@\n";
-
-# in Perl 5.6, we weren't always seeing this turned off by IO::Socket
-# so we have to do it manually here just to be sure.
-IO::Handle::blocking($server, 0);
-
-# accept handler for new workers
-my $accept_handler = sub {
-    my $csock = $server->accept or return;
-    IO::Handle::blocking($csock, 0);
-    my $client = SideChannelClient->new($csock);
-    $client->watch_read(1);
-};
-
-# add to fd list so this one gets processed
-Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
-
-# now start the main loop
-Perlbal::run();
-
 sub disks {
     my $root = shift;
     opendir(my $dh, $root) or die "Failed to open docroot: $root: $!";
@@ -435,6 +437,7 @@ sub disks {
 ### simple package for handling the stream request port
 package SideChannelClient;
 
+use strict;
 use base qw{Danga::Socket};
 use fields (
             'count',      # how many requests we've serviced
