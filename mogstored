@@ -138,30 +138,7 @@ setup_iostat_pipes();
 start_disk_usage_process();
 start_iostat_process() if $opt_iostat;
 harvest_dead_children();  # every 2 seconds, it reschedules itself
-
-# setup a new socket for handling size requests
-my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
-                                   Type      => SOCK_STREAM,
-                                   Proto     => 'tcp',
-                                   Blocking  => 0,
-                                   Reuse     => 1,
-                                   Listen    => 10 )
-    or die "Error creating management socket: $@\n";
-
-# in Perl 5.6, we weren't always seeing this turned off by IO::Socket
-# so we have to do it manually here just to be sure.
-IO::Handle::blocking($server, 0);
-
-# accept handler for new workers
-my $accept_handler = sub {
-    my $csock = $server->accept or return;
-    IO::Handle::blocking($csock, 0);
-    my $client = SideChannelClient->new($csock);
-    $client->watch_read(1);
-};
-
-# add to fd list so this one gets processed
-Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
+setup_sidechannel_listener();
 
 # now start the main loop
 Perlbal::run();
@@ -327,6 +304,32 @@ sub iostat_unsubscribe {
     my $fdno = fileno($sock->sock);
     return unless defined $fdno;
     delete $iostat_listeners{$fdno};
+}
+
+sub setup_sidechannel_listener {
+    # setup a new socket for handling size requests
+    my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
+                                       Type      => SOCK_STREAM,
+                                       Proto     => 'tcp',
+                                       Blocking  => 0,
+                                       Reuse     => 1,
+                                       Listen    => 10 )
+        or die "Error creating management socket: $@\n";
+
+    # in Perl 5.6, we weren't always seeing this turned off by IO::Socket
+    # so we have to do it manually here just to be sure.
+    IO::Handle::blocking($server, 0);
+
+    # accept handler for new workers
+    my $accept_handler = sub {
+        my $csock = $server->accept or return;
+        IO::Handle::blocking($csock, 0);
+        my $client = SideChannelClient->new($csock);
+        $client->watch_read(1);
+    };
+
+    # add to fd list so this one gets processed
+    Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
 }
 
 sub setup_iostat_pipes {
