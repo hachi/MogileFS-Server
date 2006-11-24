@@ -163,6 +163,8 @@ if ($opt_daemonize) {
 # for some reason, have to set aio threads after daemonizing
 Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
 
+my %on_death;  # pid -> subref  (to run when pid dies)
+
 my %osdevnum_to_device;
 
 sub populate_osdevnums {
@@ -178,11 +180,43 @@ sub populate_osdevnums {
     }
 }
 
+sub harvest_dead_children {
+    my $dead = waitpid(-1, WNOHANG);
+    if ($dead > 0) {
+        my $code = delete $on_death{$dead};
+        $code->() if $code;
+    }
+    Danga::Socket->AddTimer(1, \&harvest_dead_children);
+}
+
 my %devnum_to_device;
 
-# register our disk usage callback to get disk usage and keep an eye on how we're doing
-Perlbal::Socket::register_callback(1, sub {
-    my $err = sub { Perlbal::log('crit', $_[0]); return 60; };
+# returns $pid of child, if parent, else runs child.
+sub start_disk_usage_process {
+    my $child = fork;
+    unless (defined $child) {
+        Perlbal::log('crit', "Fork error creating disk usage tracking process");
+        return undef;
+    }
+
+    # if we're the parent.
+    if ($child) {
+        $on_death{$child} = sub {
+            start_disk_usage_process();  # start a new one
+        };
+        return $child;
+    }
+
+    # else, we're the child..
+    $0 = "mogstored [diskusage]";
+    while (1) {
+        look_at_disk_usage();
+        sleep 30;
+    }
+}
+
+sub look_at_disk_usage {
+    my $err = sub { Perlbal::log('crit', $_[0]); 1; };
     my $path = Perlbal->service('mogstored')->{docroot};
     $path =~ s!/$!!;
 
@@ -194,7 +228,7 @@ Perlbal::Socket::register_callback(1, sub {
         @devnum = grep { /^dev\d+$/ } readdir(D);
         closedir(D);
     } else {
-        $err->("Failed to open $path: $!");
+        return $err->("Failed to open $path: $!");
     }
 
     %devnum_to_device = ();
@@ -227,7 +261,7 @@ Perlbal::Socket::register_callback(1, sub {
             # open a file on that disk location called 'usage'
             my $rv = open(FILE, ">$disk/usage");
             unless ($rv) {
-                $err->("Unable to open '$disk/usage' for writing: $!");
+                return $err->("Unable to open '$disk/usage' for writing: $!");
                 next;
             }
             foreach (sort keys %$output) {
@@ -236,8 +270,7 @@ Perlbal::Socket::register_callback(1, sub {
             close FILE;
         }
     }
-    return 60;
-});
+}
 
 my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
 my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
@@ -361,7 +394,9 @@ sub iostat_stdout {
     }
 }
 
+start_disk_usage_process();
 setup_iostat() if $opt_iostat;
+harvest_dead_children();
 
 # setup a new socket for handling size requests
 my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
