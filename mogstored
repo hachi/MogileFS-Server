@@ -62,11 +62,10 @@ BEGIN {
 }
 
 # State:
-my %on_death;  # pid -> subref  (to run when pid dies)
+my %on_death;             # pid -> subref (to run when pid dies)
 my %devnum_to_device;
 my %osdevnum_to_device;
-my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
-my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
+my %iostat_listeners;     # fd => SideChannel client: clients interested in iostat data.
 my $iostat_available = 1; # bool: iostat working.  assume working to start.
 
 # Config:
@@ -136,7 +135,7 @@ if ($opt_daemonize) {
 
 start_disk_usage_process();
 setup_iostat() if $opt_iostat;
-harvest_dead_children();
+harvest_dead_children();  # every 2 seconds, it reschedules itself
 
 # setup a new socket for handling size requests
 my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
@@ -232,7 +231,7 @@ sub harvest_dead_children {
         my $code = delete $on_death{$dead};
         $code->() if $code;
     }
-    Danga::Socket->AddTimer(1, \&harvest_dead_children);
+    Danga::Socket->AddTimer(2, \&harvest_dead_children);
 }
 
 # returns $pid of child, if parent, else runs child.
@@ -328,21 +327,6 @@ sub iostat_unsubscribe {
     delete $iostat_listeners{$fdno};
 }
 
-sub reap_iostat {
-    local $!;
-    local $?;
-
-    foreach my $pid (keys %iostat_children) {
-        my $rv = waitpid($pid, WNOHANG);
-        next unless ($rv == -1 or $rv > 0); # If process is still running, then we want to ignore it.
-
-        delete $iostat_children{$pid};
-        Danga::Socket->AddTimer(1, \&setup_iostat) if $iostat_available; # Schedule a new process to be launched in 1 second.
-    }
-
-    Danga::Socket->AddTimer(1, \&reap_iostat) if keys %iostat_children;
-}
-
 sub setup_iostat {
     pipe (my $stdout_r, my $stdout_w);
     my $pid = fork;
@@ -359,16 +343,17 @@ sub setup_iostat {
         IO::Handle::blocking($stdout_r, 0);
 
         # Check if there are any existing children (and thus, reapers) before we add the current one.
-        Danga::Socket->AddTimer(1, \&reap_iostat) unless keys %iostat_children;
-        $iostat_children{$pid} = sub {
+        $on_death{$pid} = sub {
             my $otherfds = Danga::Socket->OtherFds;
             delete $otherfds->{fileno($stdout_r)};
+            setup_iostat();
         };
 
         Danga::Socket->AddOtherFds(fileno($stdout_r),
-                                   sub { iostat_stdout($stdout_r, \my $stdout_buffer) },
-                                   );
-
+                                   sub {
+                                       read_from_iostat_child($stdout_r,
+                                                              \my $stdout_buffer);
+                                   });
         return;
     }
 
@@ -393,11 +378,13 @@ sub setup_iostat {
     POSIX::_exit(0); # We can't stay running, no matter what.
 }
 
-sub iostat_stdout {
+sub read_from_iostat_child {
     my $sock = shift;
     my $bufref = shift;
 
-    sysread($sock, my $new_buffer, 10240);
+    my $rv = sysread($sock, my $new_buffer, 10240);
+    return unless $rv && $rv > 0;
+
     $$bufref .= $new_buffer;
 
     my %utilization;
