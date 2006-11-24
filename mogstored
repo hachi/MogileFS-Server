@@ -186,7 +186,7 @@ Perlbal::Socket::register_callback(1, sub {
     my $path = Perlbal->service('mogstored')->{docroot};
     $path =~ s!/$!!;
 
-    populate_osdevnums;
+    populate_osdevnums();
 
     # find all devices below us
     my @devnum;
@@ -361,7 +361,7 @@ sub iostat_stdout {
     }
 }
 
-setup_iostat if $opt_iostat;
+setup_iostat() if $opt_iostat;
 
 # setup a new socket for handling size requests
 my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
