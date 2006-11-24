@@ -67,6 +67,7 @@ my %devnum_to_device;
 my %osdevnum_to_device;
 my %iostat_listeners;     # fd => SideChannel client: clients interested in iostat data.
 my $iostat_available = 1; # bool: iostat working.  assume working to start.
+my ($iostat_pipe_r, $iostat_pipe_w);  # pipes for talking to iostat process
 
 # Config:
 my $opt_daemonize;
@@ -133,8 +134,9 @@ if ($opt_daemonize) {
     Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
 }
 
+setup_iostat_pipes();
 start_disk_usage_process();
-setup_iostat() if $opt_iostat;
+start_iostat_process() if $opt_iostat;
 harvest_dead_children();  # every 2 seconds, it reschedules itself
 
 # setup a new socket for handling size requests
@@ -327,8 +329,19 @@ sub iostat_unsubscribe {
     delete $iostat_listeners{$fdno};
 }
 
-sub setup_iostat {
-    pipe (my $stdout_r, my $stdout_w);
+sub setup_iostat_pipes {
+    pipe ($iostat_pipe_r, $iostat_pipe_w);
+    IO::Handle::blocking($iostat_pipe_r, 0);
+    IO::Handle::blocking($iostat_pipe_w, 0);
+    Danga::Socket->AddOtherFds(fileno($iostat_pipe_r),
+                               sub {
+                                   read_from_iostat_child($iostat_pipe_r,
+                                                          \my $stdout_buffer);
+                               });
+
+}
+
+sub start_iostat_process {
     my $pid = fork;
 
     unless (defined $pid) {
@@ -338,37 +351,20 @@ sub setup_iostat {
 
     if ($pid) {
         # Parent
-        close $stdout_w;
-
-        IO::Handle::blocking($stdout_r, 0);
-
-        # Check if there are any existing children (and thus, reapers) before we add the current one.
         $on_death{$pid} = sub {
-            my $otherfds = Danga::Socket->OtherFds;
-            delete $otherfds->{fileno($stdout_r)};
-            setup_iostat();
+            start_iostat_process();
         };
-
-        Danga::Socket->AddOtherFds(fileno($stdout_r),
-                                   sub {
-                                       read_from_iostat_child($stdout_r,
-                                                              \my $stdout_buffer);
-                                   });
         return;
     }
-
-    close $stdout_r;
-
-    IO::Handle::blocking($stdout_w, 0);
 
     close STDIN;
     close STDOUT;
     close STDERR;
 
     # We may not be able to see errors beyond this point
-    open STDIN, '<', '/dev/null'    or die "Couldn't open STDIN for reading from /dev/null";
-    open STDOUT, '>&', $stdout_w    or die "Couldn't dup pipe for use as STDOUT";
-    open STDERR, '>', '/dev/null'   or die "Couldn't open STDOUT for writing to /dev/null";
+    open STDIN, '<', '/dev/null'       or die "Couldn't open STDIN for reading from /dev/null";
+    open STDOUT, '>&', $iostat_pipe_w  or die "Couldn't dup pipe for use as STDOUT";
+    open STDERR, '>', '/dev/null'      or die "Couldn't open STDOUT for writing to /dev/null";
 
     select((select(STDOUT), $|++)[0]);
 
