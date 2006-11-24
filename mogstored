@@ -61,6 +61,15 @@ BEGIN {
 
 }
 
+# State:
+my %on_death;  # pid -> subref  (to run when pid dies)
+my %devnum_to_device;
+my %osdevnum_to_device;
+my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
+my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
+my $iostat_available = 1; # bool: iostat working.  assume working to start.
+
+# Config:
 my $opt_daemonize;
 my $opt_config;
 my $opt_iostat;
@@ -68,7 +77,7 @@ my $max_conns = 10000;
 my $http_listen = "0.0.0.0:7500";
 my $mgmt_listen = "0.0.0.0:7501";
 my $docroot     = "/var/mogdata";
-
+my $default_config = "/etc/mogilefs/mogstored.conf";
 my %config_opts = (
                    'iostat'       => \$opt_iostat,
                    'daemonize|d'  => \$opt_daemonize,
@@ -80,55 +89,13 @@ my %config_opts = (
                    );
 usage() unless Getopt::Long::GetOptions(%config_opts);
 
-my $default_config = "/etc/mogilefs/mogstored.conf";
 $opt_config = $default_config if ! $opt_config && -e $default_config;
-
-sub usage {
-    my $note = shift;
-    $note = $note ? "NOTE: $note\n\n" : "";
-
-    die "${note}Usage: mogstored [OPTS]
-
-OPTS:
- --daemonize  -d        Daemonize
- --config=<file>        Set config file (default is /etc/mogilefs/mogstored.conf)
- --httplisten=<ip:port> IP/Port HTTP server listens on
- --mgmtlisten=<ip:port> IP/Port management/sidechannel listens on
- --docroot=<path>       Docroot above device mount points.  Defaults to /var/mogdata
-";
-
-}
-
-# parse the mogstored config file, which is just lines of comments and
-# "key = value" lines, where keys are just the same as commandline
-# options.
-if ($opt_config) {
-    die "Config file $opt_config doesn't exist.\n" unless -e $opt_config;
-    open F, $opt_config or die "Couldn't open config file for reading: $!";
-    while (<F>) {
-        s/\#.*//;
-        next unless /\S/;
-        if (/SERVER max_connect/i || /CREATE SERVICE/i) {
-            usage("Your $opt_config file is the old syntax.  The new format is simply lines of <key> = <value> where keys are the same as mogstored's command line options.");
-
-        }
-        die "Unknown config syntax: $_\n" unless /^\s*(\w+)\s*=\s*(.+?)\s*$/;
-        my ($key, $val) = ($1, $2);
-        my $dest = $config_opts{$key} || $config_opts{"$key=s"};
-        die "Unknown config setting: $key\n" unless $dest;
-        $$dest = $val;
-    }
-}
-
-# set number of AIO threads, between 10-100.
-my $aio_threads = disks($docroot) * 10 || 10;
-$aio_threads = 100 if $aio_threads > 100;
+load_config_file($opt_config => \%config_opts) if $opt_config;
 
 # use AIO channels in Perlbal
 Perlbal::AIO::set_file_to_chan_hook(sub {
     my $filename = shift;
-    $filename =~ m!/dev(\d+)(?:/|$)!
-        or return undef;
+    $filename =~ m{/dev(\d+)\b} or return undef;
     return "dev$1";
 });
 
@@ -149,7 +116,7 @@ ENABLE mogstored
 
 Perlbal::run_manage_commands($pb_conf, sub { print STDERR "$_[0]\n"; });
 
-unless (Perlbal::Socket->WatchedSockets() > 0) {
+unless (Perlbal::Socket->WatchedSockets > 0) {
     die "Invalid configuration.  (shouldn't happen?)  Stopping.\n";
 }
 
@@ -160,15 +127,12 @@ if ($opt_daemonize) {
     print "Running.\n";
 }
 
-# for some reason, have to set aio threads after daemonizing
-Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
-
-my %on_death;  # pid -> subref  (to run when pid dies)
-my %devnum_to_device;
-my %osdevnum_to_device;
-my %iostat_children; # PID => CODEREF:  Process ID of child, and CODEREF to be executed for cleanup.
-my %iostat_listeners; # FILENO => FILEHANDLE: Fileno and filehandle of management clients interested in iostat data.
-my $iostat_available = $opt_iostat; # Boolean indiciating if iostat is actually available for use.
+# set number of AIO threads, between 10-100 (for some reason, have to
+# set aio threads after daemonizing)
+{
+    my $aio_threads = aio_threads(disks($docroot));
+    Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
+}
 
 start_disk_usage_process();
 setup_iostat() if $opt_iostat;
@@ -205,6 +169,49 @@ Perlbal::run();
 ############################################################################
 # main:: functions
 ############################################################################
+
+sub usage {
+    my $note = shift;
+    $note = $note ? "NOTE: $note\n\n" : "";
+
+    die "${note}Usage: mogstored [OPTS]
+
+OPTS:
+ --daemonize  -d        Daemonize
+ --config=<file>        Set config file (default is /etc/mogilefs/mogstored.conf)
+ --httplisten=<ip:port> IP/Port HTTP server listens on
+ --mgmtlisten=<ip:port> IP/Port management/sidechannel listens on
+ --docroot=<path>       Docroot above device mount points.  Defaults to /var/mogdata
+";
+
+}
+
+sub load_config_file {
+    my ($conffile, $opts) = @_;
+
+    # parse the mogstored config file, which is just lines of comments and
+    # "key = value" lines, where keys are just the same as commandline
+    # options.
+    die "Config file $opt_config doesn't exist.\n" unless -e $conffile;
+    open my $fh, $conffile or die "Couldn't open config file for reading: $!";
+    while (<$fh>) {
+        s/\#.*//;
+        next unless /\S/;
+        if (/SERVER max_connect/i || /CREATE SERVICE/i) {
+            usage("Your $opt_config file is the old syntax.  The new format is simply lines of <key> = <value> where keys are the same as mogstored's command line options.");
+
+        }
+        die "Unknown config syntax: $_\n" unless /^\s*(\w+)\s*=\s*(.+?)\s*$/;
+        my ($key, $val) = ($1, $2);
+        my $dest;
+        foreach my $ck (keys %$opts) {
+            next unless $ck =~ /^$key\b/;
+            $dest = $opts->{$ck};
+        }
+        die "Unknown config setting: $key\n" unless $dest;
+        $$dest = $val;
+    }
+}
 
 sub populate_osdevnums {
     %osdevnum_to_device = ();
@@ -431,6 +438,14 @@ sub disks {
     my $root = shift;
     opendir(my $dh, $root) or die "Failed to open docroot: $root: $!";
     return scalar grep { /^dev\d+$/ } readdir($dh);
+}
+
+# returns aio threads to use, given a disk count
+sub aio_threads {
+    my $disks = shift;
+    my $threads = ($disks || 1) * 10;
+    return 100 if $threads > 100;
+    return $threads;
 }
 
 #############################################################################
