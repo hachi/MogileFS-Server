@@ -815,9 +815,9 @@ sub cmd_create_host {
     unless ($args->{update}) {
         return $self->err_line('no_ip') unless $args->{ip};
         return $self->err_line('no_port') unless $args->{port};
+        $args->{status} ||= 'down';
     }
 
-    $args->{status} ||= 'down';
     return $self->err_line('unknown_state')
         unless $args->{status} =~ /^(?:alive|down|dead)$/;
 
