@@ -1,16 +1,21 @@
 package MogileFS::Device;
 use strict;
 use warnings;
+use Carp qw(croak);
 
 my %singleton;  # devid -> instance
 
 sub of_devid {
     my ($class, $devid) = @_;
+    croak("Invalid devid") unless $devid;
     return $singleton{$devid} ||= bless {
         devid    => $devid,
         no_mkcol => 0,
     }, $class;
 }
+
+sub devid { return $_[0]{devid} }
+sub id    { return $_[0]{devid} }
 
 sub status {
     my $self = shift;
@@ -106,5 +111,39 @@ sub create_directory {
     }
 }
 
+# returns array of MogileFS::Device objects which are in state 'dead'.
+sub dead_devices {
+    my $class = shift;
+    # get a current list of devices
+    my $devs = Mgd::get_device_summary();
+    return
+        map { MogileFS::Device->of_devid($_->{devid}) }
+        grep { $_->{status} eq "dead" }
+        values %$devs;
+}
+
+sub fid_list {
+    my ($self, %opts) = @_;
+    my $limit = delete $opts{limit};
+    croak("No limit specified") unless $limit && $limit =~ /^\d+$/;
+    croak("Unknown options to fid_list") if %opts;
+
+    my $dbh = Mgd::get_dbh();
+    my $fidids = $dbh->selectcol_arrayref("SELECT fid FROM file_on WHERE devid = ? LIMIT $limit",
+                                          undef, $self->devid);
+    die "Error selecting jobs to reap: " . $dbh->errstr if $dbh->err;
+    return map {
+        MogileFS::FID->new($_)
+    } @{$fidids || []};
+}
+
+sub forget_about {
+    my ($dev, $fid) = @_;
+    my $dbh = Mgd::get_dbh();
+    $dbh->do('DELETE FROM file_on WHERE fid = ? AND devid = ?',
+             undef, $fid->id, $dev->id);
+    die $dbh->errstr if $dbh->err;
+    return 1;
+}
 
 1;

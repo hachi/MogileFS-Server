@@ -51,8 +51,11 @@ use MogileFS::HTTPFile;
 use MogileFS::Class;
 use MogileFS::Device;
 use MogileFS::Host;
+use MogileFS::FID;
 
 use MogileFS::ReplicationPolicy::MultipleHosts;
+
+use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
@@ -303,7 +306,7 @@ sub find_deviceid {
 
 sub get_device_summary {
     my $now = time;
-    return $cache_device_summary if $cache_device_summary_time > $now - 15;
+    return $cache_device_summary if $cache_device_summary_time > $now - DEVICE_SUMMARY_CACHE_TIMEOUT;
 
     my $dbh = get_dbh();
 

@@ -5,12 +5,15 @@ use MogileFS::ProcManager;
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw($DEBUG config set_config);
+our @EXPORT_OK = qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
 our ($DEFAULT_CONFIG, $DEFAULT_MOG_ROOT, $MOG_ROOT, $MOGSTORED_STREAM_PORT, $DEBUG);
 $DEBUG = 0;
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $DEFAULT_MOG_ROOT = "/mnt/mogilefs";
 $MOGSTORED_STREAM_PORT = 7501;
+
+use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
 
 my %conf;
 sub set_config {

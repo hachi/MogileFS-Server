@@ -4,6 +4,7 @@ package MogileFS::Worker::Reaper;
 use strict;
 use base 'MogileFS::Worker';
 use MogileFS::Util qw(every error);
+use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
 sub new {
     my ($class, $psock) = @_;
@@ -12,6 +13,8 @@ sub new {
 
     return $self;
 }
+
+my %all_empty;  # devid -> bool, if all empty of files in file_on
 
 sub work {
     my $self = shift;
@@ -26,50 +29,44 @@ sub work {
         $self->validate_dbh;
         my $dbh = $self->get_dbh or return 0;
 
-        # get a current list of devices
-        my $devs = Mgd::get_device_summary();
-        my @deaddevs = grep { $_->{status} eq "dead" } values %$devs
-            or return;
+        foreach my $dev (MogileFS::Device->dead_devices) {
+            my $devid = $dev->id;
+            next if $all_empty{$devid};
 
-        # now iterate over dead devices
-        foreach my $dev (@deaddevs) {
-            my $devid = $dev->{devid};
-
-            # look for files on this device
-            my $fids = $dbh->selectcol_arrayref('SELECT fid FROM file_on WHERE devid = ? LIMIT 1000',
-                                                undef, $devid);
-            if ($dbh->err) {
-                error("Error selecting jobs to reap: " . $dbh->errstr);
+            my @fids = $dev->fid_list(limit => 1000);
+            unless (@fids) {
+                $all_empty{$devid} = 1;
                 next;
             }
-            next unless $fids && @$fids;
 
-            # note we got some
-            error("Found " . scalar(@$fids) . " files on dead device $devid");
+            foreach my $fid (@fids) {
+                # order is important here:
 
-            # now iterate
-            foreach my $fid (@$fids) {
-                $dbh->do('DELETE FROM file_on WHERE fid = ? AND devid = ?',
-                         undef, $fid, $devid);
-                if ($dbh->err) {
-                    error("Error deleting from file_on (file $fid, device $devid): " . $dbh->errstr);
-                    next;
-                }
+                # first, add fid to file_to_replicate table.  it
+                # shouldn't matter if the replicator gets to this
+                # before the subsequent 'forget_about' method, as the
+                # replicator will treat dead file_on devices as
+                # non-existent anyway.  however, it is important that
+                # we enqueue it for replication first, before we
+                # forget about that file_on row, otherwise a failure
+                # after/during 'forget_about' could leave a stranded
+                # file on a dead device and we'd never fix it.
+                #
+                # and just for extra safety, in case replication happened
+                # on another machine after 'enqueue_for_replication' but
+                # before 'forget_about', and that other machine hadn't yet
+                # re-read the device table to learn that this device
+                # was dead, we delay the replication for the amount of time
+                # that the device summary table is valid for (presumably
+                # the other trackers are running identical software, or
+                # at least have the same timeout value)
 
-                # now update the fid count
-                unless (Mgd::update_fid_devcount($fid)) {
-                    error("Error updating fid $fid devcount");
-                    next;
-                }
-
-                # if debugging on, note this is done
-                error("Reaper noted fid $fid no longer on device $devid")
-                    if $Mgd::DEBUG >= 2;
+                $fid->enqueue_for_replication(in => DEVICE_SUMMARY_CACHE_TIMEOUT + 1);
+                $dev->forget_about($fid);
+                $fid->update_devcount;
             }
         }
     });
-
-
 }
 
 1;
