@@ -35,3 +35,16 @@ sub enqueue_for_replication {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+MogileFS::FID - represents a unique, immutable version of a file
+
+=head1 ABOUT
+
+This class represents a "fid", or "file id", which is a unique
+revision of a file.  If you upload a file with the same key
+("filename") a dozen times, each one has a unique "fid".  Fids are
+immutable, and are what are replicated around the MogileFS farm.
