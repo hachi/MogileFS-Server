@@ -134,6 +134,15 @@ if ($opt_daemonize) {
     Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
 }
 
+# kill our children processes on exit:
+my $parent_pid = $$;
+$SIG{TERM} = sub {
+    if ($$ == $parent_pid) {
+        kill 9, grep { $_ } keys %on_death;
+        exit(0);
+    }
+};
+
 setup_iostat_pipes();
 start_disk_usage_process();
 start_iostat_process() if $opt_iostat;

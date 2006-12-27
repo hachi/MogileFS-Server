@@ -1,3 +1,6 @@
+2006-12-27:
+        * kill child processes (diskusage and iostat) when being killed.
+
 2006-11-05:
         * set aio threads after daemonizing.  needed by Linux::AIO/IO::AIO, it seems?
 
