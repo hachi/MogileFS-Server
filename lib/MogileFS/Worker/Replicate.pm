@@ -294,7 +294,7 @@ sub replicate_using_devcounts {
                     $self->send_to_parent("repl_i_did $fid");
 
                     # status update
-                    if ($fixed % 20 == 0) {
+                    if ($Mgd::DEBUG >= 1 && $fixed % 20 == 0) {
                         my $ratio = $fixed/$attempted*100;
                         error(sprintf("replicated=$fixed, attempted=$attempted, ratio=%.2f%%", $ratio))
                             if $fixed % 20 == 0;
