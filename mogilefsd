@@ -36,7 +36,7 @@ use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
 
 use lib 'lib';
 use MogileFS::Sys;
-use MogileFS::Util qw(error daemonize);
+use MogileFS::Util qw(error fatal daemonize);
 use MogileFS::Connection::Client;
 use MogileFS::Connection::Worker;
 use MogileFS::Worker::Query;
