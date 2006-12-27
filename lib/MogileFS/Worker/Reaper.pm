@@ -18,7 +18,6 @@ my %all_empty;  # devid -> bool, if all empty of files in file_on
 
 sub work {
     my $self = shift;
-    my $psock = $self->{psock};
 
     every(5, sub {
         $self->parent_ping;
