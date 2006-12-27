@@ -498,7 +498,9 @@ HELP
 
 # a child has contacted us with some command/status/something.
 sub HandleChildRequest {
-    return Mgd::error("ProcManager (Child) got request from child: $_[2]") if $IsChild;
+    if ($IsChild) {
+        Mgd::fatal("ASSERT: child $_[2] shouldn't be getting requests from other children");
+    }
 
     # if they have no job set, then their first line is what job they are
     # and not a command.  they also specify their pid, just so we know what
