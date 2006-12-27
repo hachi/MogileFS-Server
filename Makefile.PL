@@ -22,7 +22,7 @@ WriteMakefile(
     ABSTRACT                => 'MogileFS server components',
     EXE_FILES               => $exefiles,
     PREREQ_PM               => {
-        'Danga::Socket'    => '1.55',
+        'Danga::Socket'    => '1.56',
         'Perlbal'          => '1.52',  # Future: make Perlbal optional, for running mogstored
                                        # in only-monitor/usage-writeout mode.
         'Sys::Syslog'      => 0,,

@@ -2,7 +2,7 @@ package MogileFS::Worker::Monitor;
 
 use strict;
 use base 'MogileFS::Worker';
-use Danga::Socket 1.55;
+use Danga::Socket 1.56;
 use MogileFS::Util qw(error);
 use MogileFS::IOStatWatcher;
 
