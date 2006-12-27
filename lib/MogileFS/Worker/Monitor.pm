@@ -50,7 +50,7 @@ sub work {
         my $devs = Mgd::get_device_summary();
         unless ($devs && %$devs) {
             $self->send_to_parent(":monitor_just_ran");
-            next;
+            return;
         }
 
         # now iterate over devices
