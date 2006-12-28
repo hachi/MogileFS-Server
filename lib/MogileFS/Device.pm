@@ -29,6 +29,11 @@ sub is_marked_dead {
     return $self->status eq "dead";
 }
 
+sub is_marked_down {
+    my $self = shift;
+    return $self->status eq "down";
+}
+
 sub is_marked_readonly {
     my $self = shift;
     return $self->status eq "readonly";
@@ -119,6 +124,16 @@ sub dead_devices {
     return
         map { MogileFS::Device->of_devid($_->{devid}) }
         grep { $_->{status} eq "dead" }
+        values %$devs;
+}
+
+# returns array of all MogileFS::Device objects
+sub devices {
+    my $class = shift;
+    # get a current list of devices
+    my $devs = Mgd::get_device_summary();
+    return
+        map { MogileFS::Device->of_devid($_->{devid}) }
         values %$devs;
 }
 
