@@ -18,6 +18,9 @@ use Socket;
 our ($IsChild, @RecentQueries,
      %Mappings, %ChildrenByJob, %ErrorsTo, %Stats);
 
+our $starttime = time(); # time we got going
+sub server_starttime { return $starttime }
+
 my @IdleQueryWorkers;  # workers that are idle, able to process commands  (MogileFS::Worker::Query, ...)
 my @PendingQueries;    # [ MogileFS::Connection::Client, "$ip $query" ]
 

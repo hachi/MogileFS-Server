@@ -59,7 +59,6 @@ use MogileFS::ReplicationPolicy::MultipleHosts;
 
 use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
-our $starttime = time(); # time we got going
 our $client_ip = undef; # client ip address
 our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
 

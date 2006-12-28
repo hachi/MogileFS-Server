@@ -55,7 +55,7 @@ sub handle_admin_command {
     my @out;
     if ($cmd =~ /^stats$/) {
         # print out some stats on the queues
-        my $uptime = time - $Mgd::starttime;
+        my $uptime = time() - MogileFS::ProcManager->server_starttime;
         my $ccount = MogileFS::ProcManager->PendingQueryCount;
         my $wcount = MogileFS::ProcManager->BoredQueryWorkerCount;
         my $ipcount = MogileFS::ProcManager->QueriesInProgressCount;
