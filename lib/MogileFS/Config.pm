@@ -15,6 +15,10 @@ $MOGSTORED_STREAM_PORT = 7501;
 
 use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
 
+# this is incremented whenever the schema changes.  server will refuse
+# to start-up with an old schema version
+use constant SCHEMA_VERSION => 7;
+
 my %conf;
 sub set_config {
     shift if @_ == 3;
@@ -180,6 +184,57 @@ sub config {
     die "No config variable '$k'" unless defined $conf{$k};
     return $conf{$k};
 }
+
+sub check_database {
+    my $dbh = Mgd::get_dbh();
+    unless ($dbh) {
+        die qq{
+Error: unable to establish connection with your MogileFS database.
+
+Please verify that you have correctly setup a configuration file or are
+providing the correct information in order to reach the database and try
+running the MogileFS server again.  If you haven\'t setup your database yet,
+run 'mogdbsetup'.
+}
+    }
+
+    my $sversion = MogileFS::Config->server_setting('schema_version') || 0;
+    unless ($sversion == SCHEMA_VERSION || MogileFS::Config->config('no_schema_check')) {
+        my $exp = SCHEMA_VERSION;
+        die "Server's database schema version of $sversion doesn't match expected value of $exp.  Halting.\n\n".
+            "Please run mogdbsetup to upgrade your schema.\n";
+    }
+}
+
+# set_server_setting( key, value )
+#   set value to undef to remove whatever is presently stored; returns 1 on success or
+#   undef on error
+sub set_server_setting {
+    my ($class, $key, $val) = @_;
+    return unless $key;
+
+    my $dbh = Mgd::get_dbh();
+
+    if (defined $val) {
+        $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
+    } else {
+        $dbh->do("DELETE FROM server_settings WHERE field=?", undef, $key);
+    }
+
+    die "Error updating 'server_settings': " . $dbh->errstr if $dbh->err;
+    return 1;
+}
+
+# get_server_setting( key )
+#   get value of server setting, undef on error (or no result)
+sub server_setting {
+    my ($class, $key) = @_;
+    my $dbh = Mgd::get_dbh();
+    my $ret = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?", undef, $key);
+    die "Error reading from 'server_settings': " . $dbh->errstr if $dbh->err;
+    return $ret;
+}
+
 
 1;
 

@@ -59,10 +59,6 @@ use MogileFS::ReplicationPolicy::MultipleHosts;
 
 use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
-# this is incremented whenever the schema changes.  server will refuse
-# to start-up with an old schema version
-use constant SCHEMA_VERSION => 7;
-
 our $starttime = time(); # time we got going
 our $client_ip = undef; # client ip address
 our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
@@ -73,7 +69,7 @@ MogileFS::Config->load_config;
 die "mogilefsd cannot be run as root\n"
     if $< == 0 && MogileFS->config('user') ne "root";
 
-check_database();
+MogileFS::Config->check_database;
 daemonize() if MogileFS->config("daemonize");
 
 MogileFS::ProcManager->set_min_workers('queryworker' => MogileFS->config('query_jobs'));
@@ -200,56 +196,6 @@ sub set_client_ip {
     $client_ip = $ip;
 }
 
-sub check_database {
-    my $dbh = Mgd::get_dbh();
-    unless ($dbh) {
-        die qq{
-Error: unable to establish connection with your MogileFS database.
-
-Please verify that you have correctly setup a configuration file or are
-providing the correct information in order to reach the database and try
-running the MogileFS server again.  If you haven\'t setup your database yet,
-run 'mogdbsetup'.
-}
-    }
-
-    my $sversion = get_server_setting('schema_version') || 0;
-    unless ($sversion == SCHEMA_VERSION || MogileFS::Config->config('no_schema_check')) {
-        my $exp = SCHEMA_VERSION;
-        die "Server's database schema version of $sversion doesn't match expected value of $exp.  Halting.\n\n".
-            "Please run mogdbsetup to upgrade your schema.\n";
-    }
-}
-
-# set_server_setting( key, value )
-#   set value to undef to remove whatever is presently stored; returns 1 on success or
-#   undef on error
-sub set_server_setting {
-    my ($key, $val) = @_;
-    return unless $key;
-
-    my $dbh = Mgd::get_dbh()
-        or return undef;
-
-    if (defined $val) {
-        $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
-    } else {
-        $dbh->do("DELETE FROM server_settings WHERE field=?", undef, $key);
-    }
-
-    return undef if $dbh->err;
-    return 1;
-}
-
-# get_server_setting( key )
-#   get value of server setting, undef on error (or no result)
-sub get_server_setting {
-    my $dbh = Mgd::get_dbh()
-        or return undef;
-    my $ret = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?", undef, shift);
-    return undef if $dbh->err;
-    return $ret;
-}
 
 package MogileFS;
 # just so MogileFS->config($key) will work:

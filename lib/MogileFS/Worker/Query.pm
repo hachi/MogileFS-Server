@@ -1229,7 +1229,7 @@ sub cmd_checker {
     }
 
     if (defined $new_setting) {
-        Mgd::set_server_setting('fsck_enable', $new_setting);
+        MogileFS::Checker->set_server_setting('fsck_enable', $new_setting);
         return $self->ok_line;
     }
 
