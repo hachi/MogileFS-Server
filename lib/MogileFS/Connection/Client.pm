@@ -69,7 +69,7 @@ sub handle_admin_command {
     } elsif ($cmd =~ /^repl/) {
         Mgd::validate_dbh();
           my $dbh = Mgd::get_dbh();
-          my $mdcs = Mgd::get_mindevcounts();
+          my $mdcs = MogileFS::Class->mindevcounts;
           foreach my $dmid (sort keys %$mdcs) {
               my $dmname = Mgd::domain_name($dmid);
               foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
