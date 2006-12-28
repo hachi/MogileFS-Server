@@ -383,33 +383,6 @@ sub key_filerow {
     return $row;
 }
 
-# given a file descriptor number and a timeout, wait for that descriptor to
-# become readable; returns 0 or 1 on if it did or not
-sub wait_for_readability {
-    my ($fileno, $timeout) = @_;
-    return 0 unless $fileno && $timeout >= 0;
-
-    my $rin;
-    vec($rin, $fileno, 1) = 1;
-    my $nfound = select($rin, undef, undef, $timeout);
-
-    # nfound can be undef or 0, both failures, or 1, a success
-    return $nfound ? 1 : 0;
-}
-
-sub wait_for_writeability {
-    my ($fileno, $timeout) = @_;
-    return 0 unless $fileno && $timeout;
-
-    my $rout;
-    vec($rout, $fileno, 1) = 1;
-    my $nfound = select(undef, $rout, undef, $timeout);
-
-    # nfound can be undef or 0, both failures, or 1, a success
-    return $nfound ? 1 : 0;
-}
-
-
 sub class_id {
     my ($dmid, $class) = @_;
     return undef unless $dmid > 0 && length $class;

@@ -99,7 +99,7 @@ sub read_from_parent {
     my $psock = $self->{psock};
 
     # while things are immediately available,
-    while (Mgd::wait_for_readability(fileno($psock), 0)) {
+    while (MogileFS::Util::wait_for_readability(fileno($psock), 0)) {
         my $buf;
         my $rv = sysread($psock, $buf, 1024);
         if (!$rv) {

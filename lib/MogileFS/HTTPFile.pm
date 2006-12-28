@@ -2,7 +2,7 @@ package MogileFS::HTTPFile;
 use strict;
 use Carp qw(croak);
 use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
-use MogileFS::Util qw(error);
+use MogileFS::Util qw(error wait_for_readability wait_for_writeability);
 
 # (caching the connection used for HEAD requests)
 my %head_socket;                # host:port => [$pid, $time, $socket]
@@ -85,7 +85,7 @@ sub size {
             if ($pid == $$ && getpeername($cachesock) &&
                 $conntime > $start_time - 15 &&
                 # readability would indicated conn closed, or garbage:
-                ! Mgd::wait_for_readability(fileno($cachesock), 0.00))
+                ! wait_for_readability(fileno($cachesock), 0.00))
             {
                 $httpsock = $cachesock;
                 return;
@@ -109,11 +109,11 @@ sub size {
         # request.  if both timeout, we know the machine is gone, but
         # we don't want to wait 2 seconds + 2 seconds... prefer to do
         # connects in parallel to reduce overall latency.
-        unless (Mgd::wait_for_readability(fileno($sock), $stream_response_timeout)) {
+        unless (wait_for_readability(fileno($sock), $stream_response_timeout)) {
             $start_connecting_to_http->();
             # give the socket its final time to get to 2 seconds
             # before we really give up on it
-            unless (Mgd::wait_for_readability(fileno($sock), $node_timeout - $stream_response_timeout)) {
+            unless (wait_for_readability(fileno($sock), $node_timeout - $stream_response_timeout)) {
                 $read_timed_out = 1;
                 close($sock);
                 return undef;
@@ -199,7 +199,7 @@ sub size {
     $start_connecting_to_http->();
 
     # did we timeout?
-    unless (Mgd::wait_for_writeability(fileno($httpsock), $time_remain)) {
+    unless (wait_for_writeability(fileno($httpsock), $time_remain)) {
         if (my $worker = MogileFS::ProcManager->is_child) {
             $worker->broadcast_host_unreachable($self->host_id);
         }
@@ -219,7 +219,7 @@ sub size {
 
     my $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
     return error("get_file_size() read timeout ($time_remain) for HTTP HEAD for size of $path")
-        unless Mgd::wait_for_readability(fileno($httpsock), $time_remain);
+        unless wait_for_readability(fileno($httpsock), $time_remain);
 
     my $first = <$httpsock>;
     return error("get_file_size()'s HEAD request wasn't a 200 OK")

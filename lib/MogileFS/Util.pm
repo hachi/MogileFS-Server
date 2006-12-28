@@ -5,7 +5,10 @@ use Time::HiRes;
 
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT_OK = qw(error debug fatal daemonize weighted_list every dbcheck);
+our @EXPORT_OK = qw(
+                    error debug fatal daemonize weighted_list every dbcheck
+                    wait_for_readability wait_for_writeability
+                    );
 
 sub every {
     my ($delay, $code) = @_;
@@ -147,5 +150,32 @@ sub dbcheck {
     error($errmsg);  # propogate to parent for listeners
     die $errmsg;
 }
+
+# given a file descriptor number and a timeout, wait for that descriptor to
+# become readable; returns 0 or 1 on if it did or not
+sub wait_for_readability {
+    my ($fileno, $timeout) = @_;
+    return 0 unless $fileno && $timeout >= 0;
+
+    my $rin;
+    vec($rin, $fileno, 1) = 1;
+    my $nfound = select($rin, undef, undef, $timeout);
+
+    # nfound can be undef or 0, both failures, or 1, a success
+    return $nfound ? 1 : 0;
+}
+
+sub wait_for_writeability {
+    my ($fileno, $timeout) = @_;
+    return 0 unless $fileno && $timeout;
+
+    my $rout;
+    vec($rout, $fileno, 1) = 1;
+    my $nfound = select(undef, $rout, undef, $timeout);
+
+    # nfound can be undef or 0, both failures, or 1, a success
+    return $nfound ? 1 : 0;
+}
+
 
 1;
