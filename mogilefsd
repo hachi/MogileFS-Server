@@ -550,13 +550,6 @@ sub domain_name {
 
 }
 
-sub hostid_name {
-    my $hostid = shift;
-    check_host_cache();
-    my $h = $cache_host{$hostid};
-    return $h ? $h->{hostname} : undef;
-}
-
 sub set_force_altzone {
     my $val = shift;
     $force_alt_zone = $val;
@@ -624,7 +617,6 @@ sub make_http_path {
     my $dsum = get_device_summary();
     my $dinfo = $dsum->{$devid};
     return undef unless $dinfo;
-    my $hostname = hostid_name($dinfo->{hostid});
 
     my $nfid = sprintf '%010d', $fid;
     my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
