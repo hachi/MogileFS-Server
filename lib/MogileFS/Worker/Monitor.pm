@@ -8,6 +8,7 @@ use fields (
             'last_test_write', # devid -> time.  time we last tried writing to a device.
             'skip_host',       # hostid -> 1 if already noted dead (reset every loop)
             'seen_hosts',      # IP -> 1 (reset every loop)
+            'ua',              # LWP::UserAgent for checking usage files
             );
 
 use Danga::Socket 1.56;
@@ -71,6 +72,16 @@ sub work {
     Danga::Socket->EventLoop;
 }
 
+# --------------------------------------------------------------------------
+
+sub ua {
+    my $self = shift;
+    return $self->{ua} ||= LWP::UserAgent->new(
+                                               timeout    => 2,
+                                               keep_alive => 20,
+                                               );
+}
+
 sub check_device {
     my ($self, $dev) = @_;
 
@@ -88,7 +99,7 @@ sub check_device {
     my $timeout = 2;
     my $start_time = Time::HiRes::time();
 
-    my $ua = LWP::UserAgent->new( timeout => 2 );
+    my $ua       = $self->ua;
     my $response = $ua->get($url);
     my $res_time = Time::HiRes::time();
 
