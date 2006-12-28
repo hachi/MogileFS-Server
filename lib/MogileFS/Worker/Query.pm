@@ -699,9 +699,10 @@ sub cmd_delete_domain {
     # and ensure it has no files (fast: key based)
     my $dbh = Mgd::get_dbh()
         or return $self->err_line("nodb");
-    my $ct = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ?', undef, $dmid);
+    my $has_a_fid = $dbh->selectrow_array('SELECT fid FROM file WHERE dmid = ? LIMIT 1',
+                                          undef, $dmid);
     return $self->err_line('failure') if $dbh->err;
-    return $self->err_line('domain_has_files') if $ct;
+    return $self->err_line('domain_has_files') if $has_a_fid;
 
     # all clear, nuke it
     $dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
@@ -790,9 +791,10 @@ sub cmd_delete_class {
     # and ensure it has no files (fast: key based)
     my $dbh = Mgd::get_dbh()
         or return $self->err_line("nodb");
-    my $ct = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ?', undef, $dmid, $cid);
+    my $has_a_fid = $dbh->selectrow_array('SELECT fid FROM file WHERE dmid = ? AND classid = ? LIMIT 1',
+                                          undef, $dmid, $cid);
     return $self->err_line('failure') if $dbh->err;
-    return $self->err_line('class_has_files') if $ct;
+    return $self->err_line('class_has_files') if $has_a_fid;
 
     # all clear, nuke it
     $dbh->do("DELETE FROM class WHERE dmid = ? AND classid = ?", undef, $dmid, $cid);
