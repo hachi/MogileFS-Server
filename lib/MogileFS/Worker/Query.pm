@@ -692,7 +692,7 @@ sub cmd_delete_domain {
     return $self->err_line('domain_not_found') unless $dmid;
 
     # ensure it has no classes
-    my $classes = Mgd::hostid_classes($dmid);
+    my $classes = MogileFS::Class->dmid_classes($dmid);
     return $self->err_line('failure') unless $classes;
     return $self->err_line('domain_not_empty') if %$classes;
 

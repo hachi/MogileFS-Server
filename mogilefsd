@@ -383,27 +383,6 @@ sub key_filerow {
     return $row;
 }
 
-sub hostid_classes {
-    my $dmid = shift;
-    return undef unless $dmid > 0;
-
-    my $dbh = Mgd::get_dbh;
-    my $classes = $dbh->selectall_arrayref
-        ("SELECT classid, classname, mindevcount FROM class WHERE dmid=?", undef, $dmid)
-            or return undef;
-    return undef unless $classes;
-
-    my $res = {};
-    foreach my $row (@$classes) {
-        $res->{$row->[0]} = {
-            classid => $row->[0],
-            classname => $row->[1],
-            mindevcount => $row->[2],
-        };
-    }
-    return $res;
-}
-
 sub domain_id {
     my $domain = $_[0];
 

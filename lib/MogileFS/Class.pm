@@ -76,6 +76,7 @@ sub mindevcounts {
     return \%min;
 }
 
+# legacy API quickly ported over.  probably not ideal API.
 sub class_id {
     my ($class, $dmid, $classname) = @_;
     return undef unless $dmid > 0 && length $classname;
@@ -84,6 +85,28 @@ sub class_id {
     my $classid = $dbh->selectrow_array
         ("SELECT classid FROM class WHERE dmid=? AND classname=?", undef, $dmid, $classname);
     return $classid;
+}
+
+# legacy API quickly ported over.  probably not ideal API.
+sub dmid_classes {
+    my ($class, $dmid) = @_;
+    return undef unless $dmid > 0;
+
+    my $dbh = Mgd::get_dbh();
+    my $classes = $dbh->selectall_arrayref
+        ("SELECT classid, classname, mindevcount FROM class WHERE dmid=?", undef, $dmid)
+            or return undef;
+    return undef unless $classes;
+
+    my $res = {};
+    foreach my $row (@$classes) {
+        $res->{$row->[0]} = {
+            classid => $row->[0],
+            classname => $row->[1],
+            mindevcount => $row->[2],
+        };
+    }
+    return $res;
 }
 
 1;
