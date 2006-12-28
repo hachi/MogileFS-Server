@@ -580,19 +580,18 @@ sub cmd_get_hosts {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    Mgd::check_host_cache();
+    MogileFS::Host->clear_cache;
 
     my $ret = { hosts => 0 };
-    while (my ($hostid, $row) = each %Mgd::cache_host) {
-        next if defined $args->{hostid} && $hostid != $args->{hostid};
-
-        $ret->{hosts}++;
-        while (my ($key, $val) = each %$row) {
-            # ignore things such as the netmask object
-            next if ref $val;
-
+    foreach my $host (MogileFS::Host->hosts) {
+        next if defined $args->{hostid} && $host->id != $args->{hostid};
+        my $n = ++$ret->{hosts};
+        foreach my $key (qw(hostid status hostname hostip
+                            http_port http_get_port
+                            altip altmask))
+        {
             # must be regular data so copy it in
-            $ret->{"host$ret->{hosts}_$key"} = $val;
+            $ret->{"host${n}_$key"} = $host->field($key);
         }
     }
 

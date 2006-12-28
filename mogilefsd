@@ -374,10 +374,12 @@ sub invalidate_device_cache {
 }
 
 sub invalidate_host_cache {
+    my $no_recurse = shift; # way for new API to signal to old not to loop
+
     # so next time it's invalid and won't be used old
     $cache_host_time = 0;
     %cache_host = ();
-    MogileFS::Host->clear_cache;
+    MogileFS::Host->clear_cache unless $no_recurse;
 
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->invalidate_meta("host");
