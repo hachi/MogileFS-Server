@@ -109,23 +109,21 @@ my $server = IO::Socket::INET->new(LocalPort => MogileFS->config('conf_port'),
                                    Listen    => 10 )
     or die "Error creating socket: $@\n";
 
-# accept handler for new clients
-my $accept_handler = sub {
+# setup Danga::Socket to start handling connections
+Danga::Socket->OtherFds(fileno($server) => sub {
     my $csock = $server->accept
         or return;
     MogileFS::Connection::Client->new($csock);
-};
 
-# so children can close these once they fork
-sub close_listeners {
+});
+
+MogileFS::ProcManager->push_pre_fork_cleanup(sub {
+    # so children don't hold server connection open
     close($server);
-}
-
-# setup Danga::Socket to start handling connections
-Danga::Socket->DebugLevel( 3 );
-Danga::Socket->OtherFds( fileno($server)  => $accept_handler );
+});
 
 # setup the post event loop callback to spawn jobs, and the timeout
+Danga::Socket->DebugLevel(3);
 Danga::Socket->SetLoopTimeout( 250 ); # 250 milliseconds
 Danga::Socket->SetPostLoopCallback(MogileFS::ProcManager->PostEventLoopChecker);
 
@@ -180,11 +178,6 @@ sub log {
         syslog(@_);
     }
 }
-
-#####################################################################
-### S E R V E R   A P I   F U N C T I O N S
-#####################################################################
-
 
 sub set_force_altzone {
     my $val = shift;

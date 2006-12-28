@@ -31,7 +31,14 @@ my %jobs   = ();    # jobname -> [ min, current ]
 
 our $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid dies.
 
+my @prefork_cleanup;  # subrefs to run to clean stuff up before we make a new child
+
 *error = \&Mgd::error;
+
+sub push_pre_fork_cleanup {
+    my ($class, $code) = @_;
+    push @prefork_cleanup, $code;
+}
 
 sub RecentQueries {
     return @RecentQueries;
@@ -178,7 +185,7 @@ sub make_new_child {
     }
 
     # as a child, we want to close these and ignore them
-    Mgd::close_listeners();
+    $_->() foreach @prefork_cleanup;
     close($parents_ipc);
     undef $parents_ipc;
 
