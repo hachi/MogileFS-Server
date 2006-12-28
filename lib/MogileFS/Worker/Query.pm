@@ -636,9 +636,10 @@ sub cmd_create_device {
     if ($args->{hostid} && $args->{hostid} =~ /^\d+$/) {
         $hostid = $args->{hostid};
         return $self->err_line("unknown_hostid") unless $Mgd::cache_host{$hostid};
-    } elsif (my $host = $args->{hostname}) {
-        $hostid = Mgd::host_id($host);
-        return $self->err_line("unknown_host") unless $hostid;
+    } elsif (my $hname = $args->{hostname}) {
+        my $host = MogileFS::Host->of_hostname($hname);
+        return $self->err_line("unknown_host") unless $host;
+        $hostid = $host->id;
     }
 
     $dbh->do("INSERT INTO device SET devid=?, hostid=?, status=?", undef,
@@ -807,8 +808,8 @@ sub cmd_create_host {
     my $dbh = Mgd::get_dbh()
         or return $self->err_line("nodb");
 
-    my $host = $args->{host};
-    return $self->err_line('no_host') unless $host;
+    my $hostname = $args->{host};
+    return $self->err_line('no_host') unless $hostname;
 
     # unless update, require ip/port
     unless ($args->{update}) {
@@ -820,12 +821,13 @@ sub cmd_create_host {
     return $self->err_line('unknown_state')
         unless $args->{status} =~ /^(?:alive|down|dead)$/;
 
-    my $hid = Mgd::host_id($host);
+    my $host = MogileFS::Host->of_hostname($hostname);
     if ($args->{update}) {
-        return $self->err_line('host_not_found') if ! $hid;
+        return $self->err_line('host_not_found') if ! $host;
     } else {
-        return $self->err_line('host_exists') if $hid;
+        return $self->err_line('host_exists') if $host;
     }
+    my $hid = $host ? $host->id : 0;
 
     # update or insert at this point
     if ($args->{update}) {
@@ -871,8 +873,10 @@ sub cmd_delete_host {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $hostid = Mgd::host_id($args->{host})
+    my $host   = MogileFS::Host->of_hostname($args->{host})
         or return $self->err_line('unknown_host');
+
+    my $hostid = $host->id;
 
     my $dbh = Mgd::get_dbh()
         or return $self->err_line("nodb");

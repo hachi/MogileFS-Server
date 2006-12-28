@@ -477,30 +477,6 @@ sub hostid_classes {
     return $res;
 }
 
-sub host_id {
-    my $host = shift;
-    return undef unless $host;
-
-    my $hostid = undef;
-    my $find = sub {
-        foreach my $id (keys %Mgd::cache_host) {
-            next unless $Mgd::cache_host{$id}->{hostname} eq $host;
-            $hostid = $id;
-            last;
-        }
-    };
-
-    # reload if it's been awhile
-    Mgd::check_host_cache();
-    $find->();
-    return $hostid if $hostid;
-
-    # force a reload
-    Mgd::reload_host_cache();
-    $find->();
-    return $hostid;
-}
-
 sub domain_id {
     my $domain = $_[0];
 

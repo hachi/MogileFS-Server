@@ -16,6 +16,23 @@ sub of_hostid {
     }, $class;
 }
 
+sub of_hostname {
+    my ($class, $hostname) = @_;
+    # reload if it's been awhile
+    Mgd::check_host_cache();
+    foreach my $host ($class->hosts) {
+        return $host if $host->{hostname} eq $hostname;
+    }
+
+    # force a reload
+    $class->reload_hosts;
+    foreach my $host ($class->hosts) {
+        return $host if $host->{hostname} eq $hostname;
+    }
+
+    return undef;
+}
+
 sub clear_cache {
     my ($class) = @_;
     # call old API
@@ -83,7 +100,13 @@ sub http_get_port {
 sub ip {
     my $host = shift;
     $host->_load;
-    return $host->{hostip};
+    # FIXME: the altip code should be ressurected.  was like:
+    # if ($h->{mask} && $h->{altip} &&
+    #($force_alt_zone || ($client_ip && $h->{altip} && $h->{mask}->match($client_ip)))) {
+    #   return $h->{altip};
+    #} else {
+        return $host->{hostip};
+    #}
 }
 
 sub field {
