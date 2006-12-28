@@ -40,21 +40,19 @@ sub device_id {
 
 sub host_id {
     my $self = shift;
-
-    # TODO: kinda gross, replace with MogileFS::Host and MogileFS::Device
-    # objects...
-    my $devsum = Mgd::get_device_summary();
-    my $devid  = $self->device_id;
-    return 0 unless $devsum->{$devid};
-    return $devsum->{$devid}{hostid};
+    return $self->device->hostid;
 }
 
 # return MogileFS::Device object
 sub device {
+    my $self = shift;
+    return MogileFS::Device->of_devid($self->device_id);
 }
 
 # return MogileFS::Host object
 sub host {
+    my $self = shift;
+    return $self->device->host;
 }
 
 # returns 0 on error, advertising error

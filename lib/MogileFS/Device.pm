@@ -177,6 +177,13 @@ sub status {
     return $disk->{status};
 }
 
+sub weight {
+    my $self = shift;
+    my $dsum = Mgd::get_device_summary();
+    my $disk = $dsum->{$self->{devid}} or return;
+    return $disk->{weight};
+}
+
 sub is_marked_alive {
     my $self = shift;
     return $self->status eq "alive";
@@ -316,6 +323,20 @@ sub usage_url {
     my $get_port = $host->http_get_port;
     my $hostip   = $host->ip;
     return "http://$hostip:$get_port/dev$dev->{devid}/usage";
+}
+
+sub overview_hashref {
+    my $dev = shift;
+
+    my $devs = Mgd::get_device_summary();
+    my $sum  = $devs->{$dev->id} or
+        return undef;
+
+    my $ret = {};
+    foreach my $k (qw(devid hostid mb_total mb_used mb_asof status weight)) {
+        $ret->{$k} = $sum->{$k};
+    }
+    return $ret;
 }
 
 1;

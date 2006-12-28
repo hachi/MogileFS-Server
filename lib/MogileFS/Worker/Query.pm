@@ -221,7 +221,6 @@ sub cmd_create_open {
 
     # find a device to put this file on that has 100Mb free.
     my (@dests, @hosts);
-    my $devs = Mgd::get_device_summary();
 
     $profstart->("find_deviceid");
     while (scalar(@dests) < ($multi ? 3 : 1)) {
@@ -233,8 +232,9 @@ sub cmd_create_open {
                                                     );
         last unless defined $devid;
 
+        my $ddev = MogileFS::Device->of_devid($devid);
         push @dests, $devid;
-        push @hosts, $devs->{$devid}->{hostid};
+        push @hosts, $ddev->hostid;
     }
     return $self->err_line("no_devices") unless @dests;
 
@@ -606,15 +606,14 @@ sub cmd_get_devices {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $devs = Mgd::get_device_summary();
-
     my $ret = { devices => 0 };
-    while (my ($devid, $row) = each %$devs) {
-        next if defined $args->{devid} && $devid != $args->{devid};
+    foreach my $dev (MogileFS::Device->devices) {
+        next if defined $args->{devid} && $dev->id != $args->{devid};
+        my $n = ++$ret->{devices};
 
-        $ret->{devices}++;
-        while (my ($key, $val) = each %$row) {
-            $ret->{"dev$ret->{devices}_$key"} = $val;
+        my $sum = $dev->overview_hashref;
+        while (my ($key, $val) = each %$sum) {
+            $ret->{"dev${n}_$key"} = $val;
         }
     }
 
@@ -624,7 +623,6 @@ sub cmd_get_devices {
 sub cmd_create_device {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
-    my $devs = Mgd::get_device_summary();
 
     my $dbh = Mgd::get_dbh()
         or return $self->err_line("nodb");
@@ -889,10 +887,9 @@ sub cmd_delete_host {
     my $dbh = Mgd::get_dbh()
         or return $self->err_line("nodb");
 
-    my $dsum = Mgd::get_device_summary();
-    foreach my $dev (values %$dsum) {
+    foreach my $dev (MogileFS::Device->devices) {
         return $self->err_line('host_not_empty')
-            if $dev->{hostid} == $hostid && $dev->{status} ne "dead";
+            if $dev->hostid == $hostid && $dev->status ne "dead";
     }
 
     my $res = $dbh->do("DELETE FROM host WHERE hostid = ?", undef, $hostid);
@@ -962,7 +959,7 @@ sub cmd_get_paths {
         or return $self->err_line("unknown_key");
 
     my $fidid = $fid->id;
-    my $dsum = Mgd::get_device_summary();
+    my $dmap = MogileFS::Device->map;
 
     my $ret = {
         paths => 0,
@@ -973,24 +970,23 @@ sub cmd_get_paths {
                                           undef, $fidid) || [];
 
     # randomly weight the devices
-    my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dsum->{$_}->{weight} ?
-                                                     $dsum->{$_}->{weight} : 100 ] } @$devids);
+    my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dmap->{$_}->weight ?
+                                                     $dmap->{$_}->weight : 100 ] } @$devids);
 
     # keep one partially-bogus path around just in case we have nothing else to send.
     my $backup_path;
 
     # construct result paths
     foreach my $devid (@list) {
-        my $dev = $dsum->{$devid};
-        next unless $dev && ($dev->{status} eq "alive" || $dev->{status} eq "readonly");
+        my $dev = $dmap->{$devid};
+        next unless $dev && ($dev->status eq "alive" || $dev->status eq "readonly");
 
-        my $devo = MogileFS::Device->of_devid($dev->{devid});
-        my $hosto = $devo->host;
-        next unless $devo && $hosto;
-        my $dfid = MogileFS::DevFID->new($devo, $fid);
+        my $host = $dev->host;
+        next unless $dev && $host;
+        my $dfid = MogileFS::DevFID->new($dev, $fid);
         my $path = $dfid->get_url;
         my $currently_down =
-            $hosto->observed_unreachable || $devo->observed_unreachable;
+            $host->observed_unreachable || $dev->observed_unreachable;
 
         if ($currently_down) {
             $backup_path = $path;
