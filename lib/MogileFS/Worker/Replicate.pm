@@ -536,12 +536,12 @@ sub http_copy {
         unless ref $sdev && ref $ddev;
     my ($spath, $dpath) = (Mgd::make_http_path($sdevid, $fid),
                            Mgd::make_http_path($ddevid, $fid));
-    my ($shost, $sport) = (Mgd::hostid_ip($sdev->{hostid}), Mgd::hostid_http_port($sdev->{hostid}));
-    my ($dhost, $dport) = (Mgd::hostid_ip($ddev->{hostid}), Mgd::hostid_http_port($ddev->{hostid}));
-    unless (defined $spath && defined $dpath && defined $shost && defined $dhost && $sport && $dport) {
+    my ($shostip, $sport) = (Mgd::hostid_ip($sdev->{hostid}), Mgd::hostid_http_port($sdev->{hostid}));
+    my ($dhostip, $dport) = (Mgd::hostid_ip($ddev->{hostid}), Mgd::hostid_http_port($ddev->{hostid}));
+    unless (defined $spath && defined $dpath && defined $shostip && defined $dhostip && $sport && $dport) {
         # show detailed information to find out what's not configured right
         error("Error: unable to replicate file fid=$fid from device id $sdevid to device id $ddevid");
-        error("       http://$shost:$sport$spath -> http://$dhost:$dport$dpath");
+        error("       http://$shostip:$sport$spath -> http://$dhostip:$dport$dpath");
         return 0;
     }
 
@@ -550,10 +550,10 @@ sub http_copy {
     local $SIG{PIPE} = sub { $pipe_closed = 1; };
 
     # okay, now get the file
-    my $sock = IO::Socket::INET->new(PeerAddr => $shost, PeerPort => $sport, Timeout => 2)
-        or return $src_error->("Unable to create source socket to $shost:$sport for $spath");
+    my $sock = IO::Socket::INET->new(PeerAddr => $shostip, PeerPort => $sport, Timeout => 2)
+        or return $src_error->("Unable to create source socket to $shostip:$sport for $spath");
     $sock->write("GET $spath HTTP/1.0\r\n\r\n");
-    return error("Pipe closed retrieving $spath from $shost:$sport")
+    return error("Pipe closed retrieving $spath from $shostip:$sport")
         if $pipe_closed;
 
     # we just want a content length
@@ -564,7 +564,7 @@ sub http_copy {
         last unless length $line;
         if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
             # make sure we get a good response
-            return $error_unreachable->("Error: Resource http://$shost:$sport$spath failed: HTTP $1")
+            return $error_unreachable->("Error: Resource http://$shostip:$sport$spath failed: HTTP $1")
                 unless $1 >= 200 && $1 <= 299;
         }
         next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
@@ -576,11 +576,11 @@ sub http_copy {
         if defined $expected_clen && $clen != $expected_clen;
 
     # open target for put
-    my $dsock = IO::Socket::INET->new(PeerAddr => $dhost, PeerPort => $dport, Timeout => 2)
-        or return $dest_error->("Unable to create dest socket to $dhost:$dport for $dpath");
+    my $dsock = IO::Socket::INET->new(PeerAddr => $dhostip, PeerPort => $dport, Timeout => 2)
+        or return $dest_error->("Unable to create dest socket to $dhostip:$dport for $dpath");
     $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen\r\n\r\n")
-        or return $dest_error->("Unable to write data to $dpath on $dhost:$dport");
-    return $dest_error->("Pipe closed during write to $dpath on $dhost:$dport")
+        or return $dest_error->("Unable to write data to $dpath on $dhostip:$dport");
+    return $dest_error->("Pipe closed during write to $dpath on $dhostip:$dport")
         if $pipe_closed;
 
     # now read data and print while we're reading.
@@ -612,9 +612,9 @@ sub http_copy {
     my $line = <$dsock>;
     if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
         return 1 if $1 >= 200 && $1 <= 299;
-        return $dest_error->("Got HTTP status code $1 PUTing to http://$dhost:$dport$dpath");
+        return $dest_error->("Got HTTP status code $1 PUTing to http://$dhostip:$dport$dpath");
     } else {
-        return $dest_error->("Error: HTTP response line not recognized writing to http://$dhost:$dport$dpath: $line");
+        return $dest_error->("Error: HTTP response line not recognized writing to http://$dhostip:$dport$dpath: $line");
     }
 }
 
