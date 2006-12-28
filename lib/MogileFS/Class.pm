@@ -76,4 +76,14 @@ sub mindevcounts {
     return \%min;
 }
 
+sub class_id {
+    my ($class, $dmid, $classname) = @_;
+    return undef unless $dmid > 0 && length $classname;
+
+    my $dbh = Mgd::get_dbh();
+    my $classid = $dbh->selectrow_array
+        ("SELECT classid FROM class WHERE dmid=? AND classname=?", undef, $dmid, $classname);
+    return $classid;
+}
+
 1;

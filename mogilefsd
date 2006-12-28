@@ -383,18 +383,6 @@ sub key_filerow {
     return $row;
 }
 
-sub class_id {
-    my ($dmid, $class) = @_;
-    return undef unless $dmid > 0 && length $class;
-
-    my $dbh = Mgd::get_dbh;
-    my $classid = $dbh->selectrow_array
-        ("SELECT classid FROM class WHERE dmid=? AND classname=?", undef, $dmid, $class)
-            or return undef;
-    return undef unless $classid;
-    return $classid;
-}
-
 sub hostid_classes {
     my $dmid = shift;
     return undef unless $dmid > 0;

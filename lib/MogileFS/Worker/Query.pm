@@ -733,7 +733,7 @@ sub cmd_create_class {
     my $dmid = Mgd::domain_id($domain);
     return $self->err_line('no_domain') unless $dmid;
 
-    my $cid = Mgd::class_id($dmid, $class);
+    my $cid = MogileFS::Class->class_id($dmid, $class);
     if ($args->{update}) {
         return $self->err_line('class_not_found') if ! $cid;
     } else {
@@ -784,7 +784,7 @@ sub cmd_delete_class {
     my $dmid = Mgd::domain_id($domain);
     return $self->err_line('domain_not_found') unless $dmid;
 
-    my $cid = Mgd::class_id($dmid, $class);
+    my $cid = MogileFS::Class->class_id($dmid, $class);
     return $self->err_line('class_not_found') unless $cid;
 
     # and ensure it has no files (fast: key based)
