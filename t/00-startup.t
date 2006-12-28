@@ -23,7 +23,7 @@ require 't/lib/mogtestlib.pl';
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 32;
+    plan tests => 43;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
@@ -189,9 +189,6 @@ ok(try_for(15, sub {
 
 # kill hostB now
 ok($tmptrack->mogadm("host", "delete", "hostB"), "killed hostB");
-
-sleep(25);
-pass("pass?");
 
 
 # enable fsck (job already running, but waiting for config update)
