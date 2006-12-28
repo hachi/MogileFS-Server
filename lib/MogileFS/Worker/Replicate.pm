@@ -359,7 +359,7 @@ sub replicate {
     };
 
     # hashref of devid -> $device_row_href  (where devid is alive)
-    my $devs = Mgd::get_device_summary();
+    my $devs = MogileFS::Device->map;
     return $retunlock->(0, "no_devices", "Device information from get_device_summary is empty")
         unless $devs && %$devs;
 
@@ -378,7 +378,7 @@ sub replicate {
     while (my ($devid) = $sth->fetchrow_array) {
         my $d = $devs->{$devid};
         push @on_devs, $d;
-        unless ($d && $d->{status} =~ /^alive|readonly$/) {
+        unless ($d && $d->status =~ /^alive|readonly$/) {
             push @dead_devid, $devid;
             next;
         }
@@ -421,7 +421,7 @@ sub replicate {
 
         # replication policy shouldn't tell us to put a file on a
         # device that it's already on.  that's just stupid.
-        if (grep { $_->{devid} == $ddevid } @on_devs) {
+        if (grep { $_->id == $ddevid } @on_devs) {
             return $retunlock->(0, "policy_error_already_there",
                                 "replication policy told us to put fid $fid on dev $ddevid, but it's already there!");
         }
@@ -528,16 +528,17 @@ sub http_copy {
     };
 
     # get some information we'll need
-    my $devs = Mgd::get_device_summary();
-    my ($sdev, $ddev) = ($devs->{$sdevid}, $devs->{$ddevid});
-    return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid")
-        unless ref $sdev && ref $ddev;
+    my $sdev = MogileFS::Device->of_devid($sdevid);
+    my $ddev = MogileFS::Device->of_devid($ddevid);
 
-    my $s_dfid = MogileFS::DevFID->new($sdevid, $fid);
-    my $d_dfid = MogileFS::DevFID->new($ddevid, $fid);
+    return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid")
+        unless $sdev && $ddev && $sdev->exists && $ddev->exists;
+
+    my $s_dfid = MogileFS::DevFID->new($sdev, $fid);
+    my $d_dfid = MogileFS::DevFID->new($ddev, $fid);
 
     my ($spath, $dpath) = (map { $_->uri_path } ($s_dfid, $d_dfid));
-    my ($shost, $dhost) = (map { MogileFS::Host->of_hostid($_->{hostid}) } ($sdev, $ddev));
+    my ($shost, $dhost) = (map { $_->host     } ($sdev, $ddev));
 
     my ($shostip, $sport) = ($shost->ip, $shost->http_port);
     my ($dhostip, $dport) = ($dhost->ip, $dhost->http_port);

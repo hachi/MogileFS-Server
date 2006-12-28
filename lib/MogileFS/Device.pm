@@ -119,6 +119,26 @@ sub find_deviceid {
     return wantarray ? @list : shift(@list);
 }
 
+# returns array of all MogileFS::Device objects
+sub devices {
+    my $class = shift;
+    # get a current list of devices
+    my $devs = Mgd::get_device_summary();
+    return
+        map { MogileFS::Device->of_devid($_->{devid}) }
+        values %$devs;
+}
+
+# returns hashref of devid -> $device_obj
+sub map {
+    my $class = shift;
+    my $ret = {};
+    foreach my $d (MogileFS::Device->devices) {
+        $ret->{$d->id} = $d;
+    }
+    return $ret;
+}
+
 # --------------------------------------------------------------------------
 
 sub devid { return $_[0]{devid} }
@@ -263,16 +283,6 @@ sub dead_devices {
     return
         map { MogileFS::Device->of_devid($_->{devid}) }
         grep { $_->{status} eq "dead" }
-        values %$devs;
-}
-
-# returns array of all MogileFS::Device objects
-sub devices {
-    my $class = shift;
-    # get a current list of devices
-    my $devs = Mgd::get_device_summary();
-    return
-        map { MogileFS::Device->of_devid($_->{devid}) }
         values %$devs;
 }
 

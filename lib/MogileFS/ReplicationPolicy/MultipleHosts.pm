@@ -29,8 +29,8 @@ sub replicate_to {
     my %on_dev;
     my %on_host;
     foreach my $dev (@$on_devs) {
-        $on_host{$dev->{hostid}} = 1;
-        $on_dev{$dev->{devid}} = 1;
+        $on_host{$dev->hostid} = 1;
+        $on_dev{$dev->id} = 1;
     }
     my $uniq_hosts_on    = scalar keys %on_host;
     my $total_uniq_hosts = unique_hosts($all_devs);
@@ -58,8 +58,8 @@ sub unique_hosts {
     my %host;  # hostid -> 1
     foreach my $devid (keys %$devs) {
         my $dev = $devs->{$devid};
-        next unless $dev->{status} =~ /^alive|readonly$/;
-        $host{$dev->{hostid}}++;
+        next unless $dev->status =~ /^alive|readonly$/;
+        $host{$dev->hostid}++;
     }
     return scalar keys %host;
 }

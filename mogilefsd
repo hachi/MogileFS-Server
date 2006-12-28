@@ -189,7 +189,7 @@ sub log {
 ### S E R V E R   A P I   F U N C T I O N S
 #####################################################################
 
-# returns hashref of devid -> $device_row_href  (where devid is alive/down, but not dead)
+# returns hashref of devid -> $device_obj
 # cached for 15 seconds.
 use vars qw($cache_device_summary $cache_device_summary_time);
 
@@ -197,7 +197,7 @@ sub get_device_summary {
     my $now = time;
     return $cache_device_summary if $cache_device_summary_time > $now - DEVICE_SUMMARY_CACHE_TIMEOUT;
 
-    my $dbh = get_dbh();
+    my $dbh = Mgd::get_dbh();
 
     # learn devices
     my %dev;  #
