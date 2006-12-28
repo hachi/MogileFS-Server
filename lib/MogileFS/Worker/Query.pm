@@ -141,7 +141,7 @@ sub check_domain {
     return $self->err_line("no_domain") unless length($args->{domain});
 
     # validate domain
-    my $dmid = Mgd::domain_id($args->{domain}) or
+    my $dmid = MogileFS::Domain->id_of_name($args->{domain}) or
         return $self->err_line("unreg_domain");
 
     return $dmid;
@@ -665,7 +665,7 @@ sub cmd_create_domain {
 
     # FIXME: add some sort of authentication/limitation on this?
 
-    my $dmid = Mgd::domain_id($domain);
+    my $dmid = MogileFS::Domain->id_of_name($domain);
     return $self->err_line('domain_exists') if $dmid;
 
     # get the max domain id
@@ -688,7 +688,7 @@ sub cmd_delete_domain {
 
     # FIXME: add some sort of authentication/limitation on this?
 
-    my $dmid = Mgd::domain_id($domain);
+    my $dmid = MogileFS::Domain->id_of_name($domain);
     return $self->err_line('domain_not_found') unless $dmid;
 
     # ensure it has no classes
@@ -731,7 +731,7 @@ sub cmd_create_class {
 
     # FIXME: add some sort of authentication/limitation on this?
 
-    my $dmid = Mgd::domain_id($domain);
+    my $dmid = MogileFS::Domain->id_of_name($domain);
     return $self->err_line('no_domain') unless $dmid;
 
     my $cid = MogileFS::Class->class_id($dmid, $class);
@@ -782,7 +782,7 @@ sub cmd_delete_class {
 
     # FIXME: add some sort of authentication/limitation on this?
 
-    my $dmid = Mgd::domain_id($domain);
+    my $dmid = MogileFS::Domain->id_of_name($domain);
     return $self->err_line('domain_not_found') unless $dmid;
 
     my $cid = MogileFS::Class->class_id($dmid, $class);

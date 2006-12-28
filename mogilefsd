@@ -52,6 +52,7 @@ use MogileFS::Class;
 use MogileFS::Device;
 use MogileFS::Host;
 use MogileFS::FID;
+use MogileFS::Domain;
 
 use MogileFS::ReplicationPolicy::MultipleHosts;
 
@@ -62,8 +63,6 @@ use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 use constant SCHEMA_VERSION => 7;
 
 our $starttime = time(); # time we got going
-our %domaincache; # { domainname => { domainrow } }
-our $domaincachetime = 0;
 our $client_ip = undef; # client ip address
 our $force_alt_zone = 0; # if on, force to use alternate zone (if it's defined)
 
@@ -321,12 +320,7 @@ sub invalidate_class_cache {
 }
 
 sub invalidate_domain_cache {
-    $domaincachetime = 0;
-    %domaincache = ();
-
-    if (my $worker = MogileFS::ProcManager->is_child) {
-        $worker->invalidate_meta("domain");
-    }
+    MogileFS::Domain->invalidate_cache;
 }
 
 sub invalidate_device_cache {
@@ -375,28 +369,6 @@ sub check_host_cache {
     reload_host_cache();
 }
 
-sub domain_id {
-    my $domain = $_[0];
-
-    # reload the cache if time is up, or if cache is empty for requested item
-    my $now = time();
-    if ($domaincachetime + 5 < $now || ! $domaincache{$domain}) {
-        %domaincache = ();
-
-        # now get updated list
-        my $dbh = Mgd::get_dbh;
-        my $domains = $dbh->selectall_arrayref('SELECT dmid, namespace FROM domain');
-        foreach my $row (@{$domains || []}) {
-            # namespace -> dmid
-            $domaincache{$row->[1]} = $row->[0];
-        }
-
-        $domaincachetime = $now;
-    }
-
-    # just use cached version
-    return $domaincache{$domain};
-}
 
 sub class_name {
     my ($dmid, $classid) = @_;
