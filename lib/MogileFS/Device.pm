@@ -37,6 +37,88 @@ sub vivify_directories {
     $dev->create_directory("/dev$devid/$p1/$p2/$p3");
 }
 
+# general purpose device locator.  example:
+#
+# my $devid = MogileFS::Device->find_deviceid(
+#     random => 1,              # get random device (else find first suitable)
+#     min_free_space => 100,    # with at least 100MB free
+#     weight_by_free => 1,      # find result weighted by free space
+#     max_disk_age => 5,        # minutes of age the last usage report can be before we ignore the disk
+#     not_on_hosts => [ 1, 2 ], # no devices on hosts 1 and 2
+#     must_be_alive => 1,       # if specified, device/host must be writeable (fully available)
+# );
+#
+# returns undef if no suitable device was found.  else, if you wanted an
+# array will return an array of the suitable devices--if you want just a
+# single item, you get just the first one found.
+sub find_deviceid {
+    my $class = shift;
+    my %opts = ( @_ );
+
+    # validate we're getting called with known parameters
+    my %valid_keys = map { $_ => 1 } qw( random min_free_space weight_by_free max_disk_age not_on_hosts must_be_writeable must_be_readable );
+    warn "invalid key $_ in call to find_deviceid\n"
+        foreach grep { ! $valid_keys{$_} } keys %opts;
+
+    # copy down global minimum free space if not specified
+    $opts{min_free_space} ||= MogileFS->config("min_free_space");
+    $opts{max_disk_age}   ||= MogileFS->config("max_disk_age");
+    if ($opts{max_disk_age}) {
+        $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
+    }
+    $opts{must_be_alive} = 1 unless defined $opts{must_be_alive};
+
+    # setup for iterating over devices
+    my $devs = Mgd::get_device_summary();
+    my @devids = keys %{$devs || {}};
+    my $devcount = scalar(@devids);
+    my $start = $opts{random} ? int(rand($devcount)) : 0;
+    my %not_on_host = ( map { $_ => 1 } @{$opts{not_on_hosts} || []} );
+    my $total_free = 0;
+
+    # now find a device that matches what they want
+    my @list;
+    for (my $i = 0; $i < $devcount; $i++) {
+        my $idx = ($i + $start) % $devcount;
+        my $dev = $devs->{$devids[$idx]};
+        my $devo = MogileFS::Device->of_devid($dev->{devid});
+        my $hosto = $devo->host or next;
+
+        # series of suitability checks
+        next unless $devo->is_marked_alive;
+        next if $not_on_host{$dev->{hostid}};
+        next if $opts{max_disk_age} && $dev->{mb_asof} &&
+                $dev->{mb_asof} < $opts{max_disk_age};
+        next if $opts{min_free_space} && $dev->{mb_total} &&
+                $dev->{mb_free} < $opts{min_free_space};
+
+        if ($opts{must_be_writeable}) {
+            next unless $hosto->observed_reachable;
+            next unless $devo->observed_writeable;
+        } elsif ($opts{must_be_readable}) {
+            next unless $hosto->observed_reachable;
+            next unless $devo->observed_readable;
+        }
+
+        # we get here, this is a suitable device
+        push @list, $dev->{devid};
+        $total_free += $dev->{mb_free};
+    }
+
+    # now we have a list ordered randomly, do free space weighting
+    if ($opts{weight_by_free}) {
+        my $rand = int(rand($total_free));
+        my $cur = 0;
+        foreach my $devid (@list) {
+            $cur += $devs->{$devid}->{mb_free};
+            return $devid if $cur >= $rand;
+        }
+    }
+
+    # return whole list if wanting array, else just first item
+    return wantarray ? @list : shift(@list);
+}
+
 # --------------------------------------------------------------------------
 
 sub devid { return $_[0]{devid} }

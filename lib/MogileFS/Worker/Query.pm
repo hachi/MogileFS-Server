@@ -225,12 +225,12 @@ sub cmd_create_open {
 
     $profstart->("find_deviceid");
     while (scalar(@dests) < ($multi ? 3 : 1)) {
-        my $devid = Mgd::find_deviceid(
-                                       random           => 1,
-                                       must_be_writeable => 1,
-                                       weight_by_free   => 1,
-                                       not_on_hosts     => \@hosts,
-                                       );
+        my $devid = MogileFS::Device->find_deviceid(
+                                                    random           => 1,
+                                                    must_be_writeable => 1,
+                                                    weight_by_free   => 1,
+                                                    not_on_hosts     => \@hosts,
+                                                    );
         last unless defined $devid;
 
         push @dests, $devid;

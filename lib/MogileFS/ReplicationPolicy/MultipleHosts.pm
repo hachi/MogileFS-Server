@@ -43,11 +43,11 @@ sub replicate_to {
     }
 
     my @good_devids = grep { ! $failed->{$_} && ! $on_dev{$_} }
-            Mgd::find_deviceid(
-                               random         => 1,
-                               not_on_hosts   => $not_on_hosts,
-                               weight_by_free => 1,
-                               );
+            MogileFS::Device->find_deviceid(
+                                            random         => 1,
+                                            not_on_hosts   => $not_on_hosts,
+                                            weight_by_free => 1,
+                                            );
 
     return undef unless @good_devids;
     return $good_devids[0];
