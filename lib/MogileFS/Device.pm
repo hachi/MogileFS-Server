@@ -89,9 +89,10 @@ sub create_directory {
     next if $dir_made{$uri};
 
     my $hostid = $self->hostid;
-    my $host = Mgd::hostid_ip($hostid)         or return 0;
-    my $port = Mgd::hostid_http_port($hostid)  or return 0;
-    my $peer = "$host:$port";
+    my $host   = $self->host;
+    my $hostip = $host->ip        or return 0;
+    my $port   = $host->http_port or return 0;
+    my $peer = "$hostip:$port";
 
     my $sock = IO::Socket::INET->new(PeerAddr => $peer, Timeout => 1)
         or next;
