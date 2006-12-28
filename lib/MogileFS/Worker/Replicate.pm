@@ -532,9 +532,11 @@ sub http_copy {
     my ($sdev, $ddev) = ($devs->{$sdevid}, $devs->{$ddevid});
     return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid")
         unless ref $sdev && ref $ddev;
-    my ($spath, $dpath) = (Mgd::make_http_path($sdevid, $fid),
-                           Mgd::make_http_path($ddevid, $fid));
 
+    my $s_dfid = MogileFS::DevFID->new($sdevid, $fid);
+    my $d_dfid = MogileFS::DevFID->new($ddevid, $fid);
+
+    my ($spath, $dpath) = (map { $_->uri_path } ($s_dfid, $d_dfid));
     my ($shost, $dhost) = (map { MogileFS::Host->of_hostid($_->{hostid}) } ($sdev, $ddev));
 
     my ($shostip, $sport) = ($shost->ip, $shost->http_port);

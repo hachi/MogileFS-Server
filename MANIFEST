@@ -5,6 +5,7 @@ lib/MogileFS/Class.pm
 lib/MogileFS/Device.pm
 lib/MogileFS/Host.pm
 lib/MogileFS/FID.pm
+lib/MogileFS/DevFID.pm
 lib/MogileFS/Domain.pm
 lib/MogileFS/HTTPFile.pm
 lib/MogileFS/IOStatWatcher.pm

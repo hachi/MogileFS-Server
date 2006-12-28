@@ -287,8 +287,8 @@ sub cmd_create_open {
     # make sure directories exist for client to be able to PUT into
     foreach my $devid (@dests) {
         $profstart->("vivify_dir_on_dev$devid");
-        my $path = Mgd::make_path($devid, $fid);
-        MogileFS::Device->vivify_directories($path);
+        my $dfid = MogileFS::DevFID->new($devid, $fid);
+        $dfid->vivify_directories;
     }
 
     $profstart->("end");
@@ -316,12 +316,12 @@ sub cmd_create_open {
         foreach my $devid (@dests) {
             $ct++;
             $res->{"devid_$ct"} = $devid;
-            $res->{"path_$ct"} = Mgd::make_path($devid, $fid);
+            $res->{"path_$ct"} = MogileFS::DevFID->new($devid, $fid)->url;
         }
         $res->{dev_count} = $ct;
     } else {
         $res->{devid} = $dests[0];
-        $res->{path}  = Mgd::make_path($dests[0], $fid);
+        $res->{path}  = MogileFS::DevFID->new($res->{devid}, $fid)->url;
     }
 
     return $self->ok_line($res);
@@ -339,15 +339,17 @@ sub cmd_create_close {
     MogileFS::run_global_hook('cmd_create_close', $args);
 
     # late validation of parameters
-    my $dmid = $args->{dmid};
-    my $key = $args->{key};
-    my $fid = $args->{fid} or return $self->err_line("no_fid");
-    my $devid = $args->{devid} or return $self->err_line("no_devid");
-    my $path = $args->{path} or return $self->err_line("no_path");
+    my $dmid  = $args->{dmid};
+    my $key   = $args->{key};
+    my $fid   = $args->{fid}    or return $self->err_line("no_fid");
+    my $devid = $args->{devid}  or return $self->err_line("no_devid");
+    my $path  = $args->{path}   or return $self->err_line("no_path");
+
+    my $dfid = MogileFS::DevFID->new($devid, $fid);
 
     # is the provided path what we'd expect for this fid/devid?
     return $self->err_line("bogus_args")
-        unless $path eq Mgd::make_path($devid, $fid);
+        unless $path eq $dfid->url;
 
     # get DB handle
     my $dbh = Mgd::get_dbh() or
@@ -985,8 +987,8 @@ sub cmd_get_paths {
         my $devo = MogileFS::Device->of_devid($dev->{devid});
         my $hosto = $devo->host;
         next unless $devo && $hosto;
-
-        my $path = Mgd::make_get_path($devid, $fidid);
+        my $dfid = MogileFS::DevFID->new($devo, $fid);
+        my $path = $dfid->get_url;
         my $currently_down =
             $hosto->observed_unreachable || $devo->observed_unreachable;
 
@@ -999,7 +1001,7 @@ sub cmd_get_paths {
         next unless
             $ret->{paths}        ||
             $args->{noverify}    ||
-            MogileFS::HTTPFile->at($path)->size == $fid->length;
+            $dfid->size_matches;
 
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;

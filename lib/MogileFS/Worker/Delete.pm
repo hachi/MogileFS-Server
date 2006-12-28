@@ -192,12 +192,14 @@ sub process_deletes {
             next;
         }
 
-        my $path = Mgd::make_path($devid, $fid);
+        my $dfid = MogileFS::DevFID->new($dev, $fid);
+        my $path = $dfid->url;
 
-        # dormando: "There are cases where make_path can return undefined,
-        # Mogile appears to try to replicate to bogus devices sometimes?"
+        # dormando: "There are cases where url can return undefined,
+        # Mogile appears to try to replicate to bogus devices
+        # sometimes?"
         unless ($path) {
-            error("in deleter, make_path(devid=$devid, fid=$fid) returned nothing");
+            error("in deleter, url(devid=$devid, fid=$fid) returned nothing");
             next;
         }
 

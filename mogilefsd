@@ -53,6 +53,7 @@ use MogileFS::Device;
 use MogileFS::Host;
 use MogileFS::FID;
 use MogileFS::Domain;
+use MogileFS::DevFID;
 
 use MogileFS::ReplicationPolicy::MultipleHosts;
 
@@ -256,45 +257,6 @@ sub set_force_altzone {
 sub set_client_ip {
     my $ip = shift;
     $client_ip = $ip;
-}
-
-sub make_http_path {
-    my ($devid, $fid) = @_;
-
-    my $dsum = get_device_summary();
-    my $dinfo = $dsum->{$devid};
-    return undef unless $dinfo;
-
-    my $nfid = sprintf '%010d', $fid;
-    my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
-
-    return "/dev$devid/$b/$mmm/$ttt/$nfid.fid";
-}
-
-sub make_full_url {
-    # set use_get_port to be true to specify to use the get port
-    my ($devid, $fid, $use_get_port) = @_;
-
-    # get some information we'll need
-    my $devs = Mgd::get_device_summary();
-    my $dev = $devs->{$devid} or return undef;
-
-    my $host = MogileFS::Host->of_hostid($dev->{hostid});
-    return undef unless $host && $host->exists;
-
-    my $path   = Mgd::make_http_path($devid, $fid) or return undef;
-    my $hostip = $host->ip;
-    my $port   = $use_get_port ? $host->http_get_port : $host->http_port;
-
-    return "http://$hostip:$port$path";
-}
-
-sub make_path {
-    return Mgd::make_full_url(@_);
-}
-
-sub make_get_path {
-    return Mgd::make_full_url(@_, 1);
 }
 
 sub check_database {

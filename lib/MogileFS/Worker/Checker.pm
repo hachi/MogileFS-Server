@@ -204,7 +204,8 @@ sub check_fid {
         # setup and do the request.  these failures are total failures in that we expect
         # them to work again later, as it's probably transient and will persist no matter
         # how many paths we try.
-        my $path = Mgd::make_http_path($devid, $fid)
+        my $dfid = MogileFS::DevFID->new($devid, $fid);
+        my $path = $dfid->get_url
             or return $retunlock->(TEMPORARY, 'failure to create HTTP path to file');
         my $ua = LWP::UserAgent->new(timeout => 3)
             or return $retunlock->(TEMPORARY, 'failed to create LWP::UserAgent object');
