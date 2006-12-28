@@ -3,7 +3,9 @@ use strict;
 use warnings;
 use Carp qw(croak);
 
-my %singleton;  # devid -> instance
+my %singleton;      # devid -> instance
+my $last_load = 0;  # unixtime we last reloaded devices from database
+my $all_loaded = 0; # bool: have we loaded all the devices?
 
 sub of_devid {
     my ($class, $devid) = @_;
@@ -11,6 +13,7 @@ sub of_devid {
     return $singleton{$devid} ||= bless {
         devid    => $devid,
         no_mkcol => 0,
+        _loaded  => 0,
     }, $class;
 }
 
@@ -69,8 +72,8 @@ sub find_deviceid {
     $opts{must_be_alive} = 1 unless defined $opts{must_be_alive};
 
     # setup for iterating over devices
-    my $devs = Mgd::get_device_summary();
-    my @devids = keys %{$devs || {}};
+    my $devs = MogileFS::Device->map;
+    my @devids = keys %$devs;
     my $devcount = scalar(@devids);
     my $start = $opts{random} ? int(rand($devcount)) : 0;
     my %not_on_host = ( map { $_ => 1 } @{$opts{not_on_hosts} || []} );
@@ -81,23 +84,22 @@ sub find_deviceid {
     for (my $i = 0; $i < $devcount; $i++) {
         my $idx = ($i + $start) % $devcount;
         my $dev = $devs->{$devids[$idx]};
-        my $devo = MogileFS::Device->of_devid($dev->{devid});
-        my $hosto = $devo->host or next;
+        my $host = $dev->host or next;
 
         # series of suitability checks
-        next unless $devo->is_marked_alive;
+        next unless $dev->is_marked_alive;
         next if $not_on_host{$dev->{hostid}};
         next if $opts{max_disk_age} && $dev->{mb_asof} &&
-                $dev->{mb_asof} < $opts{max_disk_age};
+            $dev->{mb_asof} < $opts{max_disk_age};
         next if $opts{min_free_space} && $dev->{mb_total} &&
                 $dev->{mb_free} < $opts{min_free_space};
 
         if ($opts{must_be_writeable}) {
-            next unless $hosto->observed_reachable;
-            next unless $devo->observed_writeable;
+            next unless $host->observed_reachable;
+            next unless $dev->observed_writeable;
         } elsif ($opts{must_be_readable}) {
-            next unless $hosto->observed_reachable;
-            next unless $devo->observed_readable;
+            next unless $host->observed_reachable;
+            next unless $dev->observed_readable;
         }
 
         # we get here, this is a suitable device
@@ -122,11 +124,8 @@ sub find_deviceid {
 # returns array of all MogileFS::Device objects
 sub devices {
     my $class = shift;
-    # get a current list of devices
-    my $devs = Mgd::get_device_summary();
-    return
-        map { MogileFS::Device->of_devid($_->{devid}) }
-        values %$devs;
+    MogileFS::Device->check_cache;
+    return values %singleton;
 }
 
 # returns hashref of devid -> $device_obj
@@ -139,10 +138,95 @@ sub map {
     return $ret;
 }
 
+sub reload_devices {
+    my $class = shift;
+
+    # mark them all invalid for now, until they're reloaded
+    foreach my $dev (values %singleton) {
+        $dev->{_loaded} = 0;
+    }
+
+    MogileFS::Host->check_cache;
+
+    my $dbh = Mgd::get_dbh();
+    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
+                            "mb_used, mb_asof, status, weight FROM device");
+    $sth->execute;
+    while (my $row = $sth->fetchrow_hashref) {
+        my $dev =
+            MogileFS::Device->of_devid($row->{devid});
+        $dev->absorb_dbrow($row);
+    }
+
+    # get rid of ones that could've gone away:
+    foreach my $devid (keys %singleton) {
+        my $dev = $singleton{$devid};
+        delete $singleton{$devid} unless $dev->{_loaded}
+    }
+
+    $all_loaded = 1;
+    $last_load  = time();
+}
+
+sub invalidate_cache {
+    my $class = shift;
+
+    # so next time it's invalid and won't be used old
+    $last_load    = 0;
+    $all_loaded   = 0;
+    $_->{_loaded} = 0 foreach values %singleton;
+
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->invalidate_meta("device");
+    }
+}
+
+sub check_cache {
+    my $class = shift;
+    my $now = time();
+    return if $last_load > $now - 5;
+    MogileFS::Device->reload_devices;
+}
+
 # --------------------------------------------------------------------------
 
 sub devid { return $_[0]{devid} }
 sub id    { return $_[0]{devid} }
+
+sub absorb_dbrow {
+    my ($dev, $hashref) = @_;
+    foreach my $k (qw(hostid mb_total mb_used mb_asof status weight)) {
+        $dev->{$k} = $hashref->{$k};
+    }
+
+    $dev->{$_} ||= 0 foreach qw(mb_total mb_used mb_asof);
+
+    # makes others have an easier time of finding devices by free space
+    # FIXME: this should just be an accessor nowadays, not pre-calced
+    $dev->{mb_free} = $dev->{mb_total} - $dev->{mb_used};
+
+    my $host = MogileFS::Host->of_hostid($dev->{hostid});
+    unless ($host && $host->exists) {
+        if ($dev->{status} eq "dead") {
+            # ignore dead devices without hosts.  not a big deal.
+            next;
+        } else {
+            die "No host for dev $dev->{devid} (host $dev->{hostid})";
+        }
+    }
+
+    my $host_status = $host->status;
+    die "No status" unless $host_status =~ /^\w+$/;
+
+    # FIXME: not sure I like this, changing the in-memory version
+    # of the configured status is.  I'd rather this be calculated
+    # in an accessor.
+    if ($dev->{status} eq 'alive' && $host_status ne 'alive') {
+        $dev->{status} = "down"
+    }
+
+    $dev->{_loaded} = 1;
+}
 
 sub set_observed_state {
     my ($dev, $state) = @_;
@@ -171,17 +255,15 @@ sub observed_unreachable {
 }
 
 sub status {
-    my $self = shift;
-    my $dsum = Mgd::get_device_summary();
-    my $disk = $dsum->{$self->{devid}} or return;
-    return $disk->{status};
+    my $dev = shift;
+    $dev->_load;
+    return $dev->{status};
 }
 
 sub weight {
-    my $self = shift;
-    my $dsum = Mgd::get_device_summary();
-    my $disk = $dsum->{$self->{devid}} or return;
-    return $disk->{weight};
+    my $dev = shift;
+    $dev->_load;
+    return $dev->{weight};
 }
 
 sub is_marked_alive {
@@ -205,31 +287,20 @@ sub is_marked_readonly {
 }
 
 sub exists {
-    my $self = shift;
-    my $dsum = Mgd::get_device_summary();
-    return 1 if $dsum->{$self->{devid}};
-    # be damn careful to never return 0 (doesn't exist) when it could just
-    # be really new and not yet in cache
-    my $dbh = Mgd::get_dbh();
-    my $exists = $dbh->selectall_hashref("SELECT devid FROM device", "devid");
-    MogileFS::Util::dbcheck($dbh, "failed to lookup devices");
-    return 0 unless $exists->{$self->{devid}};
-    Mgd::invalidate_device_cache();
-    return 1;
+    my $dev = shift;
+    $dev->_try_load;
+    return $dev->{_loaded};
 }
 
 sub host {
-    my $self = shift;
-    my $hostid = $self->hostid
-        or return undef;
-    return MogileFS::Host->of_hostid($hostid);
+    my $dev = shift;
+    return MogileFS::Host->of_hostid($dev->hostid);
 }
 
 sub hostid {
-    my $self = shift;
-    my $dsum = Mgd::get_device_summary();
-    my $disk = $dsum->{$self->{devid}} or return 0;
-    return $disk->{hostid};
+    my $dev = shift;
+    $dev->_load;
+    return $dev->{hostid};
 }
 
 sub doesnt_know_mkcol {
@@ -285,12 +356,9 @@ sub create_directory {
 # returns array of MogileFS::Device objects which are in state 'dead'.
 sub dead_devices {
     my $class = shift;
-    # get a current list of devices
-    my $devs = Mgd::get_device_summary();
     return
-        map { MogileFS::Device->of_devid($_->{devid}) }
-        grep { $_->{status} eq "dead" }
-        values %$devs;
+        grep { $_->status eq "dead" }
+        MogileFS::Device->devices;
 }
 
 sub fid_list {
@@ -327,16 +395,29 @@ sub usage_url {
 
 sub overview_hashref {
     my $dev = shift;
-
-    my $devs = Mgd::get_device_summary();
-    my $sum  = $devs->{$dev->id} or
-        return undef;
+    $dev->_load;
 
     my $ret = {};
-    foreach my $k (qw(devid hostid mb_total mb_used mb_asof status weight)) {
-        $ret->{$k} = $sum->{$k};
+    foreach my $k (qw(devid hostid status weight
+                      mb_total mb_used mb_asof mb_free)) {
+        $ret->{$k} = $dev->{$k};
     }
     return $ret;
+}
+
+# --------------------------------------------------------------------------
+
+sub _load {
+    return if $_[0]{_loaded};
+    MogileFS::Device->reload_devices;
+    return if $_[0]{_loaded};
+    my $dev = shift;
+    croak "Device $dev->{devid} doesn't exist.\n";
+}
+
+sub _try_load {
+    return if $_[0]{_loaded};
+    MogileFS::Device->reload_devices;
 }
 
 1;

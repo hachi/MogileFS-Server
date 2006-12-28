@@ -40,6 +40,11 @@ sub monitor_has_run {
     return $self->{monitor_has_run} ? 1 : 0;
 }
 
+sub forget_that_monitor_has_run {
+    my $self = shift;
+    $self->{monitor_has_run} = 0;
+}
+
 sub wait_for_monitor {
     my $self = shift;
     while (! $self->monitor_has_run) {

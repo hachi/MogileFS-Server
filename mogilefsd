@@ -189,65 +189,6 @@ sub log {
 ### S E R V E R   A P I   F U N C T I O N S
 #####################################################################
 
-# returns hashref of devid -> $device_obj
-# cached for 15 seconds.
-use vars qw($cache_device_summary $cache_device_summary_time);
-
-sub get_device_summary {
-    my $now = time;
-    return $cache_device_summary if $cache_device_summary_time > $now - DEVICE_SUMMARY_CACHE_TIMEOUT;
-
-    my $dbh = Mgd::get_dbh();
-
-    # learn devices
-    my %dev;  #
-    my %hostdevs;  # hostid -> [ devid ]  (where devid is alive/down, but not dead)
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
-                            "mb_used, mb_asof, status, weight FROM device");
-    $sth->execute;
-    my $row;
-    $dev{$row->{devid}} = $row while $row = $sth->fetchrow_hashref;
-
-    # now override device status with host status if the host status is less than the device status
-    MogileFS::Host->check_cache;
-
-    foreach my $devid (keys %dev) {
-        # makes others have an easier time of finding devices by free space
-        $dev{$devid}->{mb_free} = $dev{$devid}->{mb_total} - $dev{$devid}->{mb_used};
-
-        my $host = MogileFS::Host->of_hostid($dev{$devid}->{hostid});
-        unless ($host && $host->exists) {
-            if ($dev{$devid}->{status} eq "dead") {
-                # ignore dead devices without hosts.  not a big deal.
-                next;
-            } else {
-                die "No host for dev $devid (host $dev{$devid}->{hostid})";
-            }
-        }
-
-        my $host_status = $host->{status};
-        die "No status" unless $host_status =~ /^\w+$/;
-
-        if ($dev{$devid}->{status} eq 'alive' && $host_status ne 'alive') {
-            $dev{$devid}->{status} = $host_status;
-        } elsif ($dev{$devid}->{status} eq 'down' && $host_status eq 'dead') {
-            $dev{$devid}->{status} = $host_status;
-        }
-    }
-
-    $cache_device_summary_time = $now;
-    return $cache_device_summary = \%dev;
-}
-
-sub invalidate_device_cache {
-    # so next time it's invalid and won't be used old
-    $cache_device_summary_time = 0;
-    $cache_device_summary = undef;
-
-    if (my $worker = MogileFS::ProcManager->is_child) {
-        $worker->invalidate_meta("device");
-    }
-}
 
 sub set_force_altzone {
     my $val = shift;

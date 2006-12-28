@@ -65,12 +65,9 @@ sub _make_full_url {
     my ($self, $use_get_port) = @_;
 
     # get some information we'll need
-    my $devid = $self->{devid};
-    my $devs = Mgd::get_device_summary();
-    my $dev = $devs->{$devid} or return undef;
-
-    my $host = MogileFS::Host->of_hostid($dev->{hostid});
-    return undef unless $host && $host->exists;
+    my $dev  = $self->device   or return undef;
+    my $host = $dev->host      or return undef;
+    return undef unless $host->exists;
 
     my $path   = $self->uri_path;
     my $hostip = $host->ip;

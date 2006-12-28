@@ -58,6 +58,9 @@ sub work {
         $self->{seen_hosts} = {}; # IP -> 1
 
         # now iterate over devices
+        MogileFS::Device->invalidate_cache;
+        MogileFS::Host->invalidate_cache;
+
         foreach my $dev (MogileFS::Device->devices) {
             next if $dev->is_marked_dead || $dev->is_marked_down;
             next if $self->{skip_host}{$dev->hostid};

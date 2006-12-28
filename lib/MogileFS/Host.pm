@@ -4,9 +4,9 @@ use warnings;
 use Net::Netmask;
 use Carp qw(croak);
 
-my $all_loaded = 0;
-my %singleton;            # hostid -> instance
-my $cache_host_time = 0;  # unixtime of last 'reload_hosts'
+my %singleton;        # hostid -> instance
+my $last_load = 0;    # unixtime of last 'reload_hosts'
+my $all_loaded = 0;   # bool: have we loaded all the hosts?
 
 sub of_hostid {
     my ($class, $hostid) = @_;
@@ -36,12 +36,12 @@ sub of_hostname {
 }
 
 sub invalidate_cache {
-    my ($class) = @_;
+    my $class = shift;
 
     # so next time it's invalid and won't be used old
-    $cache_host_time = 0;
-    $all_loaded      = 0;
-    $_->{_loaded}    = 0 foreach values %singleton;
+    $last_load    = 0;
+    $all_loaded   = 0;
+    $_->{_loaded} = 0 foreach values %singleton;
 
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->invalidate_meta("host");
@@ -67,7 +67,6 @@ sub reload_hosts {
             MogileFS::Host->of_hostid($row->{hostid});
         $ho->absorb_dbrow($row);
     }
-    $cache_host_time = time();
 
     # get rid of ones that could've gone away:
     foreach my $hostid (keys %singleton) {
@@ -76,13 +75,14 @@ sub reload_hosts {
     }
 
     $all_loaded = 1;
+    $last_load = time();
 }
 
 # reload host objects if it hasn't been done in last 5 seconds
 sub check_cache {
     my $class = shift;
     my $now = time();
-    return if $cache_host_time > $now - 5;
+    return if $last_load > $now - 5;
     MogileFS::Host->reload_hosts;
 }
 

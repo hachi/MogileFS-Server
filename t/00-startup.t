@@ -23,7 +23,7 @@ require 't/lib/mogtestlib.pl';
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 43;
+    plan tests => 44;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
@@ -70,10 +70,8 @@ ok($tmptrack);
 ok($tmptrack->mogadm("domain", "add", "testdom"), "created test domain");
 ok($tmptrack->mogadm("class", "add", "testdom", "2copies", "--mindevcount=2"), "created 2copies class in testdom");
 
-
 ok($tmptrack->mogadm("host", "add", "hostA", "--ip=127.0.1.1", "--status=alive"), "created hostA");
 ok($tmptrack->mogadm("host", "add", "hostB", "--ip=127.0.1.2", "--status=alive"), "created hostB");
-
 
 ok($tmptrack->mogadm("device", "add", "hostA", 1), "created dev1 on hostA");
 ok($tmptrack->mogadm("device", "add", "hostA", 2), "created dev2 on hostA");
@@ -90,9 +88,12 @@ my $mogc = MogileFS::Client->new(
                                  hosts  => [ "127.0.0.1:7001" ],
                                  );
 
+# wait for monitor
+my $be = $mogc->{backend}; # gross, reaching inside of MogileFS::Client
+ok($be->do_request("do_monitor_round", {}), "waited for monitor");
+die $be->errstr if $be->err;
 
-sleep 3;  # sleep 3 seconds to wait for monitor to see devices are alive.
-
+# create one sample file
 my $fh = $mogc->new_file("file1", "2copies");
 ok($fh, "got filehandle");
 unless ($fh) {

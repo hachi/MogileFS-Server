@@ -158,7 +158,7 @@ sub cmd_clear_cache {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    Mgd::invalidate_device_cache()     if $args->{devices} || $args->{all};
+    MogileFS::Device->invalidate_cache if $args->{devices} || $args->{all};
     MogileFS::Host->invalidate_cache   if $args->{hosts}   || $args->{all};
     MogileFS::Class->invalidate_cache  if $args->{class}   || $args->{all};
     MogileFS::Domain->invalidate_cache if $args->{domain}  || $args->{all};
@@ -650,7 +650,7 @@ sub cmd_create_device {
     if ($dbh->err) {
         return $self->err_line("existing_devid");
     }
-    Mgd::invalidate_device_cache();
+    MogileFS::Device->invalidate_cache;
     return $self->ok_line;
 }
 
@@ -1042,7 +1042,7 @@ sub cmd_set_weight {
     return $self->err_line('failure') if $dbh->err;
 
     # success, weight changed
-    Mgd::invalidate_device_cache();
+    MogileFS::Device->invalidate_cache;
     return $self->ok_line($ret);
 }
 
@@ -1079,7 +1079,7 @@ sub cmd_set_state {
     return $self->err_line('failure') if $dbh->err;
 
     # success, state changed
-    Mgd::invalidate_device_cache();
+    MogileFS::Device->invalidate_cache;
     return $self->ok_line($ret);
 }
 
@@ -1234,6 +1234,14 @@ sub cmd_checker {
     }
 
     $self->err_line('failure');
+}
+
+sub cmd_do_monitor_round {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+    $self->forget_that_monitor_has_run;
+    $self->wait_for_monitor;
+    return $self->ok_line;
 }
 
 sub ok_line {
