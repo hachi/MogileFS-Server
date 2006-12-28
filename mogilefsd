@@ -503,16 +503,6 @@ sub make_get_path {
     return Mgd::make_full_url(@_, 1);
 }
 
-# if given an HTTP URL, break it down into [ host, port, URI ], else
-# returns die, because we don't support non-http-mode anymore
-sub is_url {
-    my $path = shift;
-    if ($path =~ m!^http://(.+?)(?::(\d+))?(/.+)$!) {
-        return [ $1, $2 || 80, $3 ];
-    }
-    Carp::croak("Bogus URL: $path");
-}
-
 sub check_database {
     my $dbh = Mgd::get_dbh();
     unless ($dbh) {

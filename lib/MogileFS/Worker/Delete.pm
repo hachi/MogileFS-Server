@@ -201,12 +201,12 @@ sub process_deletes {
             next;
         }
 
-        my $urlref = Mgd::is_url($path);
+        my $urlparts = MogileFS::Util::url_parts($path);
 
         # hit up the server and delete it
         # TODO: (optimization) use MogileFS->get_observed_state and don't try to delete things known to be down/etc
-        my $sock = IO::Socket::INET->new(PeerAddr => $urlref->[0],
-                                         PeerPort => $urlref->[1],
+        my $sock = IO::Socket::INET->new(PeerAddr => $urlparts->[0],
+                                         PeerPort => $urlparts->[1],
                                          Timeout => 2);
         unless ($sock) {
             # timeout or something, mark this device as down for now and move on
@@ -218,7 +218,7 @@ sub process_deletes {
         # send delete request
         error("Sending delete for $path") if $Mgd::DEBUG >= 2;
 
-        $sock->write("DELETE $urlref->[2] HTTP/1.0\r\n\r\n");
+        $sock->write("DELETE $urlparts->[2] HTTP/1.0\r\n\r\n");
         my $response = <$sock>;
         if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
             if (($1 >= 200 && $1 <= 299) || $1 == 404) {
