@@ -52,7 +52,7 @@ sub event_read {
 
     while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
         my $line = $1;
-        if ($self->job eq 'queryworker' && $line !~ /^(?:\:|error)/) {
+        if ($self->job eq 'queryworker' && $line !~ /^(?:\:|error|debug)/) {
             MogileFS::ProcManager->HandleQueryWorkerResponse($self, $line);
         } else {
             MogileFS::ProcManager->HandleChildRequest($self, $line);

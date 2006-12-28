@@ -515,6 +515,10 @@ sub HandleChildRequest {
         # pass it on to our error handler, prefaced with the child's job
         Mgd::error("[" . $child->job . "(" . $child->pid . ")] $1");
 
+    } elsif ($cmd =~ /^debug (.+)$/i) {
+        # pass it on to our error handler, prefaced with the child's job
+        Mgd::debug("[" . $child->job . "(" . $child->pid . ")] $1");
+
     } elsif ($cmd =~ /^:state_change (\w+) (\d+) (\w+)/) {
         my ($what, $whatid, $state) = ($1, $2, $3);
         state_change($what, $whatid, $state, $child);

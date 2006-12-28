@@ -5,7 +5,7 @@ use Time::HiRes;
 
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT_OK = qw(error fatal daemonize weighted_list every dbcheck);
+our @EXPORT_OK = qw(error debug fatal daemonize weighted_list every dbcheck);
 
 sub every {
     my ($delay, $code) = @_;
@@ -27,6 +27,18 @@ sub every {
         } else {
             Time::HiRes::sleep($sleep_for) if $sleep_for > 0;
         }
+    }
+}
+
+sub debug {
+    my ($msg, $level) = @_;
+    return unless $Mgd::DEBUG >= 1;
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->send_to_parent("debug $msg");
+    } else {
+        my $dbg = "[debug] $msg";
+        MogileFS::ProcManager->NoteError(\$dbg);
+        Mgd::log('debug', $msg);
     }
 }
 
