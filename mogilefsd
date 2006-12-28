@@ -375,14 +375,6 @@ sub check_host_cache {
     reload_host_cache();
 }
 
-sub key_filerow {
-    my ($dbh, $dmid, $key) = @_;
-    my $row = $dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
-                                      "FROM file WHERE dmid=? AND dkey=?",
-                                      undef, $dmid, $key);
-    return $row;
-}
-
 sub domain_id {
     my $domain = $_[0];
 

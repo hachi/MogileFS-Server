@@ -369,11 +369,11 @@ sub cmd_create_close {
     }
 
     # see if we have a fid for this key already
-    my $old_file = Mgd::key_filerow($dbh, $dmid, $key);
-    if ($old_file) {
+    my $old_fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key);
+    if ($old_fid) {
         # add to to-delete list
-        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_file->{fid});
-        $dbh->do("DELETE FROM file WHERE fid=?", undef, $old_file->{fid});
+        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_fid->id);
+        $dbh->do("DELETE FROM file WHERE fid=?", undef, $old_fid->id);
     }
 
     # get size of file and verify that it matches what we were given, if anything
@@ -954,10 +954,10 @@ sub cmd_get_paths {
     my $dbh = Mgd::get_dbh() or
         return $self->err_line("nodb");
 
-    my $filerow = Mgd::key_filerow($dbh, $dmid, $key);
-    return $self->err_line("unknown_key") unless $filerow;
+    my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
+        or return $self->err_line("unknown_key");
 
-    my $fid = $filerow->{fid};
+    my $fidid = $fid->id;
     my $dsum = Mgd::get_device_summary();
 
     my $ret = {
@@ -966,7 +966,7 @@ sub cmd_get_paths {
 
     # is this fid still owned by this key?
     my $devids = $dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
-                                          undef, $fid) || [];
+                                          undef, $fidid) || [];
 
     # randomly weight the devices
     my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dsum->{$_}->{weight} ?
@@ -980,7 +980,7 @@ sub cmd_get_paths {
         my $dev = $dsum->{$devid};
         next unless $dev && ($dev->{status} eq "alive" || $dev->{status} eq "readonly");
 
-        my $path = Mgd::make_get_path($devid, $fid);
+        my $path = Mgd::make_get_path($devid, $fidid);
         my $currently_down =
             MogileFS->observed_state("host", $dev->{hostid}) eq "unreachable" ||
             MogileFS->observed_state("device", $dev->{devid}) eq "unreachable";
@@ -994,7 +994,7 @@ sub cmd_get_paths {
         next unless
             $ret->{paths}        ||
             $args->{noverify}    ||
-            MogileFS::HTTPFile->at($path)->size == $filerow->{length};
+            MogileFS::HTTPFile->at($path)->size == $fid->length;
 
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;

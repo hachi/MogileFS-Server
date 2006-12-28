@@ -11,6 +11,26 @@ sub new {
     }, $class;
 }
 
+# quick port of old API.  perhaps not ideal.
+sub new_from_dmid_and_key {
+    my ($class, $dmid, $key) = @_;
+    my $dbh = Mgd::get_dbh();
+    my $row = $dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
+                                      "FROM file WHERE dmid=? AND dkey=?",
+                                      undef, $dmid, $key)
+        or return undef;
+    $row->{fidid} = delete $row->{fid};
+    return bless $row, $class;
+}
+
+# --------------------------------------------------------------------------
+
+sub length {
+    my $self = shift;
+    die "FIXME: lazily load.  No length defined on this object" unless defined $self->{length};
+    return $self->{length};
+}
+
 sub id { $_[0]{fidid} }
 
 sub update_devcount {
