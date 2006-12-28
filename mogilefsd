@@ -190,7 +190,7 @@ sub log {
 
 # returns hashref of devid -> $device_row_href  (where devid is alive/down, but not dead)
 # cached for 15 seconds.
-use vars qw($cache_device_summary $cache_device_summary_time %cache_host $cache_host_time);
+use vars qw($cache_device_summary $cache_device_summary_time);
 
 # general purpose device locator.  example:
 #
@@ -289,14 +289,14 @@ sub get_device_summary {
     $dev{$row->{devid}} = $row while $row = $sth->fetchrow_hashref;
 
     # now override device status with host status if the host status is less than the device status
-    Mgd::check_host_cache();
+    MogileFS::Host->check_cache;
 
     foreach my $devid (keys %dev) {
         # makes others have an easier time of finding devices by free space
         $dev{$devid}->{mb_free} = $dev{$devid}->{mb_total} - $dev{$devid}->{mb_used};
 
-        my $host = $cache_host{$dev{$devid}->{hostid}};
-        if (!$host) {
+        my $host = MogileFS::Host->of_hostid($dev{$devid}->{hostid});
+        unless ($host && $host->exists) {
             if ($dev{$devid}->{status} eq "dead") {
                 # ignore dead devices without hosts.  not a big deal.
                 next;
@@ -327,42 +327,6 @@ sub invalidate_device_cache {
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->invalidate_meta("device");
     }
-}
-
-sub invalidate_host_cache {
-    my $no_recurse = shift; # way for new API to signal to old not to loop
-
-    # so next time it's invalid and won't be used old
-    $cache_host_time = 0;
-    %cache_host = ();
-    MogileFS::Host->clear_cache unless $no_recurse;
-
-    if (my $worker = MogileFS::ProcManager->is_child) {
-        $worker->invalidate_meta("host");
-    }
-}
-
-sub reload_host_cache {
-    %cache_host = ();
-    my $dbh = get_dbh();
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
-                            "hostip, http_port, http_get_port, altip, altmask FROM host");
-    $sth->execute;
-    while (my $row = $sth->fetchrow_hashref) {
-        die unless $row->{status} =~ /^\w+$/;
-        my $ho =
-            $cache_host{$row->{hostid}} =
-            MogileFS::Host->of_hostid($row->{hostid});
-        $ho->absorb_dbrow($row);
-    }
-    $cache_host_time = time();
-    return \%cache_host;
-}
-
-sub check_host_cache {
-    my $now = time();
-    return if $cache_host_time > $now - 5;
-    reload_host_cache();
 }
 
 sub set_force_altzone {

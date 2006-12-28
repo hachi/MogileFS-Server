@@ -159,7 +159,7 @@ sub cmd_clear_cache {
     my $args = shift;
 
     Mgd::invalidate_device_cache()     if $args->{devices} || $args->{all};
-    Mgd::invalidate_host_cache()       if $args->{hosts}   || $args->{all};
+    MogileFS::Host->invalidate_cache   if $args->{hosts}   || $args->{all};
     MogileFS::Class->invalidate_cache  if $args->{class}   || $args->{all};
     MogileFS::Domain->invalidate_cache if $args->{domain}  || $args->{all};
 
@@ -582,7 +582,7 @@ sub cmd_get_hosts {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    MogileFS::Host->clear_cache;
+    MogileFS::Host->invalidate_cache;
 
     my $ret = { hosts => 0 };
     foreach my $host (MogileFS::Host->hosts) {
@@ -634,10 +634,11 @@ sub cmd_create_device {
     return $self->err_line("invalid_devid") unless $devid && $devid =~ /^\d+$/;
 
     my $hostid;
-    Mgd::check_host_cache();
+    MogileFS::Host->check_cache;
     if ($args->{hostid} && $args->{hostid} =~ /^\d+$/) {
         $hostid = $args->{hostid};
-        return $self->err_line("unknown_hostid") unless $Mgd::cache_host{$hostid};
+        my $host = MogileFS::Host->of_hostid($hostid);
+        return $self->err_line("unknown_hostid") unless $host && $host->exists;
     } elsif (my $hname = $args->{hostname}) {
         my $host = MogileFS::Host->of_hostname($hname);
         return $self->err_line("unknown_host") unless $host;
@@ -859,10 +860,11 @@ sub cmd_create_host {
     return $self->err_line('failure') if $dbh->err;
 
     # force a host reload
-    Mgd::invalidate_host_cache();
+    MogileFS::Host->invalidate_cache;
+    $host = MogileFS::Host->of_hostid($hid);
 
     # return success
-    return $self->ok_line($Mgd::cache_host{$hid});
+    return $self->ok_line($host->overview_hashref);
 }
 
 sub cmd_update_host {
@@ -895,7 +897,7 @@ sub cmd_delete_host {
     return $self->err_line('failure')
         unless $res;
 
-    Mgd::invalidate_host_cache();
+    MogileFS::Host->invalidate_cache;
     return $self->ok_line;
 }
 

@@ -80,8 +80,8 @@ sub foreach {
 
 sub mindevcounts {
     # make sure we have good info
-    Mgd::check_host_cache();
-    my $host_ct = keys %Mgd::cache_host;
+    MogileFS::Host->check_cache;
+    my $host_ct = scalar MogileFS::Host->hosts;
 
     # find the classes for each domainid (including domains without explict classes)
     my %min; # dmid -> classid -> mindevcount

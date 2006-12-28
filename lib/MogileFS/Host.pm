@@ -5,7 +5,8 @@ use Net::Netmask;
 use Carp qw(croak);
 
 my $all_loaded = 0;
-my %singleton;  # hostid -> instance
+my %singleton;            # hostid -> instance
+my $cache_host_time = 0;  # unixtime of last 'reload_hosts'
 
 sub of_hostid {
     my ($class, $hostid) = @_;
@@ -18,14 +19,15 @@ sub of_hostid {
 
 sub of_hostname {
     my ($class, $hostname) = @_;
+
     # reload if it's been awhile
-    Mgd::check_host_cache();
+    MogileFS::Host->check_cache;
     foreach my $host ($class->hosts) {
         return $host if $host->{hostname} eq $hostname;
     }
 
     # force a reload
-    $class->reload_hosts;
+    MogileFS::Host->reload_hosts;
     foreach my $host ($class->hosts) {
         return $host if $host->{hostname} eq $hostname;
     }
@@ -33,17 +35,20 @@ sub of_hostname {
     return undef;
 }
 
-sub clear_cache {
+sub invalidate_cache {
     my ($class) = @_;
-    # call old API
-    Mgd::invalidate_host_cache("no_recurse");
-    $all_loaded = 0;
 
-    foreach my $host (values %singleton) {
-        $host->{_loaded} = 0;
+    # so next time it's invalid and won't be used old
+    $cache_host_time = 0;
+    $all_loaded      = 0;
+    $_->{_loaded}    = 0 foreach values %singleton;
+
+    if (my $worker = MogileFS::ProcManager->is_child) {
+        $worker->invalidate_meta("host");
     }
 }
 
+# force a reload of all host objects.
 sub reload_hosts {
     my $class = shift;
 
@@ -52,7 +57,17 @@ sub reload_hosts {
         $host->{_loaded} = 0;
     }
 
-    Mgd::reload_host_cache();
+    my $dbh = Mgd::get_dbh();
+    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
+                            "hostip, http_port, http_get_port, altip, altmask FROM host");
+    $sth->execute;
+    while (my $row = $sth->fetchrow_hashref) {
+        die unless $row->{status} =~ /^\w+$/;
+        my $ho =
+            MogileFS::Host->of_hostid($row->{hostid});
+        $ho->absorb_dbrow($row);
+    }
+    $cache_host_time = time();
 
     # get rid of ones that could've gone away:
     foreach my $hostid (keys %singleton) {
@@ -61,6 +76,14 @@ sub reload_hosts {
     }
 
     $all_loaded = 1;
+}
+
+# reload host objects if it hasn't been done in last 5 seconds
+sub check_cache {
+    my $class = shift;
+    my $now = time();
+    return if $cache_host_time > $now - 5;
+    MogileFS::Host->reload_hosts;
 }
 
 sub hosts {
@@ -151,11 +174,21 @@ sub exists {
     return $host->{_loaded};
 }
 
+sub overview_hashref {
+    my $host = shift;
+    $host->_load;
+    my $ret = {};
+    foreach my $k (qw(hostid status http_port http_get_port hostname hostip altip altmask)) {
+        $ret->{$k} = $host->{$k};
+    }
+    return $ret;
+}
+
 # --------------------------------------------------------------------------
 
 sub _load {
     return if $_[0]{_loaded};
-    Mgd::reload_host_cache();
+    MogileFS::Host->reload_hosts;
     return if $_[0]{_loaded};
     my $host = shift;
     croak "Host $host->{hostid} doesn't exist.\n";
@@ -163,7 +196,7 @@ sub _load {
 
 sub _try_load {
     return if $_[0]{_loaded};
-    Mgd::reload_host_cache();
+    MogileFS::Host->reload_hosts;
 }
 
 
