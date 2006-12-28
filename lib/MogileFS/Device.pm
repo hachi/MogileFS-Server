@@ -14,6 +14,31 @@ sub of_devid {
     }, $class;
 }
 
+sub vivify_directories {
+    my ($class, $path) = @_;
+
+    # $path is something like:
+    #    http://10.0.0.26:7500/dev2/0/000/148/0000148056.fid
+
+    # three directories we'll want to make:
+    #    http://10.0.0.26:7500/dev2/0
+    #    http://10.0.0.26:7500/dev2/0/000
+    #    http://10.0.0.26:7500/dev2/0/000/148
+
+    croak "non-HTTP mode no longer supported" unless $path =~ /^http/;
+    return 0 unless $path =~ m!/dev(\d+)/(\d+)/(\d\d\d)/(\d\d\d)/\d+\.fid$!;
+    my ($devid, $p1, $p2, $p3) = ($1, $2, $3, $4);
+
+    my $dev = MogileFS::Device->of_devid($devid);
+    return 0 unless $dev->exists;
+
+    $dev->create_directory("/dev$devid/$p1");
+    $dev->create_directory("/dev$devid/$p1/$p2");
+    $dev->create_directory("/dev$devid/$p1/$p2/$p3");
+}
+
+# --------------------------------------------------------------------------
+
 sub devid { return $_[0]{devid} }
 sub id    { return $_[0]{devid} }
 

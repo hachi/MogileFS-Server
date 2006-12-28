@@ -288,7 +288,7 @@ sub cmd_create_open {
     foreach my $devid (@dests) {
         $profstart->("vivify_dir_on_dev$devid");
         my $path = Mgd::make_path($devid, $fid);
-        Mgd::vivify_directories($path);
+        MogileFS::Device->vivify_directories($path);
     }
 
     $profstart->("end");
