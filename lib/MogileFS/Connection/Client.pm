@@ -71,7 +71,7 @@ sub handle_admin_command {
           my $dbh = Mgd::get_dbh();
           my $mdcs = MogileFS::Class->mindevcounts;
           foreach my $dmid (sort keys %$mdcs) {
-              my $dmname = Mgd::domain_name($dmid);
+              my $dmname = MogileFS::Domain->name_of_id($dmid);
               foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
                   my $min = $mdcs->{$dmid}->{$classid};
                   next unless $min > 1;

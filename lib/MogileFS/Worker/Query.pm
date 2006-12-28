@@ -158,10 +158,10 @@ sub cmd_clear_cache {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    Mgd::invalidate_device_cache()  if $args->{devices} || $args->{all};
-    Mgd::invalidate_host_cache()    if $args->{hosts}   || $args->{all};
-    Mgd::invalidate_class_cache()   if $args->{class}   || $args->{all};
-    Mgd::invalidate_domain_cache()  if $args->{domain}  || $args->{all};
+    Mgd::invalidate_device_cache()     if $args->{devices} || $args->{all};
+    Mgd::invalidate_host_cache()       if $args->{hosts}   || $args->{all};
+    Mgd::invalidate_class_cache()      if $args->{class}   || $args->{all};
+    MogileFS::Domain->invalidate_cache if $args->{domain}  || $args->{all};
 
     return $self->ok_line;
 }
@@ -491,7 +491,7 @@ sub cmd_list_fids {
         $ct++;
         my $r = $rows->{$fid};
         $ret->{"fid_${ct}_fid"} = $fid;
-        $ret->{"fid_${ct}_domain"} = ($domains{$r->{dmid}} ||= Mgd::domain_name($r->{dmid}));
+        $ret->{"fid_${ct}_domain"} = ($domains{$r->{dmid}} ||= MogileFS::Domain->name_of_id($r->{dmid}));
         $ret->{"fid_${ct}_class"} = ($classes{$r->{dmid}}{$r->{classid}} ||= Mgd::class_name($r->{dmid}, $r->{classid}));
         $ret->{"fid_${ct}_key"} = $r->{dkey};
         $ret->{"fid_${ct}_length"} = $r->{length};
@@ -675,7 +675,7 @@ sub cmd_create_domain {
     return $self->err_line('failure') if $dbh->err;
 
     # return the domain id we created
-    Mgd::invalidate_domain_cache();
+    MogileFS::Domain->invalidate_cache;
     return $self->ok_line({ domain => $domain });
 }
 
@@ -709,7 +709,7 @@ sub cmd_delete_domain {
     return $self->err_line('failure') if $dbh->err;
 
     # return the domain we nuked
-    Mgd::invalidate_domain_cache();
+    MogileFS::Domain->invalidate_cache;
     return $self->ok_line({ domain => $domain });
 }
 

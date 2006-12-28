@@ -319,10 +319,6 @@ sub invalidate_class_cache {
     # FIXME: no cache yet exists
 }
 
-sub invalidate_domain_cache {
-    MogileFS::Domain->invalidate_cache;
-}
-
 sub invalidate_device_cache {
     # so next time it's invalid and won't be used old
     $cache_device_summary_time = 0;
@@ -382,18 +378,6 @@ sub class_name {
             or return undef;
     return undef unless $classname;
     return $classname;
-}
-
-sub domain_name {
-    my $dmid = shift;
-    # FIXME: cache this
-
-    # lookup domain
-    my $dbh = Mgd::get_dbh;
-    my $namespace = $dbh->selectrow_array
-        ("SELECT namespace FROM domain WHERE dmid=?", undef, $dmid);
-    return $namespace;
-
 }
 
 sub set_force_altzone {
