@@ -408,7 +408,9 @@ sub cmd_create_close {
 
     $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
 
-    if (Mgd::update_fid_devcount($fid)) {
+    my $fido = MogileFS::FID->new($fid);
+
+    if ($fido->update_devcount) {
         # call the hook - if this fails, we need to back the file out
         my $rv = MogileFS::run_global_hook('file_stored', $args);
         if (defined $rv && ! $rv) { # undef = no hooks, 1 = success, 0 = failure

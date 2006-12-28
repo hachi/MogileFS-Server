@@ -14,8 +14,32 @@ sub new {
 sub id { $_[0]{fidid} }
 
 sub update_devcount {
-    my $self = shift;
-    return Mgd::update_fid_devcount($self->{fidid});
+    my ($self, %opts) = @_;
+
+    my $no_lock = delete $opts{no_lock};
+    croak "Bogus options" if %opts;
+
+    my $fidid = $self->{fidid};
+    my $dbh = Mgd::get_dbh()
+        or return 0;
+
+    my $lockname = "mgfs:fid:$fidid";
+    unless ($no_lock) {
+        my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 10)", undef,
+                                         $lockname);
+        return 0 unless $lock;
+    }
+    my $ct = $dbh->selectrow_array("SELECT COUNT(*) FROM file_on WHERE fid=?",
+                                   undef, $fidid);
+
+    $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
+             $ct, $fidid);
+
+    unless ($no_lock) {
+        $dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+    }
+
+    return 1;
 }
 
 sub enqueue_for_replication {

@@ -627,7 +627,8 @@ sub add_file_on {
     my $rv = $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
                       undef, $fid, $devid);
     if ($rv > 0) {
-        return Mgd::update_fid_devcount($fid, $no_lock);
+        my $fido = MogileFS::FID->new($fid);
+        return $fido->update_devcount(no_lock => $no_lock);
     } else {
         # was already on that device
         return 1;
