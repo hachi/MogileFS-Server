@@ -1,6 +1,7 @@
 package MogileFS::Worker::Monitor;
-
 use strict;
+use warnings;
+
 use base 'MogileFS::Worker';
 use fields (
             'last_db_update',  # devid -> time.  update db less often than poll interval.
@@ -8,6 +9,7 @@ use fields (
             'skip_host',       # hostid -> 1 if already noted dead (reset every loop)
             'seen_hosts',      # IP -> 1 (reset every loop)
             );
+
 use Danga::Socket 1.56;
 use MogileFS::Util qw(error debug);
 use MogileFS::IOStatWatcher;
@@ -73,12 +75,14 @@ sub check_device {
     my ($self, $dev) = @_;
 
     my $devid = $dev->id;
+    my $host  = $dev->host;
 
-    my $host = $Mgd::cache_host{$dev->hostid};
-    my $port = $host->{http_port};
-    my $get_port = $host->{http_get_port} || $port;
-    my $url = "http://$host->{hostip}:$get_port/dev$devid/usage";
-    $self->{seen_hosts}{$host->{hostip}} = 1;
+    my $port     = $host->http_port;
+    my $get_port = $host->http_get_port; #  || $port;
+    my $hostip   = $host->ip;
+    my $url      = $dev->usage_url;
+
+    $self->{seen_hosts}{$hostip} = 1;
 
     # now try to get the data with a short timeout
     my $timeout = 2;
@@ -92,12 +96,12 @@ sub check_device {
         my $failed_after = $res_time - $start_time;
         if ($failed_after < 0.5) {
             $self->broadcast_device_unreachable($dev->id);
-            error("Port $get_port not listening on otherwise-alive machine $host->{hostip}?  Error was: " . $response->status_line);
+            error("Port $get_port not listening on otherwise-alive machine $hostip?  Error was: " . $response->status_line);
         } else {
             $failed_after = sprintf("%.02f", $failed_after);
             $self->broadcast_host_unreachable($dev->hostid);
             $self->{skip_host}{$dev->hostid} = 1;
-            error("Timeout contacting machine $host->{hostip} for dev $devid:  took $failed_after seconds out of $timeout allowed");
+            error("Timeout contacting machine $hostip for dev $devid:  took $failed_after seconds out of $timeout allowed");
         }
         return;
     }
@@ -134,12 +138,12 @@ sub check_device {
     }
 
     # next if we're not going to try this now
-    return if $self->{last_test_write}{$devid} + UPDATE_DB_EVERY > $now;
+    return if ($self->{last_test_write}{$devid} || 0) + UPDATE_DB_EVERY > $now;
     $self->{last_test_write}{$devid} = $now;
 
     # now we want to check if this device is writeable
     my $num = int(rand 10000);  # this was "$$-$now" before, but we don't yet have a cleaner in mogstored for these files
-    my $puturl = "http://$host->{hostip}:$port/dev$devid/test-write/test-write-$num";
+    my $puturl = "http://$hostip:$port/dev$devid/test-write/test-write-$num";
     my $content = "time=$now rand=$num";
     my $req = HTTP::Request->new(PUT => $puturl);
     $req->content($content);
@@ -151,7 +155,7 @@ sub check_device {
     if ($resp->is_success) {
         # now let's get it back to verify; note we use the get_port to verify that
         # the distinction works (if we have one)
-        my $geturl = "http://$host->{hostip}:$get_port/dev$devid/test-write/test-write-$num";
+        my $geturl = "http://$hostip:$get_port/dev$devid/test-write/test-write-$num";
         my $testwrite = $ua->get($geturl);
 
         # if success and the content matches, mark it writeable

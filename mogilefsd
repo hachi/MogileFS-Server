@@ -327,7 +327,15 @@ sub get_device_summary {
         $dev{$devid}->{mb_free} = $dev{$devid}->{mb_total} - $dev{$devid}->{mb_used};
 
         my $host = $cache_host{$dev{$devid}->{hostid}};
-        die "No host for dev $devid (host $dev{$devid}->{hostid})" unless $host;
+        if (!$host) {
+            if ($dev{$devid}->{status} eq "dead") {
+                # ignore dead devices without hosts.  not a big deal.
+                next;
+            } else {
+                die "No host for dev $devid (host $dev{$devid}->{hostid})";
+            }
+        }
+
         my $host_status = $host->{status};
         die "No status" unless $host_status =~ /^\w+$/;
 
@@ -365,13 +373,11 @@ sub invalidate_device_cache {
     }
 }
 
-# FIXME: this should propogate to parent, and send messages down to
-# query workers.  otherwise there's coherency issues between threads
-# for a bit.
 sub invalidate_host_cache {
     # so next time it's invalid and won't be used old
     $cache_host_time = 0;
     %cache_host = ();
+    MogileFS::Host->clear_cache;
 
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->invalidate_meta("host");
@@ -384,11 +390,12 @@ sub reload_host_cache {
     my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
                             "hostip, http_port, http_get_port, altip, altmask FROM host");
     $sth->execute;
-    while (my $host = $sth->fetchrow_hashref) {
-        die unless $host->{status} =~ /^\w+$/;
-        $cache_host{$host->{hostid}} = $host;
-        $cache_host{$host->{hostid}}->{mask} = Net::Netmask->new2($host->{altmask})
-            if $host->{altip} && $host->{altmask};
+    while (my $row = $sth->fetchrow_hashref) {
+        die unless $row->{status} =~ /^\w+$/;
+        my $ho =
+            $cache_host{$row->{hostid}} =
+            MogileFS::Host->of_hostid($row->{hostid});
+        $ho->absorb_dbrow($row);
     }
     $cache_host_time = time();
     return \%cache_host;

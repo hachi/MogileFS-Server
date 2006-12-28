@@ -53,6 +53,13 @@ sub exists {
     return 1;
 }
 
+sub host {
+    my $self = shift;
+    my $hostid = $self->hostid
+        or return undef;
+    return MogileFS::Host->of_hostid($hostid);
+}
+
 sub hostid {
     my $self = shift;
     my $dsum = Mgd::get_device_summary();
@@ -159,6 +166,14 @@ sub forget_about {
              undef, $fid->id, $dev->id);
     die $dbh->errstr if $dbh->err;
     return 1;
+}
+
+sub usage_url {
+    my $dev = shift;
+    my $host     = $dev->host;
+    my $get_port = $host->http_get_port;
+    my $hostip   = $host->ip;
+    return "http://$hostip:$get_port/dev$dev->{devid}/usage";
 }
 
 1;
