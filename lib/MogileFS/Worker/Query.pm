@@ -980,10 +980,13 @@ sub cmd_get_paths {
         my $dev = $dsum->{$devid};
         next unless $dev && ($dev->{status} eq "alive" || $dev->{status} eq "readonly");
 
+        my $devo = MogileFS::Device->of_devid($dev->{devid});
+        my $hosto = $devo->host;
+        next unless $devo && $hosto;
+
         my $path = Mgd::make_get_path($devid, $fidid);
         my $currently_down =
-            MogileFS->observed_state("host", $dev->{hostid}) eq "unreachable" ||
-            MogileFS->observed_state("device", $dev->{devid}) eq "unreachable";
+            $hosto->observed_unreachable || $devo->observed_unreachable;
 
         if ($currently_down) {
             $backup_path = $path;

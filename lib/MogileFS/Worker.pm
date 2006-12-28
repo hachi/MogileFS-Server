@@ -165,7 +165,11 @@ sub broadcast_host_unreachable {
 
 sub _broadcast_state {
     my ($self, $what, $whatid, $state) = @_;
-    MogileFS->set_observed_state($what, $whatid, $state);
+    if ($what eq "host") {
+        MogileFS::Host->of_hostid($whatid)->set_observed_state($state);
+    } elsif ($what eq "device") {
+        MogileFS::Device->of_devid($whatid)->set_observed_state($state);
+    }
     my $key = "$what-$whatid";
     my $laststate = $self->{last_bcast_state}{$key};
     my $now = time();
@@ -191,8 +195,12 @@ sub process_generic_command {
     return 0 unless $$lineref =~ /^:/;  # all generic commands start with colon
 
     if ($$lineref =~ /^:state_change (\w+) (\d+) (\w+)/) {
-        # {"host"|"device"} <id> {"alive"|"dead"}
-        MogileFS->set_observed_state($1, $2, $3);
+        my ($what, $whatid, $state) = ($1, $2, $3);
+        if ($what eq "host") {
+            MogileFS::Host->of_hostid($whatid)->set_observed_state($state);
+        } elsif ($what eq "device") {
+            MogileFS::Device->of_devid($whatid)->set_observed_state($state);
+        }
         return 1;
     }
 

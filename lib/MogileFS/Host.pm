@@ -84,6 +84,23 @@ sub absorb_dbrow {
     $host->{_loaded} = 1;
 }
 
+sub set_observed_state {
+    my ($host, $state) = @_;
+    croak "set_observed_state() with invalid host state '$state', valid: reachable, unreachable"
+        if $state !~ /^(?:reachable|unreachable)$/;
+    $host->{observed_state} = $state;
+}
+
+sub observed_reachable {
+    my $host = shift;
+    return $host->{observed_state} && $host->{observed_state} eq "reachable";
+}
+
+sub observed_unreachable {
+    my $host = shift;
+    return $host->{observed_state} && $host->{observed_state} eq "unreachable";
+}
+
 sub http_port {
     my $host = shift;
     $host->_load;

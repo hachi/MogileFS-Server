@@ -181,7 +181,7 @@ sub process_deletes {
         }
 
         # CASE: devid is observed down/readonly: delay for 10 minutes
-        unless ($dev->is_observed_writeable) {
+        unless ($dev->observed_writeable) {
             $reschedule_fid->(60 * 10, "not_observed_writeable");
             next;
         }

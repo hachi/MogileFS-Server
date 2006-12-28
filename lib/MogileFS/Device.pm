@@ -17,11 +17,42 @@ sub of_devid {
 sub devid { return $_[0]{devid} }
 sub id    { return $_[0]{devid} }
 
+sub set_observed_state {
+    my ($dev, $state) = @_;
+    croak "set_observed_state() with invalid device state '$state', valid: writeable, readable, unreachable"
+        if $state !~ /^(?:writeable|readable|unreachable)$/;
+    $dev->{observed_state} = $state;
+}
+
+sub observed_writeable {
+    my $dev = shift;
+    return 0 unless $dev->{observed_state} && $dev->{observed_state} eq "writeable";
+    my $host = $dev->host
+        or return 0;
+    return 0 unless $host->observed_reachable;
+    return 1;
+}
+
+sub observed_readable {
+    my $dev = shift;
+    return $dev->{observed_state} && $dev->{observed_state} eq "readable";
+}
+
+sub observed_unreachable {
+    my $dev = shift;
+    return $dev->{observed_state} && $dev->{observed_state} eq "unreachable";
+}
+
 sub status {
     my $self = shift;
     my $dsum = Mgd::get_device_summary();
     my $disk = $dsum->{$self->{devid}} or return;
     return $disk->{status};
+}
+
+sub is_marked_alive {
+    my $self = shift;
+    return $self->status eq "alive";
 }
 
 sub is_marked_dead {
@@ -65,13 +96,6 @@ sub hostid {
     my $dsum = Mgd::get_device_summary();
     my $disk = $dsum->{$self->{devid}} or return 0;
     return $disk->{hostid};
-}
-
-sub is_observed_writeable {
-    my $self = shift;
-    return
-        MogileFS->observed_state("host", $self->hostid) eq "reachable" &&
-        MogileFS->observed_state("device", $self->{devid}) eq "writeable";
 }
 
 sub doesnt_know_mkcol {
