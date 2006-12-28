@@ -319,10 +319,6 @@ sub get_device_summary {
     return $cache_device_summary = \%dev;
 }
 
-sub invalidate_class_cache {
-    # FIXME: no cache yet exists
-}
-
 sub invalidate_device_cache {
     # so next time it's invalid and won't be used old
     $cache_device_summary_time = 0;

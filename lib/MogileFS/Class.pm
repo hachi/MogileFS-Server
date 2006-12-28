@@ -17,13 +17,49 @@ sub of_fid {
     return $class->new($row);
 }
 
-sub domainid     { $_[0]{dmid} }
-sub classid      { $_[0]{classid} }
-sub mindevcount  { $_[0]{mindevcount} }
-sub policy_class { $_[0]{replpolicy} }
+sub invalidate_cache {
+    # FIXME: no cache yet exists
+}
+
+# legacy API quickly ported over.  probably not ideal API.
+sub class_name {
+    my ($pkg, $dmid, $classid) = @_;
+    return undef unless $dmid > 0 && length $classid;
+    # FIXME: cache this
+
+    # lookup class
+    my $dbh = Mgd::get_dbh();
+    my $classname = $dbh->selectrow_array
+        ("SELECT classname FROM class WHERE dmid=? AND classid=?", undef, $dmid, $classid)
+            or return undef;
+    return undef unless $classname;
+    return $classname;
+}
+
+# legacy API quickly ported over.  probably not ideal API.
+sub dmid_classes {
+    my ($pkg, $dmid) = @_;
+    return undef unless $dmid > 0;
+
+    my $dbh = Mgd::get_dbh();
+    my $classes = $dbh->selectall_arrayref
+        ("SELECT classid, classname, mindevcount FROM class WHERE dmid=?", undef, $dmid)
+            or return undef;
+    return undef unless $classes;
+
+    my $res = {};
+    foreach my $row (@$classes) {
+        $res->{$row->[0]} = {
+            classid => $row->[0],
+            classname => $row->[1],
+            mindevcount => $row->[2],
+        };
+    }
+    return $res;
+}
 
 sub foreach {
-    my ($class, $cb) = @_;
+    my ($pkg, $cb) = @_;
     # get the min dev counts
     my %min = %{ MogileFS::Class->mindevcounts };
 
@@ -78,7 +114,7 @@ sub mindevcounts {
 
 # legacy API quickly ported over.  probably not ideal API.
 sub class_id {
-    my ($class, $dmid, $classname) = @_;
+    my ($pkg, $dmid, $classname) = @_;
     return undef unless $dmid > 0 && length $classname;
 
     my $dbh = Mgd::get_dbh();
@@ -87,41 +123,14 @@ sub class_id {
     return $classid;
 }
 
-# legacy API quickly ported over.  probably not ideal API.
-sub class_name {
-    my ($class, $dmid, $classid) = @_;
-    return undef unless $dmid > 0 && length $classid;
-    # FIXME: cache this
+# --------------------------------------------------------------------------
+# Instance methods:
+# --------------------------------------------------------------------------
 
-    # lookup class
-    my $dbh = Mgd::get_dbh();
-    my $classname = $dbh->selectrow_array
-        ("SELECT classname FROM class WHERE dmid=? AND classid=?", undef, $dmid, $classid)
-            or return undef;
-    return undef unless $classname;
-    return $classname;
-}
+sub domainid     { $_[0]{dmid} }
+sub classid      { $_[0]{classid} }
+sub mindevcount  { $_[0]{mindevcount} }
+sub policy_class { $_[0]{replpolicy} }
 
-# legacy API quickly ported over.  probably not ideal API.
-sub dmid_classes {
-    my ($class, $dmid) = @_;
-    return undef unless $dmid > 0;
-
-    my $dbh = Mgd::get_dbh();
-    my $classes = $dbh->selectall_arrayref
-        ("SELECT classid, classname, mindevcount FROM class WHERE dmid=?", undef, $dmid)
-            or return undef;
-    return undef unless $classes;
-
-    my $res = {};
-    foreach my $row (@$classes) {
-        $res->{$row->[0]} = {
-            classid => $row->[0],
-            classname => $row->[1],
-            mindevcount => $row->[2],
-        };
-    }
-    return $res;
-}
 
 1;

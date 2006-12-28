@@ -160,7 +160,7 @@ sub cmd_clear_cache {
 
     Mgd::invalidate_device_cache()     if $args->{devices} || $args->{all};
     Mgd::invalidate_host_cache()       if $args->{hosts}   || $args->{all};
-    Mgd::invalidate_class_cache()      if $args->{class}   || $args->{all};
+    MogileFS::Class->invalidate_cache  if $args->{class}   || $args->{all};
     MogileFS::Domain->invalidate_cache if $args->{domain}  || $args->{all};
 
     return $self->ok_line;
@@ -758,7 +758,7 @@ sub cmd_create_class {
     return $self->err_line('failure') if $dbh->err;
 
     # return success
-    Mgd::invalidate_class_cache();
+    MogileFS::Class->invalidate_cache;
     return $self->ok_line({ class => $class, mindevcount => $mindevcount, domain => $domain });
 }
 
@@ -801,7 +801,7 @@ sub cmd_delete_class {
     return $self->err_line('failure') if $dbh->err;
 
     # return the class we nuked
-    Mgd::invalidate_class_cache();
+    MogileFS::Class->invalidate_cache;
     return $self->ok_line({ domain => $domain, class => $class });
 }
 
