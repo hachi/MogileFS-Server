@@ -560,35 +560,6 @@ sub set_client_ip {
     $client_ip = $ip;
 }
 
-sub hostid_ip {
-    my $hostid = shift;
-    check_host_cache();
-    my $h = $cache_host{$hostid};
-    return undef unless $h;
-
-    # if we have a client ip and an object for alt matching...
-    if ($h->{mask} && $h->{altip} &&
-            ($force_alt_zone || ($client_ip && $h->{altip} && $h->{mask}->match($client_ip)))) {
-        return $h->{altip};
-    } else {
-        return $h->{hostip};
-    }
-}
-
-sub hostid_http_port {
-    my $hostid = shift;
-    check_host_cache();
-    my $h = $cache_host{$hostid};
-    return $h ? $h->{http_port} : undef;
-}
-
-sub hostid_http_get_port {
-    my $hostid = shift;
-    check_host_cache();
-    my $h = $cache_host{$hostid};
-    return $h ? $h->{http_get_port} : undef;
-}
-
 sub vivify_directories {
     my $path = shift;
     # $path is something like:
@@ -631,11 +602,15 @@ sub make_full_url {
     # get some information we'll need
     my $devs = Mgd::get_device_summary();
     my $dev = $devs->{$devid} or return undef;
-    my $path = Mgd::make_http_path($devid, $fid) or return undef;
-    my $host = Mgd::hostid_ip($dev->{hostid}) or return undef;
-    my $port = $use_get_port ? Mgd::hostid_http_get_port($dev->{hostid}) : undef;
-    $port ||= Mgd::hostid_http_port($dev->{hostid}) or return undef;
-    return "http://$host:$port$path";
+
+    my $host = MogileFS::Host->of_hostid($dev->{hostid});
+    return undef unless $host && $host->exists;
+
+    my $path   = Mgd::make_http_path($devid, $fid) or return undef;
+    my $hostip = $host->ip;
+    my $port   = $use_get_port ? $host->http_get_port : $host->http_port;
+
+    return "http://$hostip:$port$path";
 }
 
 sub make_path {

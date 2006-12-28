@@ -9,6 +9,7 @@ my %singleton;  # hostid -> instance
 
 sub of_hostid {
     my ($class, $hostid) = @_;
+    return undef unless $hostid;
     return $singleton{$hostid} ||= bless {
         hostid    => $hostid,
         _loaded   => 0,

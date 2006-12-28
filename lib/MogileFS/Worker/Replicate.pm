@@ -8,7 +8,7 @@ use fields (
             );
 
 use List::Util ();
-use MogileFS::Util qw(error every);
+use MogileFS::Util qw(error every debug);
 use MogileFS::Class;
 
 # setup the value used in a 'nexttry' field to indicate that this item will never
@@ -226,8 +226,7 @@ sub replicate_using_devcounts {
         my $mclass = shift;
         my ($dmid, $classid, $min, $policy_class) = map { $mclass->$_ } qw(domainid classid mindevcount policy_class);
 
-        error("Checking replication for dmid=$dmid, classid=$classid, min=$min")
-            if $Mgd::DEBUG >= 1;
+        debug("Checking replication for dmid=$dmid, classid=$classid, min=$min");
 
         my $LIMIT = 1000;
 
@@ -251,8 +250,7 @@ sub replicate_using_devcounts {
 
             # see if we have any files to replicate
             my $count = $fids ? scalar @$fids : 0;
-            error("  found $count for dmid=$dmid/classid=$classid/min=$min")
-                if $Mgd::DEBUG >= 1;
+            debug("  found $count for dmid=$dmid/classid=$classid/min=$min");
             next unless $count;
 
             # randomize the list so multiple daemons/threads working on
@@ -260,7 +258,7 @@ sub replicate_using_devcounts {
             # same fids to move
             my @randfids = List::Util::shuffle(@$fids);
 
-            error("Need to replicate: $dmid/$classid: @$fids") if $Mgd::DEBUG >= 2;
+            debug("Need to replicate: $dmid/$classid: @$fids") if $Mgd::DEBUG >= 2;
             foreach my $fid (@randfids) {
                 # now replicate this fid
                 $attempted++;
@@ -536,8 +534,11 @@ sub http_copy {
         unless ref $sdev && ref $ddev;
     my ($spath, $dpath) = (Mgd::make_http_path($sdevid, $fid),
                            Mgd::make_http_path($ddevid, $fid));
-    my ($shostip, $sport) = (Mgd::hostid_ip($sdev->{hostid}), Mgd::hostid_http_port($sdev->{hostid}));
-    my ($dhostip, $dport) = (Mgd::hostid_ip($ddev->{hostid}), Mgd::hostid_http_port($ddev->{hostid}));
+
+    my ($shost, $dhost) = (map { MogileFS::Host->of_hostid($_->{hostid}) } ($sdev, $ddev));
+
+    my ($shostip, $sport) = ($shost->ip, $shost->http_port);
+    my ($dhostip, $dport) = ($dhost->ip, $dhost->http_port);
     unless (defined $spath && defined $dpath && defined $shostip && defined $dhostip && $sport && $dport) {
         # show detailed information to find out what's not configured right
         error("Error: unable to replicate file fid=$fid from device id $sdevid to device id $ddevid");
