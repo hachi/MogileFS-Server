@@ -492,7 +492,7 @@ sub cmd_list_fids {
         my $r = $rows->{$fid};
         $ret->{"fid_${ct}_fid"} = $fid;
         $ret->{"fid_${ct}_domain"} = ($domains{$r->{dmid}} ||= MogileFS::Domain->name_of_id($r->{dmid}));
-        $ret->{"fid_${ct}_class"} = ($classes{$r->{dmid}}{$r->{classid}} ||= Mgd::class_name($r->{dmid}, $r->{classid}));
+        $ret->{"fid_${ct}_class"} = ($classes{$r->{dmid}}{$r->{classid}} ||= MogileFS::Class->class_name($r->{dmid}, $r->{classid}));
         $ret->{"fid_${ct}_key"} = $r->{dkey};
         $ret->{"fid_${ct}_length"} = $r->{length};
         $ret->{"fid_${ct}_devcount"} = $r->{devcount};

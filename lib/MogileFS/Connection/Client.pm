@@ -76,7 +76,7 @@ sub handle_admin_command {
                   my $min = $mdcs->{$dmid}->{$classid};
                   next unless $min > 1;
 
-                  my $classname = Mgd::class_name($dmid, $classid) || '_default';
+                  my $classname = MogileFS::Class->class_name($dmid, $classid) || '_default';
                   foreach my $ct (1..$min-1) {
                       my $count = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
                                                         undef, $dmid, $classid, $ct);

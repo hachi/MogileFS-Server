@@ -88,6 +88,21 @@ sub class_id {
 }
 
 # legacy API quickly ported over.  probably not ideal API.
+sub class_name {
+    my ($class, $dmid, $classid) = @_;
+    return undef unless $dmid > 0 && length $classid;
+    # FIXME: cache this
+
+    # lookup class
+    my $dbh = Mgd::get_dbh();
+    my $classname = $dbh->selectrow_array
+        ("SELECT classname FROM class WHERE dmid=? AND classid=?", undef, $dmid, $classid)
+            or return undef;
+    return undef unless $classname;
+    return $classname;
+}
+
+# legacy API quickly ported over.  probably not ideal API.
 sub dmid_classes {
     my ($class, $dmid) = @_;
     return undef unless $dmid > 0;
