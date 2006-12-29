@@ -101,8 +101,10 @@ sub absorb_dbrow {
     foreach my $k (qw(status hostname hostip http_port http_get_port altip altmask)) {
         $host->{$k} = $hashref->{$k};
     }
-    $host->{mask} = Net::Netmask->new2($host->{altmask})
-        if $host->{altip} && $host->{altmask};
+    $host->{mask} =
+        ($host->{altip} && $host->{altmask}) ?
+        Net::Netmask->new2($host->{altmask}) :
+        undef;
 
     $host->{_loaded} = 1;
 }
@@ -140,13 +142,13 @@ sub http_get_port {
 sub ip {
     my $host = shift;
     $host->_load;
-    # FIXME: the altip code should be ressurected.  was like:
-    # if ($h->{mask} && $h->{altip} &&
-    #($force_alt_zone || ($client_ip && $h->{altip} && $h->{mask}->match($client_ip)))) {
-    #   return $h->{altip};
-    #} else {
+    if ($host->{mask} && $host->{altip} &&
+        ($MogileFS::REQ_altzone || ($MogileFS::REQ_client_ip &&
+                                    $host->{mask}->match($MogileFS::REQ_client_ip)))) {
+        return $host->{altip};
+    } else {
         return $host->{hostip};
-    #}
+    }
 }
 
 sub field {

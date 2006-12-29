@@ -86,8 +86,7 @@ sub process_line {
     my ($client_ip, $line) = ($2, $3);
 
     # set global variables for zone determination
-    Mgd::set_client_ip($client_ip);
-    Mgd::set_force_altzone(0);
+    local $MogileFS::REQ_client_ip = $client_ip;
 
     # fallback to normal command handling
     if ($line =~ /^(\w+)\s*(.*)/) {
@@ -99,7 +98,7 @@ sub process_line {
         my $cmd_handler = *{"cmd_$cmd"}{CODE};
         if ($cmd_handler) {
             my $args = decode_url_args(\$args);
-            Mgd::set_force_altzone(1) if $args->{zone} && $args->{zone} eq 'alt';
+            local $MogileFS::REQ_altzone = ($args->{zone} && $args->{zone} eq 'alt');
             $cmd_handler->($self, $args);
             return;
         }
