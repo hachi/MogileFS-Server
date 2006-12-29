@@ -67,89 +67,87 @@ sub handle_admin_command {
         map { "$_ $stats->{$_}" } sort keys %$stats;
 
     } elsif ($cmd =~ /^repl/) {
-        Mgd::validate_dbh();
-          my $dbh = Mgd::get_dbh();
-          my $mdcs = MogileFS::Class->mindevcounts;
-          foreach my $dmid (sort keys %$mdcs) {
-              my $dmname = MogileFS::Domain->name_of_id($dmid);
-              foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
-                  my $min = $mdcs->{$dmid}->{$classid};
-                  next unless $min > 1;
+        my $dbh = Mgd::get_dbh();
+        my $mdcs = MogileFS::Class->mindevcounts;
+        foreach my $dmid (sort keys %$mdcs) {
+            my $dmname = MogileFS::Domain->name_of_id($dmid);
+            foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
+                my $min = $mdcs->{$dmid}->{$classid};
+                next unless $min > 1;
+                my $classname = MogileFS::Class->class_name($dmid, $classid) || '_default';
+                foreach my $ct (1..$min-1) {
+                    my $count =  $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
+                                                       undef, $dmid, $classid, $ct);
+                    push @out, "$dmname $classname $ct $count";
+                }
+            }
+        }
 
-                  my $classname = MogileFS::Class->class_name($dmid, $classid) || '_default';
-                  foreach my $ct (1..$min-1) {
-                      my $count = $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
-                                                        undef, $dmid, $classid, $ct);
-                      push @out, "$dmname $classname $ct $count";
-                  }
-              }
-          }
+    } elsif ($cmd =~ /^shutdown/) {
+        print "User requested shutdown: $args\n";
+        kill 15, $$; # kill us, that kills our kids
 
-      } elsif ($cmd =~ /^shutdown/) {
-          print "User requested shutdown: $args\n";
-          kill 15, $$; # kill us, that kills our kids
+    } elsif ($cmd =~ /^jobs/) {
+        # dump out a list of running jobs and pids
+        MogileFS::ProcManager->foreach_job(sub {
+            my ($job, $ct, $desired, $pidlist) = @_;
+            push @out, "$job count $ct";
+            push @out, "$job desired $desired";
+            push @out, "$job pids " . join(' ', @$pidlist);
+        });
 
-      } elsif ($cmd =~ /^jobs/) {
-          # dump out a list of running jobs and pids
-          MogileFS::ProcManager->foreach_job(sub {
-              my ($job, $ct, $desired, $pidlist) = @_;
-              push @out, "$job count $ct";
-              push @out, "$job desired $desired";
-              push @out, "$job pids " . join(' ', @$pidlist);
-          });
+    } elsif ($cmd =~ /^want/) {
+        # !want <count> <jobclass>
+        # set the new desired staffing level for a class
+        if ($args =~ /^(\d+)\s+(\S+)/) {
+            my ($count, $job) = ($1, $2);
 
-      } elsif ($cmd =~ /^want/) {
-          # !want <count> <jobclass>
-          # set the new desired staffing level for a class
-          if ($args =~ /^(\d+)\s+(\S+)/) {
-              my ($count, $job) = ($1, $2);
+            $count = 500 if $count > 500;
 
-              $count = 500 if $count > 500;
+            # now make sure it's a real job
+            if (MogileFS::ProcManager->is_valid_job($job)) {
+                MogileFS::ProcManager->request_job_process($job, $count);
+                push @out, "Now desiring $count children doing '$job'.";
+            } else {
+                my $classes = join(", ", MogileFS::ProcManager->valid_jobs);
+                push @out, "ERROR: Invalid class '$job'.  Valid classes: $classes";
+            }
+        } else {
+            push @out, "ERROR: usage: !want <count> <jobclass>";
+        }
 
-              # now make sure it's a real job
-              if (MogileFS::ProcManager->is_valid_job($job)) {
-                  MogileFS::ProcManager->request_job_process($job, $count);
-                  push @out, "Now desiring $count children doing '$job'.";
-              } else {
-                  my $classes = join(", ", MogileFS::ProcManager->valid_jobs);
-                  push @out, "ERROR: Invalid class '$job'.  Valid classes: $classes";
-              }
-          } else {
-              push @out, "ERROR: usage: !want <count> <jobclass>";
-          }
+    } elsif ($cmd =~ /^to/) {
+        # !to <jobclass> <message>
+        # sends <message> to all children of <jobclass>
+        if ($args =~ /^(\S+)\s+(.+)/) {
+            my $ct = MogileFS::ProcManager->ImmediateSendToChildrenByJob($1, $2);
+            push @out, "Message sent to $ct children.";
 
-      } elsif ($cmd =~ /^to/) {
-          # !to <jobclass> <message>
-          # sends <message> to all children of <jobclass>
-          if ($args =~ /^(\S+)\s+(.+)/) {
-              my $ct = MogileFS::ProcManager->ImmediateSendToChildrenByJob($1, $2);
-              push @out, "Message sent to $ct children.";
+        } else {
+            push @out, "ERROR: usage: !to <jobclass> <message>";
+        }
 
-          } else {
-              push @out, "ERROR: usage: !to <jobclass> <message>";
-          }
+    } elsif ($cmd =~ /^queue/ || $cmd =~ /^pend/) {
+        MogileFS::ProcManager->foreach_pending_query(sub {
+            my ($client, $query) = @_;
+            push @out, $query;
+        });
 
-      } elsif ($cmd =~ /^queue/ || $cmd =~ /^pend/) {
-          MogileFS::ProcManager->foreach_pending_query(sub {
-              my ($client, $query) = @_;
-              push @out, $query;
-          });
+    } elsif ($cmd =~ /^watch/) {
+        if (MogileFS::ProcManager->RemoveErrorWatcher($self)) {
+            push @out, "Removed you from watcher list.";
+        } else {
+            MogileFS::ProcManager->AddErrorWatcher($self);
+            push @out, "Added you to watcher list.";
+        }
 
-      } elsif ($cmd =~ /^watch/) {
-          if (MogileFS::ProcManager->RemoveErrorWatcher($self)) {
-              push @out, "Removed you from watcher list.";
-          } else {
-              MogileFS::ProcManager->AddErrorWatcher($self);
-              push @out, "Added you to watcher list.";
-          }
+    } elsif ($cmd =~ /^recent/) {
+        # show the most recent N queries
+        push @out, MogileFS::ProcManager->RecentQueries;
 
-      } elsif ($cmd =~ /^recent/) {
-          # show the most recent N queries
-          push @out, MogileFS::ProcManager->RecentQueries;
-
-      } else {
-          MogileFS::ProcManager->SendHelp($self, $args);
-      }
+    } else {
+        MogileFS::ProcManager->SendHelp($self, $args);
+    }
 
     $self->write(join("\r\n", @out) . "\r\n") if @out;
     $self->write(".\r\n");
