@@ -65,3 +65,34 @@ sub unique_hosts {
 }
 
 1;
+
+# Local Variables:
+# mode: perl
+# c-basic-indent: 4
+# indent-tabs-mode: nil
+# End:
+
+__END__
+
+=head1 NAME
+
+MogileFS::ReplicationPolicy::MultipleHosts -- default replication policy
+
+=head1 RULES
+
+This policy tries to put files onto devices which are on different
+hosts.  If you only have 1 host and 2 devices on that one host, it
+obviously can't, so it'll grudgingly put it on the same device.  But
+if you request a minimum replica count of 2 and have 3 devices, it'll
+put 2 copies on different hosts.  If you have 4 devices on 2 hosts,
+and request a minima replica count of 3, you'll get 3 copies on
+different devices, but two of those devices will be on the same host,
+and that's considered acceptable, since you have "multiple hosts"
+covered at least.
+
+=head1 SEE ALSO
+
+L<MogileFS::Worker::Replicate>
+
+L<MogileFS::ReplicationPolicy>
+

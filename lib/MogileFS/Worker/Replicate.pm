@@ -641,8 +641,13 @@ This process replicates files enqueued in B<file_to_replicate> table.
 
 The replication policy (which devices to replicate to) is pluggable,
 but only one policy comes with the server.  See
-L<MogileFS::ReplicationPolicy::MultipleHosts>.
+L<MogileFS::ReplicationPolicy::MultipleHosts>
 
 =head1 SEE ALSO
 
 L<MogileFS::Worker>
+
+L<MogileFS::ReplicationPolicy>
+
+L<MogileFS::ReplicationPolicy::MultipleHosts>
+
