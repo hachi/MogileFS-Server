@@ -3,7 +3,7 @@ package MogileFS::Worker::Reaper;
 
 use strict;
 use base 'MogileFS::Worker';
-use MogileFS::Util qw(every error);
+use MogileFS::Util qw(every error debug);
 use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
 sub new {
@@ -23,10 +23,7 @@ sub work {
         $self->parent_ping;
 
         # get db and note we're starting a run
-        error("Reaper running; looking for dead devices")
-            if $Mgd::DEBUG >= 1;
-        $self->validate_dbh;
-        my $dbh = $self->get_dbh or return 0;
+        debug("Reaper running; looking for dead devices");
 
         foreach my $dev (MogileFS::Device->dead_devices) {
             my $devid = $dev->id;
