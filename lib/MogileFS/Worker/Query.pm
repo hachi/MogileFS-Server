@@ -191,20 +191,17 @@ sub cmd_create_open {
     $profstart->("begin");
 
     # we want it to be undef if not explicit, else force to numeric
-    my $fid = $args->{fid} ? int($args->{fid}) : undef;
+    my $exp_fidid = $args->{fid} ? int($args->{fid}) : undef;
 
     # get DB handle
-    my $dbh = Mgd::get_dbh() or
-        return $self->err_line("nodb");
+    my $sto = Mgd::get_store();
+    my $dbh = $sto->dbh;
 
     # figure out what classid this file is for
     my $class = $args->{class} || "";
     my $classid = 0;
     if (length($class)) {
-        # TODO: cache this
-        $classid = $dbh->selectrow_array("SELECT classid FROM class ".
-                                         "WHERE dmid=? AND classname=?",
-                                         undef, $dmid, $class)
+        $classid = MogileFS::Class->class_id($dmid, $class)
             or return $self->err_line("unreg_class");
     }
 
@@ -237,56 +234,21 @@ sub cmd_create_open {
     }
     return $self->err_line("no_devices") unless @dests;
 
-    my $explicit_fid_used = $fid ? 1 : 0;
-    # setup the new mapping.  we store the devices that we picked for
-    # this file in here, knowing that they might not be used.  create_close
-    # is responsible for actually mapping in file_on.  NOTE: fid is being
-    # passed in, it's either some number they gave us, or it's going to be
-    # undef which translates into NULL which means to automatically create
-    # one.  that should be fine.
-    my $ins_tempfile = sub {
-        $dbh->do("INSERT INTO tempfile SET ".
-                 " fid=?, dmid=?, dkey=?, classid=?, createtime=UNIX_TIMESTAMP(), devids=?",
-                 undef, $fid, $dmid, $key, $classid, join(',', @dests));
-        return undef if $dbh->err;
-        unless (defined $fid) {
-            # if they did not give us a fid, then we want to grab the one that was
-            # theoretically automatically generated
-            $fid = $dbh->{mysql_insertid};  # FIXME: mysql-ism
-        }
-        return undef unless defined $fid && $fid > 0;
-        return 1;
-    };
+    my $fidid = $sto->register_tempfile(
+                                        fid     => $exp_fidid, # may be undef/NULL to mean auto-increment
+                                        dmid    => $dmid,
+                                        key     => $key,
+                                        classid => $classid,
+                                        devids  => join(',', @dests),
+                                        );
 
-    return undef unless $ins_tempfile->();
-
-    my $fid_in_use = sub {
-        my $exists = $dbh->selectrow_array("SELECT COUNT(*) FROM file WHERE fid=?", undef, $fid);
-        die if $dbh->err;
-        return $exists ? 1 : 0;
-    };
-
-    # if the fid is in use, do something
-    $profstart->("check_fid_in_use");
-    while ($fid_in_use->($fid)) {
-        return $self->err_line("fid_in_use") if $explicit_fid_used;
-
-        # mysql could have been restarted with an empty tempfile table, causing
-        # innodb to reuse a fid number.  so we need to seed the tempfile table...
-
-        # get the highest fid from the filetable and insert a dummy row
-        $fid = $dbh->selectrow_array("SELECT MAX(fid) FROM file");
-        $ins_tempfile->();
-
-        # then do a normal auto-increment
-        $fid = undef;
-        return undef unless $ins_tempfile->();
-    }
+    return $self->err_line("db") unless $fidid;
+    return $self->err_line("fid_in_use") if $fidid == -1;
 
     # make sure directories exist for client to be able to PUT into
     foreach my $devid (@dests) {
         $profstart->("vivify_dir_on_dev$devid");
-        my $dfid = MogileFS::DevFID->new($devid, $fid);
+        my $dfid = MogileFS::DevFID->new($devid, $fidid);
         $dfid->vivify_directories;
     }
 
@@ -294,7 +256,7 @@ sub cmd_create_open {
 
     # common reply variables
     my $res = {
-        fid => $fid,
+        fid => $fidid,
     };
 
     # add profiling data
@@ -315,12 +277,12 @@ sub cmd_create_open {
         foreach my $devid (@dests) {
             $ct++;
             $res->{"devid_$ct"} = $devid;
-            $res->{"path_$ct"} = MogileFS::DevFID->new($devid, $fid)->url;
+            $res->{"path_$ct"} = MogileFS::DevFID->new($devid, $fidid)->url;
         }
         $res->{dev_count} = $ct;
     } else {
         $res->{devid} = $dests[0];
-        $res->{path}  = MogileFS::DevFID->new($res->{devid}, $fid)->url;
+        $res->{path}  = MogileFS::DevFID->new($res->{devid}, $fidid)->url;
     }
 
     return $self->ok_line($res);

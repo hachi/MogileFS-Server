@@ -1,6 +1,7 @@
 package MogileFS::Store;
 use strict;
 use warnings;
+use Carp qw(croak);
 
 sub new {
     my ($class) = @_;
@@ -36,10 +37,20 @@ sub dbh {
     $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
         PrintError => 0,
         AutoCommit => 1,
+        RaiseError => 0,  # FIXME: FUTURE: turn this on.  have to validate all callers first
     }) or
         die "Failed to connect to database: " . DBI->errstr;
     return $self->{dbh};
 }
+
+
+sub condthrow {
+    my $self = shift;
+    my $dbh = $self->dbh;
+    die "Database error: " . $dbh->errstr if $dbh->err;
+}
+
+# --------------------------------------------------------------------------
 
 sub nfiles_with_dmid_classid_devcount {
     my ($self, $dmid, $classid, $devcount) = @_;
@@ -67,7 +78,21 @@ sub server_setting {
                                        undef, $key);
 }
 
+# register a tempfile and return the fidid, which should be allocated
+# using autoincrement/sequences if the passed in fid is undef.  however,
+# if fid is passed in, that value should be used and returned.
+#
+# return -1 if the fid is already in use.
+# return undef or 0 on any other error.
+#
+sub register_tempfile {
+    my ($self, %uarg) = @_;
+    my %arg;
+    $arg{$_} = delete $uarg{$_} foreach qw(fid dmid key classid devids);
+    croak("Bogus options to register_tempfile") if %uarg;
 
+    die "NOT IMPLEMENTED";
+}
 
 1;
 
