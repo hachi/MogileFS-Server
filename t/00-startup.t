@@ -90,8 +90,13 @@ my $mogc = MogileFS::Client->new(
 
 # wait for monitor
 my $be = $mogc->{backend}; # gross, reaching inside of MogileFS::Client
-ok($be->do_request("do_monitor_round", {}), "waited for monitor");
-die $be->errstr if $be->err;
+{
+    my $was = $be->{timeout};  # can't use local on phash :(
+    $be->{timeout} = 10;
+    ok($be->do_request("do_monitor_round", {}), "waited for monitor");
+    die $be->errstr if $be->err;
+    $be->{timeout} = $was;
+}
 
 # create one sample file
 my $fh = $mogc->new_file("file1", "2copies");
