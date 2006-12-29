@@ -508,10 +508,7 @@ sub http_copy {
         my $worker = MogileFS::ProcManager->is_child;
         $worker->send_to_parent(":repl_unreachable $fid");
 
-        # update database table
-        Mgd::validate_dbh();
-        my $dbh = Mgd::get_dbh();
-        $dbh->do("REPLACE INTO unreachable_fids VALUES ($fid, UNIX_TIMESTAMP())");
+        MogileFS::FID->new($fid)->mark_unreachable;
 
         $$errref = "src_error" if $errref;
         return error("Fid $fid unreachable while replicating: $_[0]");
