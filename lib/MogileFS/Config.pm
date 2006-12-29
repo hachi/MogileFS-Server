@@ -213,15 +213,8 @@ sub set_server_setting {
     my ($class, $key, $val) = @_;
     return unless $key;
 
-    my $dbh = Mgd::get_dbh();
-
-    if (defined $val) {
-        $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
-    } else {
-        $dbh->do("DELETE FROM server_settings WHERE field=?", undef, $key);
-    }
-
-    die "Error updating 'server_settings': " . $dbh->errstr if $dbh->err;
+    my $sto = Mgd::get_store();
+    $sto->set_server_setting($key, $val);
     return 1;
 }
 
@@ -229,10 +222,7 @@ sub set_server_setting {
 #   get value of server setting, undef on error (or no result)
 sub server_setting {
     my ($class, $key) = @_;
-    my $dbh = Mgd::get_dbh();
-    my $ret = $dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?", undef, $key);
-    die "Error reading from 'server_settings': " . $dbh->errstr if $dbh->err;
-    return $ret;
+    return Mgd::get_store()->server_setting($key);
 }
 
 

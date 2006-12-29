@@ -35,6 +35,28 @@ sub nfiles_with_dmid_classid_devcount {
                                        undef, $dmid, $classid, $devcount);
 }
 
+sub set_server_setting {
+    my ($self, $key, $val) = @_;
+    my $dbh = $self->dbh;
+
+    if (defined $val) {
+        $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
+    } else {
+        $dbh->do("DELETE FROM server_settings WHERE field=?", undef, $key);
+    }
+
+    die "Error updating 'server_settings': " . $dbh->errstr if $dbh->err;
+    return 1;
+}
+
+sub server_setting {
+    my ($self, $key) = @_;
+    return $self->dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?",
+                                       undef, $key);
+}
+
+
+
 1;
 
 __END__
