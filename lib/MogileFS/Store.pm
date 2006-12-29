@@ -18,9 +18,21 @@ sub new {
     }, $subclass;
 }
 
+sub recheck_dbh {
+    my $self = shift;
+    $self->{needs_ping} = 1;
+}
+
 sub dbh {
     my $self = shift;
-    return $self->{dbh} if $self->{dbh} && $self->{dbh}->ping;
+    if ($self->{dbh}) {
+        if ($self->{needs_ping}) {
+            $self->{needs_ping} = 0;
+            $self->{dbh} = undef unless $self->{dbh}->ping;
+        }
+        return $self->{dbh} if $self->{dbh};
+    }
+
     $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
         PrintError => 0,
         AutoCommit => 1,
