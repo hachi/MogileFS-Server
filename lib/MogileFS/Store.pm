@@ -43,6 +43,10 @@ sub dbh {
     return $self->{dbh};
 }
 
+sub ping {
+    my $self = shift;
+    return $self->dbh->ping;
+}
 
 sub condthrow {
     my $self = shift;

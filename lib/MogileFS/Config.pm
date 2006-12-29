@@ -189,8 +189,8 @@ sub config {
 }
 
 sub check_database {
-    my $dbh = Mgd::get_dbh();
-    unless ($dbh) {
+    my $sto = eval { Mgd::get_store() };
+    unless ($sto && $sto->ping) {
         die qq{
 Error: unable to establish connection with your MogileFS database.
 
