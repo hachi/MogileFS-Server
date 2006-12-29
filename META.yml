@@ -1,16 +1,17 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         mogilefs-server
-version:      2.00_03
+version:      2.00_04
 version_from: 
 installdirs:  site
 requires:
-    Danga::Socket:                 1.22
+    Danga::Socket:                 1.56
     fields:                        0
     Getopt::Long:                  0
     Net::Netmask:                  0
-    Perlbal:                       0
+    Perlbal:                       1.52
     Symbol:                        0
+    Sys::Syscall:                  0.22
     Sys::Syslog:                   0
 
 distribution_type: module
