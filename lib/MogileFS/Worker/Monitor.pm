@@ -141,13 +141,9 @@ sub check_device {
     my $next_update = $last_update + UPDATE_DB_EVERY;
     my $now = time();
     if ($now >= $next_update) {
-        my $dbh = $self->get_dbh or return 0;
-        $dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
-                 "WHERE devid = ?", undef, int($total / 1024), int($used / 1024), $devid);
-        if ($dbh->err) {
-            error("Database error in update query: " . $dbh->errstr);
-            return;
-        }
+        Mgd::get_store()->update_device_usage(mb_total => int($total / 1024),
+                                              mb_used  => int($used / 1024),
+                                              devid    => $devid);
         $self->{last_db_update}{$devid} = $now;
     }
 

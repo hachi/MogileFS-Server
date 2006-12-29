@@ -86,10 +86,8 @@ sub server_setting {
 # return undef or 0 on any other error.
 #
 sub register_tempfile {
-    my ($self, %uarg) = @_;
-    my %arg;
-    $arg{$_} = delete $uarg{$_} foreach qw(fid dmid key classid devids);
-    croak("Bogus options to register_tempfile") if %uarg;
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(fid dmid key classid devids)], @_);
 
     die "NOT IMPLEMENTED";
 }
@@ -102,6 +100,22 @@ sub file_row_from_dmid_key {
     return $self->dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
                                          "FROM file WHERE dmid=? AND dkey=?",
                                          undef, $dmid, $key);
+}
+
+sub update_device_usage {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
+    $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
+                   "WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{mb_devid});
+    $self->condthrow;
+}
+
+sub _valid_params {
+    my ($self, $vlist, %uarg) = @_;
+    my %ret;
+    $ret{$_} = delete $uarg{$_} foreach @$vlist;
+    croak("Bogus options") if %uarg;
+    return %ret;
 }
 
 1;

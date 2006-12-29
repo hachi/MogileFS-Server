@@ -4,10 +4,8 @@ use warnings;
 use base 'MogileFS::Store';
 
 sub register_tempfile {
-    my ($self, %uarg) = @_;
-    my %arg;
-    $arg{$_} = delete $uarg{$_} foreach qw(fid dmid key classid devids);
-    croak("Bogus options to register_tempfile") if %uarg;
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(fid dmid key classid devids)], @_);
 
     my $dbh = $self->dbh;
     my $fid = $arg{fid};
