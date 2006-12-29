@@ -131,7 +131,7 @@ sub load_config {
     # Fill in defaults for those values which were either loaded from config or
     # specified on the command line. Command line takes precendence, then values in
     # the config file, then the defaults.
-    $daemonize      = choose_value( 'daemonize', 0, 1 );
+    $daemonize      = choose_value( 'daemonize', 0 );
     $db_dsn         = choose_value( 'db_dsn', "DBI:mysql:mogilefs" );
     $db_user        = choose_value( 'db_user', "mogile" );
     $db_pass        = choose_value( 'db_pass', "", 1 );
@@ -149,8 +149,8 @@ sub load_config {
     $checker_jobs   = choose_value( 'checker_jobs', 1 );
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
-    $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0, 1 );
-    $pidfile        = choose_value( 'pidfile', undef );
+    $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0 );
+    $pidfile        = choose_value( 'pidfile', "" );
 
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
