@@ -14,10 +14,7 @@ sub new {
 # quick port of old API.  perhaps not ideal.
 sub new_from_dmid_and_key {
     my ($class, $dmid, $key) = @_;
-    my $dbh = Mgd::get_dbh();
-    my $row = $dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
-                                      "FROM file WHERE dmid=? AND dkey=?",
-                                      undef, $dmid, $key)
+    my $row = Mgd::get_store()->file_row_from_dmid_key($dmid, $key)
         or return undef;
     $row->{fidid} = delete $row->{fid};
     return bless $row, $class;

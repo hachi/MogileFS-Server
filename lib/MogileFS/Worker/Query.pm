@@ -195,7 +195,6 @@ sub cmd_create_open {
 
     # get DB handle
     my $sto = Mgd::get_store();
-    my $dbh = $sto->dbh;
 
     # figure out what classid this file is for
     my $class = $args->{class} || "";

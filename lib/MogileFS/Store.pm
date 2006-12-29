@@ -94,6 +94,16 @@ sub register_tempfile {
     die "NOT IMPLEMENTED";
 }
 
+# return hashref of row containing columns "fid, dmid, dkey, length,
+# classid, devcount" provided a $dmid and $key (dkey).  or undef if no
+# row.
+sub file_row_from_dmid_key {
+    my ($self, $dmid, $key) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
+                                         "FROM file WHERE dmid=? AND dkey=?",
+                                         undef, $dmid, $key);
+}
+
 1;
 
 __END__
