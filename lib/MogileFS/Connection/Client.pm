@@ -67,7 +67,7 @@ sub handle_admin_command {
         map { "$_ $stats->{$_}" } sort keys %$stats;
 
     } elsif ($cmd =~ /^repl/) {
-        my $dbh = Mgd::get_dbh();
+        my $sto = Mgd::get_store();
         my $mdcs = MogileFS::Class->mindevcounts;
         foreach my $dmid (sort keys %$mdcs) {
             my $dmname = MogileFS::Domain->name_of_id($dmid);
@@ -76,8 +76,7 @@ sub handle_admin_command {
                 next unless $min > 1;
                 my $classname = MogileFS::Class->class_name($dmid, $classid) || '_default';
                 foreach my $ct (1..$min-1) {
-                    my $count =  $dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
-                                                       undef, $dmid, $classid, $ct);
+                    my $count = $sto->nfiles_with_dmid_classid_devcount($dmid, $classid, $ct);
                     push @out, "$dmname $classname $ct $count";
                 }
             }

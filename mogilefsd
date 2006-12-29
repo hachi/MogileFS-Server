@@ -55,6 +55,9 @@ use MogileFS::FID;
 use MogileFS::Domain;
 use MogileFS::DevFID;
 
+use MogileFS::Store;
+use MogileFS::Store::MySQL;
+
 use MogileFS::ReplicationPolicy::MultipleHosts;
 
 use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
@@ -157,6 +160,16 @@ sub get_dbh {
                                MogileFS->config('db_pass'), {
                                    PrintError => 0,
                                });
+}
+
+# the eventual replacement for callers asking for a dbh directly:
+# they'll ask for the current store, which is a database abstraction
+# layer.
+my ($store, $store_pid);
+sub get_store {
+    return $store if $store && $store_pid == $$;
+    $store_pid = $$;
+    return $store = MogileFS::Store->new;
 }
 
 # log stuff to syslog or the screen

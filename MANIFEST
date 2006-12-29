@@ -12,6 +12,8 @@ lib/MogileFS/IOStatWatcher.pm
 lib/MogileFS/Config.pm
 lib/MogileFS/Connection/Client.pm
 lib/MogileFS/Connection/Worker.pm
+lib/MogileFS/Store.pm
+lib/MogileFS/Store/MySQL.pm
 lib/MogileFS/Plugin/FilePaths.pm
 lib/MogileFS/ProcManager.pm
 lib/MogileFS/ReplicationPolicy/MultipleHosts.pm
