@@ -255,11 +255,11 @@ See L<MogileFS::Worker::Reaper>.
 
 See L<MogileFS::Worker::Checker>.
 
+=back
+
 =head2 Data Storage
 
 See L<MogileFS::Store>.
-
-=back
 
 =head1 AUTHORS
 
@@ -280,6 +280,6 @@ Same terms as Perl itself.  Artistic/GPLv2, at your choosing.
 
 =head1 SEE ALSO
 
-L<mogstored>
+L<mogstored> -- MogilefS storage daemon
 
 L<http://danga.com/mogilefs/>
