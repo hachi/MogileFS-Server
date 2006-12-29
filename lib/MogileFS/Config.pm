@@ -63,6 +63,7 @@ our (
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
     $old_repl_compat,
+    $pidfile,
    );
 
 our $default_mindevcount;
@@ -90,6 +91,7 @@ sub load_config {
                              'minfreespace=i' => \$cmdline{min_free_space},
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
+                             'pidfile=s'      => \$cmdline{pidfile},
                              'no_schema_check' => \$cmdline{no_schema_check},
                              'old_repl_compat=i' => \$cmdline{old_repl_compat},
                              );
@@ -148,6 +150,7 @@ sub load_config {
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
     $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0, 1 );
+    $pidfile        = choose_value( 'pidfile', undef );
 
     $default_mindevcount = choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );

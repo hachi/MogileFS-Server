@@ -82,12 +82,22 @@ MogileFS::ProcManager->set_min_workers('checker'     => MogileFS->config('checke
 openlog('mogilefsd', 'pid', 'daemon');
 Mgd::log('info', 'beginning run');
 
+unless (MogileFS::ProcManager->write_pidfile) {
+    Mgd::log('info', "Couldn't write pidfile, ending run");
+    closelog();
+    exit 1;
+}
+
 # Install signal handlers.
 $SIG{TERM}  = sub {
     my @children = MogileFS::ProcManager->child_pids;
     print STDERR scalar @children, " children to kill.\n" if $DEBUG;
     my $count = kill( 'TERM' => @children );
     print STDERR "Sent SIGTERM to $count children.\n" if $DEBUG;
+    MogileFS::ProcManager->remove_pidfile;
+    Mgd::log('info', 'ending run due to SIGTERM');
+    closelog();
+
     exit 0;
 };
 $SIG{INT}  = sub {
@@ -95,6 +105,8 @@ $SIG{INT}  = sub {
     print STDERR scalar @children, " children to kill.\n" if $DEBUG;
     my $count = kill( 'INT' => @children );
     print STDERR "Sent SIGINT to $count children.\n" if $DEBUG;
+    MogileFS::ProcManager->remove_pidfile;
+    Mgd::log('info', 'ending run due to SIGINT');
     exit 0;
 };
 $SIG{PIPE} = 'IGNORE';  # catch them by hand

@@ -1,3 +1,11 @@
+2006-12-28
+        -- pidfile support (Radu Greab <radu@yx.ro>)
+
+2006-12-27/28
+        -- remove all old internal APIs, update everything to use new OO APIs,
+           expanding OO APIs where necessary (lots of places).  so much more
+           beautifully hackable now.
+
 2006-09-29
         -- remove non-HTTP mode ("NFS mode") from the server
 

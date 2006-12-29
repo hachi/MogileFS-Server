@@ -47,6 +47,31 @@ sub RecentQueries {
     return @RecentQueries;
 }
 
+sub write_pidfile {
+    my $class = shift;
+    my $pidfile = MogileFS->config("pidfile")
+        or return 1;
+    my $fh;
+    unless (open($fh, ">$pidfile")) {
+        Mgd::log('err', "couldn't create pidfile '$pidfile': $!");
+        return 0;
+    }
+    unless ((print $fh "$$\n") && close($fh)) {
+        Mgd::log('err', "couldn't write into pidfile '$pidfile': $!");
+        remove_pidfile();
+        return 0;
+    }
+    return 1;
+}
+
+sub remove_pidfile {
+    my $class = shift;
+    my $pidfile = MogileFS->config("pidfile")
+        or return;
+    unlink $pidfile;
+    return 1;
+}
+
 sub set_min_workers {
     my ($class, $job, $min) = @_;
     $jobs{$job} ||= [undef, 0];   # [min, current]
