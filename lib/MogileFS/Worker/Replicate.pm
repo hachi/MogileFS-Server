@@ -462,7 +462,9 @@ sub replicate {
             next;
         }
 
-        add_file_on($fid, $ddevid, 1);
+        my $dfid = MogileFS::DevFID->new($ddevid, $fid);
+        $dfid->add_to_db;
+
         push @on_devs, $devs->{$ddevid};
     }
 
@@ -619,22 +621,6 @@ sub http_copy {
         return $dest_error->("Got HTTP status code $1 PUTing to http://$dhostip:$dport$dpath");
     } else {
         return $dest_error->("Error: HTTP response line not recognized writing to http://$dhostip:$dport$dpath: $line");
-    }
-}
-
-sub add_file_on {
-    my ($fid, $devid, $no_lock) = @_;
-
-    my $dbh = Mgd::get_dbh() or return 0;
-
-    my $rv = $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
-                      undef, $fid, $devid);
-    if ($rv > 0) {
-        my $fido = MogileFS::FID->new($fid);
-        return $fido->update_devcount(no_lock => $no_lock);
-    } else {
-        # was already on that device
-        return 1;
     }
 }
 

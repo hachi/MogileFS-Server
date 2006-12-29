@@ -76,6 +76,20 @@ sub _make_full_url {
     return "http://$hostip:$port$path";
 }
 
+sub add_to_db {
+    my ($self, $no_lock) = @_;
+
+    my $dbh = Mgd::get_dbh();
+    my $rv = $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
+                      undef, $self->{fidid}, $self->{devid});
+    if ($rv > 0) {
+        return $self->fid->update_devcount(no_lock => $no_lock);
+    } else {
+        # was already on that device
+        return 1;
+    }
+}
+
 1;
 
 __END__

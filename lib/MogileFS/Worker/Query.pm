@@ -125,7 +125,9 @@ sub cmd_httpcopy {
                                                     fid    => $fid,
                                                     errref => \$err);
     if ($rv) {
-        MogileFS::Worker::Replicate::add_file_on($fid, $ddevid);
+        my $dfid = MogileFS::DevFID->new($ddevid, $fid);
+        $dfid->add_to_db
+            or return $self->err_line("copy_err", "failed to add link to database");
         return $self->ok_line;
     } else {
         return $self->err_line("copy_err", $err);
