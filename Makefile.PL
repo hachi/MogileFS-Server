@@ -17,7 +17,7 @@ $exefiles = ["mogilefsd"] if exists $ENV{DANGABUILD_MOGILEFSDONLY};
 
 WriteMakefile(
     NAME                    => 'mogilefs-server',
-    VERSION                 => '2.00_03',
+    VERSION                 => '2.00_04',
     AUTHOR                  => 'Brad Fitzpatrick <brad@danga.com>',
     ABSTRACT                => 'MogileFS server components',
     EXE_FILES               => $exefiles,
