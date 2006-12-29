@@ -54,6 +54,14 @@ sub condthrow {
     die "Database error: " . $dbh->errstr if $dbh->err;
 }
 
+sub _valid_params {
+    my ($self, $vlist, %uarg) = @_;
+    my %ret;
+    $ret{$_} = delete $uarg{$_} foreach @$vlist;
+    croak("Bogus options") if %uarg;
+    return %ret;
+}
+
 # --------------------------------------------------------------------------
 
 sub nfiles_with_dmid_classid_devcount {
@@ -114,12 +122,10 @@ sub update_device_usage {
     $self->condthrow;
 }
 
-sub _valid_params {
-    my ($self, $vlist, %uarg) = @_;
-    my %ret;
-    $ret{$_} = delete $uarg{$_} foreach @$vlist;
-    croak("Bogus options") if %uarg;
-    return %ret;
+sub mark_fidid_unreachable {
+    my ($self, $fidid) = @_;
+    $self->dbh->do("REPLACE INTO unreachable_fids VALUES (?, UNIX_TIMESTAMP())",
+                   undef, $fidid);
 }
 
 1;

@@ -72,7 +72,12 @@ sub enqueue_for_replication {
     }
     $dbh->do("INSERT IGNORE INTO file_to_replicate ".
              "SET fid=?, fromdevid=?, nexttry=$nexttry", undef, $self->id, $from_devid);
+}
 
+sub mark_unreachable {
+    my $self = shift;
+    # update database table
+    Mgd::get_store()->mark_fidid_unreachable($self->id);
 }
 
 1;
