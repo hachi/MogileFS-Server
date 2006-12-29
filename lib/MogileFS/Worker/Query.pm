@@ -1312,3 +1312,15 @@ sub decode_url_args
 # c-basic-indent: 4
 # indent-tabs-mode: nil
 # End:
+
+__END__
+
+=head1 NAME
+
+MogileFS::Worker::Query -- implements the MogileFS client protocol
+
+=head1 SEE ALSO
+
+L<MogileFS::Worker>
+
+

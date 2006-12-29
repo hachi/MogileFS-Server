@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
-my @files = "mogilefsd";
+my @files = ("mogstored", "mogilefsd");
 push @files, `find lib -name '*.pm'`;
 chomp @files;
 

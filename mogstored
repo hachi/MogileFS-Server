@@ -537,3 +537,37 @@ sub close {
 # c-basic-indent: 4
 # indent-tabs-mode: nil
 # End:
+
+__END__
+
+=head1 NAME
+
+mogstored -- MogileFS storage daemon
+
+=head1 USAGE
+
+This is the MogileFS storage daemon, which is just an HTTP server that
+supports PUT, DELETE, etc.  It's actually a wrapper around L<Perlbal>,
+doing all the proper Perlbal config for you.
+
+In addition, it monitors disk usage, I/O activity, etc, for reporting
+to the L<MogileFS tracker|mogilefsd>.
+
+=head1 AUTHORS
+
+Brad Fitzpatrick E<lt>brad@danga.comE<gt>
+
+=head1 COPYRIGHT
+
+ Copyright 2004, Danga Interactive
+ Copyright 2005-2006, Six Apart Ltd.
+
+=head1 LICENSE
+
+Same terms as Perl itself.  Artistic/GPLv2, at your choosing.
+
+=head1 SEE ALSO
+
+L<mogilefsd>
+
+L<http://danga.com/mogilefs/>
