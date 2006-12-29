@@ -149,30 +149,8 @@ Mgd::log('info', 'ending run');
 closelog();
 
 # database checking/connecting
-my ($dbh, $dbh_pid);
-sub validate_dbh {
-    return unless $dbh;
-    if ($$ != $dbh_pid) {
-        undef $dbh;
-        $dbh_pid = 0;
-        return;
-    }
-    my $id = $dbh->selectrow_array("SELECT CONNECTION_ID()");
-    if (! $id) {
-        # handle's dead.  don't use it.  (MySQL-ism above)
-        undef $dbh;
-    }
-}
-
-sub get_dbh {
-    return $dbh if $dbh && $dbh_pid == $$;
-    $dbh_pid = $$;
-    return $dbh = DBI->connect(MogileFS->config('db_dsn'),
-                               MogileFS->config('db_user'),
-                               MogileFS->config('db_pass'), {
-                                   PrintError => 0,
-                               });
-}
+sub validate_dbh { Mgd::get_store()->recheck_dbh }
+sub get_dbh      { return Mgd::get_store()->dbh  }
 
 # the eventual replacement for callers asking for a dbh directly:
 # they'll ask for the current store, which is a database abstraction
