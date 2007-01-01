@@ -128,6 +128,12 @@ sub mark_fidid_unreachable {
                    undef, $fidid);
 }
 
+sub set_device_weight {
+    my ($self, $devid, $weight) = @_;
+    $self->dbh->do('UPDATE device SET weight = ? WHERE devid = ?', undef, $weight, $devid);
+    $self->condthrow;
+}
+
 1;
 
 __END__

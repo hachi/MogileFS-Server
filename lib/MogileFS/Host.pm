@@ -164,6 +164,12 @@ sub status {
     return $host->{status};
 }
 
+sub hostname {
+    my $host = shift;
+    $host->_load;
+    return $host->{status};
+}
+
 sub is_marked_down {
     my $host = shift;
     die "FIXME";

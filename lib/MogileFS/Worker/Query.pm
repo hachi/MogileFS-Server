@@ -979,33 +979,22 @@ sub cmd_set_weight {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    # get database handle
-    my $ret = {};
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line('nodb');
-
     # figure out what they want to do
-    my ($host, $dev, $weight) = ($args->{host}, $args->{device}+0, $args->{weight}+0);
+    my ($hostname, $devid, $weight) = ($args->{host}, $args->{device}+0, $args->{weight}+0);
     return $self->err_line('bad_params')
-        unless $host && $dev && $weight >= 0;
+        unless $hostname && $devid && $weight >= 0;
 
-    # now get this device's current weight and host
-    my ($realhost) =
-        $dbh->selectrow_array('SELECT hostname FROM host, device ' .
-                              'WHERE host.hostid = device.hostid AND device.devid = ?',
-                              undef, $dev);
-
-    # verify host is the same
+    my $dev = MogileFS::Device->of_devid($devid);
     return $self->err_line('host_mismatch')
-        unless $realhost eq $host;
+        unless $dev && $dev->exists;
 
-    # update the weight in the database now
-    $dbh->do('UPDATE device SET weight = ? WHERE devid = ?', undef, $weight, $dev);
-    return $self->err_line('failure') if $dbh->err;
+    my $host = $dev->host;
+    return $self->err_line('host_mismatch')
+        unless $host && $host->exists && $host->hostname eq $hostname;
 
-    # success, weight changed
-    MogileFS::Device->invalidate_cache;
-    return $self->ok_line($ret);
+    $dev->set_weight($weight);
+
+    return $self->ok_line({});;
 }
 
 sub cmd_set_state {

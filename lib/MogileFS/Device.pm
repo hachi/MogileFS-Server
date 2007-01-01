@@ -405,6 +405,13 @@ sub overview_hashref {
     return $ret;
 }
 
+sub set_weight {
+    my ($dev, $weight) = @_;
+    my $sto = Mgd::get_store();
+    $sto->set_device_weight($dev->id, $weight);
+    MogileFS::Device->invalidate_cache;
+}
+
 # --------------------------------------------------------------------------
 
 sub _load {
