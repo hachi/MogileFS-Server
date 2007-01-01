@@ -80,6 +80,12 @@ sub mark_unreachable {
     Mgd::get_store()->mark_fidid_unreachable($self->id);
 }
 
+sub delete {
+    my $fid = shift;
+    my $sto = Mgd::get_store();
+    $sto->delete_fidid($fid->id);
+}
+
 1;
 
 __END__

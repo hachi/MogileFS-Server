@@ -134,6 +134,14 @@ sub set_device_weight {
     $self->condthrow;
 }
 
+sub delete_fidid {
+    my ($self, $fidid) = @_;
+    $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid);
+    $self->condthrow;
+    $self->dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fidid);
+    $self->condthrow;
+}
+
 1;
 
 __END__

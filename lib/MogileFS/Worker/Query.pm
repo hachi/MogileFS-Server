@@ -408,20 +408,13 @@ sub cmd_delete {
     my $dmid = $args->{dmid};
     my $key = $args->{key} or return $self->err_line("no_key");
 
-    # get DB handle
-    my $dbh = Mgd::get_dbh() or
-        return $self->err_line("nodb");
-
     # is this fid still owned by this key?
-    my $fid = $dbh->selectrow_array("SELECT fid FROM file WHERE dmid=? AND dkey=?",
-                                    undef, $dmid, $key);
-    return $self->err_line("unknown_key") unless $fid;
+    my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
+        or return $self->err_line("unknown_key");
 
-    $dbh->do("DELETE FROM file WHERE fid=?", undef, $fid);
-    $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fid);
+    $fid->delete;
 
-    return $self->ok_line();
-
+    return $self->ok_line;
 }
 
 sub cmd_list_fids {
