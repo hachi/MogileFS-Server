@@ -69,7 +69,7 @@ __END__
 
 =head1 NAME
 
-MogileFS::Store::MySQL - mysql data storage for MogileFS
+MogileFS::Store::MySQL - MySQL data storage for MogileFS
 
 =head1 SEE ALSO
 
