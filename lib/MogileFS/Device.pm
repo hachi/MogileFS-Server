@@ -217,23 +217,21 @@ sub absorb_dbrow {
     $dev->{mb_free} = $dev->{mb_total} - $dev->{mb_used};
 
     my $host = MogileFS::Host->of_hostid($dev->{hostid});
-    unless ($host && $host->exists) {
+    if ($host && $host->exists) {
+        my $host_status = $host->status;
+        die "No status" unless $host_status =~ /^\w+$/;
+        # FIXME: not sure I like this, changing the in-memory version
+        # of the configured status is.  I'd rather this be calculated
+        # in an accessor.
+        if ($dev->{status} eq 'alive' && $host_status ne 'alive') {
+            $dev->{status} = "down"
+        }
+    } else {
         if ($dev->{status} eq "dead") {
             # ignore dead devices without hosts.  not a big deal.
-            next;
         } else {
             die "No host for dev $dev->{devid} (host $dev->{hostid})";
         }
-    }
-
-    my $host_status = $host->status;
-    die "No status" unless $host_status =~ /^\w+$/;
-
-    # FIXME: not sure I like this, changing the in-memory version
-    # of the configured status is.  I'd rather this be calculated
-    # in an accessor.
-    if ($dev->{status} eq 'alive' && $host_status ne 'alive') {
-        $dev->{status} = "down"
     }
 
     $dev->{_loaded} = 1;
