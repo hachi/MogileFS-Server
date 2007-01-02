@@ -303,10 +303,11 @@ sub cmd_create_close {
     # late validation of parameters
     my $dmid  = $args->{dmid};
     my $key   = $args->{key};
-    my $fid   = $args->{fid}    or return $self->err_line("no_fid");
+    my $fidid = $args->{fid}    or return $self->err_line("no_fid");
     my $devid = $args->{devid}  or return $self->err_line("no_devid");
     my $path  = $args->{path}   or return $self->err_line("no_path");
 
+    my $fid  = MogileFS::FID->new($fidid);
     my $dfid = MogileFS::DevFID->new($devid, $fid);
 
     # is the provided path what we'd expect for this fid/devid?
@@ -320,24 +321,20 @@ sub cmd_create_close {
     # find the temp file we're closing and making real
     my $trow = $dbh->selectrow_hashref("SELECT classid, dmid, dkey ".
                                        "FROM tempfile WHERE fid=?",
-                                       undef, $fid);
+                                       undef, $fidid);
     return $self->err_line("no_temp_file") unless $trow;
 
     # if a temp file is closed without a provided-key, that means to
     # delete it.
     unless (defined $key && length($key)) {
-        # add to to-delete list
-        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fid);
-        $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
+        $fid->delete;
         return $self->ok_line;
     }
 
     # see if we have a fid for this key already
     my $old_fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key);
     if ($old_fid) {
-        # add to to-delete list
-        $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $old_fid->id);
-        $dbh->do("DELETE FROM file WHERE fid=?", undef, $old_fid->id);
+        $old_fid->delete;
     }
 
     # get size of file and verify that it matches what we were given, if anything
@@ -355,36 +352,32 @@ sub cmd_create_close {
     return $self->err_line("empty_file") unless $size;
 
     # insert file_on row
-    $dbh->do("INSERT IGNORE INTO file_on SET fid = ?, devid = ?", undef, $fid, $devid);
-    return $self->err_line("db_error") if $dbh->err;
+    $dfid->add_to_db;
 
     my $rv = $dbh->do("REPLACE INTO file ".
                       "SET ".
                       "  fid=?, dmid=?, dkey=?, length=?, ".
                       "  classid=?, devcount=0", undef,
-                      $fid, $dmid, $key, $size, $trow->{classid});
+                      $fidid, $dmid, $key, $size, $trow->{classid});
     return $self->err_line("db_error") unless $rv;
 
     # mark it as needing replicating:
     $dbh->do("INSERT IGNORE INTO file_to_replicate ".
-             "SET fid=?, fromdevid=?, nexttry=0", undef, $fid, $devid);
+             "SET fid=?, fromdevid=?, nexttry=0", undef, $fidid, $devid);
     return $self->err_line("db_error") if $dbh->err;
 
-    $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fid);
+    $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
 
-    my $fido = MogileFS::FID->new($fid);
-
-    if ($fido->update_devcount) {
+    if ($fid->update_devcount) {
         # call the hook - if this fails, we need to back the file out
         my $rv = MogileFS::run_global_hook('file_stored', $args);
         if (defined $rv && ! $rv) { # undef = no hooks, 1 = success, 0 = failure
-            $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fid);
-            $dbh->do("DELETE FROM file WHERE fid=?", undef, $fid);
+            $fid->delete;
             return $self->err_line("plugin_aborted");
         }
 
         # all went well
-        return $self->ok_line();
+        return $self->ok_line;
     } else {
         # FIXME: handle this better
         return $self->err_line("db_error");
