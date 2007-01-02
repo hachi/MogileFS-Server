@@ -221,7 +221,9 @@ sub process_generic_command {
 
     if ($$lineref =~ /^:invalidate_meta_once (\w+)/) {
         local $Mgd::INVALIDATE_NO_PROPOGATE = 1;
-        eval("Mgd::invalidate_${1}_cache()");
+        # where $1 is one of {"domain", "device", "host"}
+        my $class = "MogileFS::" . ucfirst(lc($1));
+        $class->invalidate_cache;
         return 1;
     }
 
