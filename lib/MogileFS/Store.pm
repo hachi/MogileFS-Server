@@ -114,6 +114,14 @@ sub file_row_from_dmid_key {
                                          undef, $dmid, $key);
 }
 
+# return hashref of columns classid, dmid, dkey, given a $fidid, or return undef
+sub tempfile_row_from_fid {
+    my ($self, $fidid) = @_;
+    return $self->dbh->selectrow_hashref("SELECT classid, dmid, dkey ".
+                                         "FROM tempfile WHERE fid=?",
+                                         undef, $fidid);
+}
+
 sub update_device_usage {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
@@ -147,6 +155,23 @@ sub delete_fidid {
     $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
     $self->condthrow;
     $self->dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fidid);
+    $self->condthrow;
+}
+
+sub delete_tempfile_row {
+    my ($self, $fidid) = @_;
+    $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
+    $self->condthrow;
+}
+
+sub replace_into_file {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(fidid dmid key length classid)], @_);
+    $self->dbh->do("REPLACE INTO file ".
+                   "SET ".
+                   "  fid=?, dmid=?, dkey=?, length=?, ".
+                   "  classid=?, devcount=0", undef,
+                   @arg{'fidid', 'dmid', 'key', 'length', 'classid'});
     $self->condthrow;
 }
 

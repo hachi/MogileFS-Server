@@ -86,6 +86,21 @@ sub delete {
     $sto->delete_fidid($fid->id);
 }
 
+sub start_replication {
+    my ($fid, %opts) = @_;
+    my $from = delete $opts{from};
+    croak "Bad options" if %opts;
+
+    # we want from to be a deviceid.
+    $from = $from->id if ref $from;
+
+    my $sto = Mgd::get_store();
+    my $dbh = Mgd::get_dbh();
+    $dbh->do("INSERT IGNORE INTO file_to_replicate " .
+             "SET fid=?, fromdevid=?, nexttry=0", undef, $fid->id, $from || undef);
+    $sto->condthrow;
+}
+
 1;
 
 __END__

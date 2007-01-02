@@ -314,15 +314,11 @@ sub cmd_create_close {
     return $self->err_line("bogus_args")
         unless $path eq $dfid->url;
 
-    # get DB handle
-    my $dbh = Mgd::get_dbh() or
-        return $self->err_line("nodb");
+    my $sto = Mgd::get_store();
 
     # find the temp file we're closing and making real
-    my $trow = $dbh->selectrow_hashref("SELECT classid, dmid, dkey ".
-                                       "FROM tempfile WHERE fid=?",
-                                       undef, $fidid);
-    return $self->err_line("no_temp_file") unless $trow;
+    my $trow = $sto->tempfile_row_from_fid($fidid) or
+        return $self->err_line("no_temp_file");
 
     # if a temp file is closed without a provided-key, that means to
     # delete it.
@@ -354,19 +350,17 @@ sub cmd_create_close {
     # insert file_on row
     $dfid->add_to_db;
 
-    my $rv = $dbh->do("REPLACE INTO file ".
-                      "SET ".
-                      "  fid=?, dmid=?, dkey=?, length=?, ".
-                      "  classid=?, devcount=0", undef,
-                      $fidid, $dmid, $key, $size, $trow->{classid});
-    return $self->err_line("db_error") unless $rv;
+    $sto->replace_into_file(
+                            fidid   => $fidid,
+                            dmid    => $dmid,
+                            key     => $key,
+                            length  => $size,
+                            classid => $trow->{classid},
+                            );
 
     # mark it as needing replicating:
-    $dbh->do("INSERT IGNORE INTO file_to_replicate ".
-             "SET fid=?, fromdevid=?, nexttry=0", undef, $fidid, $devid);
-    return $self->err_line("db_error") if $dbh->err;
-
-    $dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
+    $fid->start_replication(from => $devid);
+    $sto->delete_tempfile_row($fidid);
 
     if ($fid->update_devcount) {
         # call the hook - if this fails, we need to back the file out
