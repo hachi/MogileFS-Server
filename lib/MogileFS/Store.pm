@@ -126,7 +126,7 @@ sub update_device_usage {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
     $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
-                   "WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{mb_devid});
+                   "WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{devid});
     $self->condthrow;
 }
 
