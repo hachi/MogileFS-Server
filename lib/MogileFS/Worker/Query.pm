@@ -210,11 +210,7 @@ sub cmd_create_open {
     # to prevent a race where we tell a user that we can't create a file when
     # in fact we've just not heard from the monitor
     $profstart->("wait_monitor");
-    while (! $self->monitor_has_run) {
-        $self->read_from_parent;
-        $self->still_alive;
-        sleep 1;
-    }
+    $self->wait_for_monitor;
 
     # find a device to put this file on that has 100Mb free.
     my (@dests, @hosts);
