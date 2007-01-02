@@ -61,11 +61,11 @@ sub update_devcount {
 
 sub enqueue_for_replication {
     my ($self, %opts) = @_;
-    my $in = delete $opts{in};
-    my $from_dev = delete $opts{from_device};
+    my $in       = delete $opts{in};
+    my $from_dev = delete $opts{from_device};  # devid or Device object
     croak("Unknown options to enqueue_for_replication") if %opts;
     my $dbh = Mgd::get_dbh();
-    my $from_devid = $from_dev ? $from_dev->id : undef;
+    my $from_devid = (ref $from_dev ? $from_dev->id : $from_dev) || undef;
     my $nexttry = 0;
     if ($in) {
         $nexttry = "UNIX_TIMESTAMP() + " . int($in);
@@ -91,21 +91,6 @@ sub rename {
     my ($fid, $to_key) = @_;
     my $sto = Mgd::get_store();
     return $sto->rename_file($fid->id, $to_key);
-}
-
-sub start_replication {
-    my ($fid, %opts) = @_;
-    my $from = delete $opts{from};
-    croak "Bad options" if %opts;
-
-    # we want from to be a deviceid.
-    $from = $from->id if ref $from;
-
-    my $sto = Mgd::get_store();
-    my $dbh = Mgd::get_dbh();
-    $dbh->do("INSERT IGNORE INTO file_to_replicate " .
-             "SET fid=?, fromdevid=?, nexttry=0", undef, $fid->id, $from || undef);
-    $sto->condthrow;
 }
 
 1;

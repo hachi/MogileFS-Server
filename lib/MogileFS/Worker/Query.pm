@@ -359,7 +359,7 @@ sub cmd_create_close {
                             );
 
     # mark it as needing replicating:
-    $fid->start_replication(from => $devid);
+    $fid->enqueue_for_replication(from_device => $devid);
     $sto->delete_tempfile_row($fidid);
 
     if ($fid->update_devcount) {
