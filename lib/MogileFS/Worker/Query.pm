@@ -509,17 +509,13 @@ sub cmd_rename {
     my ($fkey, $tkey) = ($args->{from_key}, $args->{to_key});
     return $self->err_line("no_key") unless $fkey && $tkey;
 
-    # get DB handle
-    my $dbh = Mgd::get_dbh() or
-        return $self->err_line("nodb");
+    my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $fkey)
+        or return  $self->err_line("unknown_key");
 
-    # rename the file
-    my $ct = $dbh->do('UPDATE file SET dkey = ? WHERE dmid = ? AND dkey = ?',
-                      undef, $tkey, $dmid, $fkey);
-    return $self->err_line("key_exists") if $dbh->err;
-    return $self->err_line("unknown_key") unless $ct > 0;
+    $fid->rename($tkey) or
+        $self->err_line("key_exists");
 
-    return $self->ok_line();
+    return $self->ok_line;
 }
 
 sub cmd_get_hosts {

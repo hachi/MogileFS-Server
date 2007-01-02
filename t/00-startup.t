@@ -23,7 +23,7 @@ require 't/lib/mogtestlib.pl';
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 45;
+    plan tests => 46;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
@@ -134,11 +134,19 @@ for (1..10) {
     isnt($urls[0], $dead_url, "didn't return dead url first (try $_)");
 }
 
-ok($be->do_request("delete", {
-    key => "file1",
-    domain => "testdom",
-}), "deleted file1");
+ok($be->do_request("rename", {
+    from_key => "file1",
+    to_key   => "file1renamed",
+    domain   => "testdom",
+}), "renamed file1 to file1renamed");
 die $be->errstr if $be->err;
+
+ok($be->do_request("delete", {
+    key    => "file1renamed",
+    domain => "testdom",
+}), "deleted file1renamed");
+die $be->errstr if $be->err;
+
 
 # create a couple hundred files now
 my $n_files = 100;

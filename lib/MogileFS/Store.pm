@@ -175,6 +175,12 @@ sub replace_into_file {
     $self->condthrow;
 }
 
+# returns 1 on success, 0 on duplicate key error, dies on exception
+sub rename_file {
+    my ($self, $fidid, $to_key) = @_;
+    die "UNIMPLEMENTED";
+}
+
 1;
 
 __END__

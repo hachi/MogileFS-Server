@@ -63,6 +63,26 @@ sub register_tempfile {
     return $fid;
 }
 
+# returns 1 on success, 0 on duplicate key error, dies on exception
+sub rename_file {
+    my ($self, $fidid, $to_key) = @_;
+    my $dbh = $self->dbh;
+    eval {
+        return $dbh->do('UPDATE file SET dkey = ? WHERE fid=?',
+                        undef, $to_key, $fidid);
+    };
+    if ($@) {
+        # first is mysql's error code for duplicates
+        if ($dbh->err == 1062 || $dbh->errstr =~ /duplicate/i) {
+            return 0;
+        } else {
+            die $@;
+        }
+    }
+    $self->condthrow;
+    return 1;
+}
+
 1;
 
 __END__

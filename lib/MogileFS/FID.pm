@@ -86,6 +86,13 @@ sub delete {
     $sto->delete_fidid($fid->id);
 }
 
+# returns 1 on success, 0 on duplicate key error, dies on exception
+sub rename {
+    my ($fid, $to_key) = @_;
+    my $sto = Mgd::get_store();
+    return $sto->rename_file($fid->id, $to_key);
+}
+
 sub start_replication {
     my ($fid, %opts) = @_;
     my $from = delete $opts{from};
