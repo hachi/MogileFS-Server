@@ -977,54 +977,32 @@ sub cmd_set_weight {
     return $self->err_line('bad_params')
         unless $hostname && $devid && $weight >= 0;
 
-    my $dev = MogileFS::Device->of_devid($devid);
-    return $self->err_line('host_mismatch')
-        unless $dev && $dev->exists;
-
-    my $host = $dev->host;
-    return $self->err_line('host_mismatch')
-        unless $host && $host->exists && $host->hostname eq $hostname;
+    my $dev = MogileFS::Device->from_devid_and_hostname($devid, $hostname)
+        or return $self->err_line('host_mismatch');
 
     $dev->set_weight($weight);
 
-    return $self->ok_line({});;
+    return $self->ok_line;
 }
 
 sub cmd_set_state {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    # get database handle
-    my $ret = {};
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line('nodb');
-
     # figure out what they want to do
-    my ($host, $dev, $state) = ($args->{host}, $args->{device}+0, $args->{state});
+    my ($hostname, $devid, $state) = ($args->{host}, $args->{device}+0, $args->{state});
     return $self->err_line('bad_params')
-        unless $host && $dev && ($state =~ /^(?:alive|down|dead|readonly)$/);
+        unless $hostname && $devid && ($state =~ /^(?:alive|down|dead|readonly)$/);
 
-    # now get this device's current state and host
-    my ($realhost, $curstate) =
-        $dbh->selectrow_array('SELECT hostname, device.status FROM host, device ' .
-                              'WHERE host.hostid = device.hostid AND device.devid = ?',
-                              undef, $dev);
-
-    # verify host is the same
-    return $self->err_line('host_mismatch')
-        unless $realhost eq $host;
+    my $dev = MogileFS::Device->from_devid_and_hostname($devid, $hostname)
+        or return $self->err_line('host_mismatch');
 
     # make sure the destination state isn't too high
     return $self->err_line('state_too_high')
-        if $curstate eq 'dead' && $state eq 'alive';
+        if $dev->is_marked_dead && $state eq 'alive';
 
-    # update the state in the database now
-    $dbh->do('UPDATE device SET status = ? WHERE devid = ?', undef, $state, $dev);
-    return $self->err_line('failure') if $dbh->err;
-
-    # success, state changed
-    MogileFS::Device->invalidate_cache;
-    return $self->ok_line($ret);
+    $dev->set_state($state);
+    return $self->ok_line;
 }
 
 sub cmd_stats {
@@ -1199,7 +1177,7 @@ sub ok_line {
 
     my $id = defined $self->{reqid} ? "$self->{reqid} " : '';
 
-    my $args = shift;
+    my $args = shift || {};
     my $argline = join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
     $self->send_to_parent("${id}${delay}OK $argline");
     return 1;

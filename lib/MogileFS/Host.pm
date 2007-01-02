@@ -167,7 +167,7 @@ sub status {
 sub hostname {
     my $host = shift;
     $host->_load;
-    return $host->{status};
+    return $host->{hostname};
 }
 
 sub is_marked_down {

@@ -134,6 +134,12 @@ sub set_device_weight {
     $self->condthrow;
 }
 
+sub set_device_state {
+    my ($self, $devid, $state) = @_;
+    $self->dbh->do('UPDATE device SET status = ? WHERE devid = ?', undef, $state, $devid);
+    $self->condthrow;
+}
+
 sub delete_fidid {
     my ($self, $fidid) = @_;
     $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid);

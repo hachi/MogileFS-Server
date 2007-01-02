@@ -17,6 +17,17 @@ sub of_devid {
     }, $class;
 }
 
+sub from_devid_and_hostname {
+    my ($class, $devid, $hostname) = @_;
+    my $dev = MogileFS::Device->of_devid($devid)
+        or return undef;
+    return undef unless $dev->exists;
+    my $host = $dev->host;
+    return undef
+        unless $host && $host->exists && $host->hostname eq $hostname;
+    return $dev;
+}
+
 sub vivify_directories {
     my ($class, $path) = @_;
 
@@ -409,6 +420,14 @@ sub set_weight {
     my ($dev, $weight) = @_;
     my $sto = Mgd::get_store();
     $sto->set_device_weight($dev->id, $weight);
+    MogileFS::Device->invalidate_cache;
+}
+
+sub set_state {
+    my ($dev, $state) = @_;
+    die "Bogus state" unless $state =~ /^(?:alive|down|dead|readonly)$/;
+    my $sto = Mgd::get_store();
+    $sto->set_device_state($dev->id, $state);
     MogileFS::Device->invalidate_cache;
 }
 
