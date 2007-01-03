@@ -11,16 +11,8 @@ sub id_of_name {
     # reload the cache if time is up, or if cache is empty for requested item
     my $now = time();
     if ($domaincachetime + 5 < $now || ! $domaincache{$domain}) {
-        %domaincache = ();
-
-        # now get updated list
-        my $dbh = Mgd::get_dbh();
-        my $domains = $dbh->selectall_arrayref('SELECT dmid, namespace FROM domain');
-        foreach my $row (@{$domains || []}) {
-            # namespace -> dmid
-            $domaincache{$row->[1]} = $row->[0];
-        }
-
+        my $sto = Mgd::get_store();
+        %domaincache = $sto->get_all_domains;
         $domaincachetime = $now;
     }
 
@@ -31,10 +23,8 @@ sub id_of_name {
 sub name_of_id {
     my ($class, $dmid) = @_;
 
-    my $dbh = Mgd::get_dbh();
-    my $namespace = $dbh->selectrow_array
-        ("SELECT namespace FROM domain WHERE dmid=?", undef, $dmid);
-    return $namespace;
+    my $sto = Mgd::get_store();
+    return $sto->get_domain_namespace($dmid);
 }
 
 sub invalidate_cache {
