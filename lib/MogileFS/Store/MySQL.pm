@@ -64,14 +64,15 @@ sub register_tempfile {
 }
 
 # returns 1 on success, 0 on duplicate key error, dies on exception
+# TODO: need a test to hit the duplicate name error condition
 sub rename_file {
     my ($self, $fidid, $to_key) = @_;
     my $dbh = $self->dbh;
     eval {
-        return $dbh->do('UPDATE file SET dkey = ? WHERE fid=?',
-                        undef, $to_key, $fidid);
+        $dbh->do('UPDATE file SET dkey = ? WHERE fid=?',
+                 undef, $to_key, $fidid);
     };
-    if ($@) {
+    if ($@ || ($dbh->err && $dbh->err == 1062)) {
         # first is mysql's error code for duplicates
         if ($dbh->err == 1062 || $dbh->errstr =~ /duplicate/i) {
             return 0;
