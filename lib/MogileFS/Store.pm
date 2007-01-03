@@ -181,19 +181,17 @@ sub rename_file {
     die "UNIMPLEMENTED";
 }
 
-# returns a flattened list of namespace/dmid tuples
+# returns a hash of domains. Key is namespace, value is dmid.
 sub get_all_domains {
     my ($self) = @_;
     my $domains = $self->dbh->selectall_arrayref('SELECT namespace, dmid FROM domain');
     return map { ($_->[0], $_->[1]) } @{$domains || []};
 }
 
+# given a dmid, return the namespace of the domain
 sub get_domain_namespace {
     my ($self, $dmid) = @_;
-    my $dbh = Mgd::get_dbh();
-    my $namespace = $dbh->selectrow_array
-            ("SELECT namespace FROM domain WHERE dmid=?", undef, $dmid);
-    return $namespace;
+    return $self->dbh->selectrow_array("SELECT namespace FROM domain WHERE dmid=?", undef, $dmid);
 }
 
 1;
