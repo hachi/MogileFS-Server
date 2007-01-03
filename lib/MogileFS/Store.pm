@@ -185,7 +185,6 @@ sub rename_file {
 sub get_all_domains {
     my ($self) = @_;
     my $domains = $self->dbh->selectall_arrayref('SELECT namespace, dmid FROM domain');
-    warn "Domains are: '@$domains'\n";
     return map { ($_->[0], $_->[1]) } @{$domains || []};
 }
 
