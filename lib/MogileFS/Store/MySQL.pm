@@ -3,6 +3,10 @@ use strict;
 use warnings;
 use base 'MogileFS::Store';
 
+# --------------------------------------------------------------------------
+# Store-related things we override
+# --------------------------------------------------------------------------
+
 sub init {
     my $self = shift;
     $self->SUPER::init;
@@ -14,6 +18,17 @@ sub post_dbi_connect {
     $self->SUPER::post_dbi_connect;
     $self->{lock_depth} = 0;
 }
+
+sub was_duplicate_error {
+    my $self = shift;
+    my $dbh = $self->dbh;
+    return 0 unless $dbh->err;
+    return 1 if $dbh->err == 1062 || $dbh->errstr =~ /duplicate/i;
+}
+
+# --------------------------------------------------------------------------
+# Functions specific to Store::MySQL subclass.  Not in parent.
+# --------------------------------------------------------------------------
 
 # attempt to grab a lock of lockname, and timeout after timeout seconds.
 # returns 1 on success and 0 on timeout
@@ -38,10 +53,26 @@ sub release_lock {
     return $rv;
 }
 
+# --------------------------------------------------------------------------
+# Data-access things we override
+# --------------------------------------------------------------------------
 
-# --------------------------------------------------------------------------
-# Things
-# --------------------------------------------------------------------------
+sub create_class {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(dmid classname mindevcount)], @_);
+    my $dbh = $self->dbh;
+
+    # get the max class id in this domain
+    my $maxid = $dbh->selectrow_array
+        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $arg{dmid}) || 0;
+
+    # now insert the new class
+    my $rv = $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
+                      undef, $arg{dmid}, $maxid + 1, $arg{classname}, $arg{mindevcount});
+    return $maxid + 1 if $rv;
+    $self->condthrow;
+    return 0;
+}
 
 sub register_tempfile {
     my $self = shift;
@@ -112,9 +143,9 @@ sub rename_file {
         $dbh->do('UPDATE file SET dkey = ? WHERE fid=?',
                  undef, $to_key, $fidid);
     };
-    if ($@ || ($dbh->err && $dbh->err == 1062)) {
+    if ($@ || $dbh->err) {
         # first is mysql's error code for duplicates
-        if ($dbh->err == 1062 || $dbh->errstr =~ /duplicate/i) {
+        if ($self->was_duplicate_error) {
             return 0;
         } else {
             die $@;

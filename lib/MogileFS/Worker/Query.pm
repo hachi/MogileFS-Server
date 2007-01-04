@@ -652,9 +652,6 @@ sub cmd_create_class {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
-
     my $domain = $args->{domain};
     return $self->err_line('no_domain') unless length $domain;
 
@@ -676,21 +673,31 @@ sub cmd_create_class {
         return $self->err_line('class_exists') if $cid;
     }
 
+    my $sto = Mgd::get_store();
+
     # update or insert at this point
     if ($args->{update}) {
-        # now replace the old class
-        $dbh->do("REPLACE INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                 undef, $dmid, $cid, $class, $mindevcount);
+        # TODO: this is kinda lame that we use the store directly here.
+        # we should load the class object, then update that, and have that
+        # use the store.
+        my $rv = eval {
+            $sto->update_class(
+                               dmid        => $dmid,
+                               classid     => $cid,
+                               classname   => $class,
+                               mindevcount => $mindevcount,
+                               );
+        };
+        return $self->err_line('failure') unless $rv;
     } else {
-        # get the max class id in this domain
-        my $maxid = $dbh->selectrow_array
-            ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
-
-        # now insert the new class
-        $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                 undef, $dmid, $maxid + 1, $class, $mindevcount);
+        # TODO: also lame in same way as above
+        my $new_cid = $sto->create_class(
+                                         dmid        => $dmid,
+                                         classname   => $class,
+                                         mindevcount => $mindevcount,
+                                         );
+        return $self->err_line('failure') unless $new_cid;
     }
-    return $self->err_line('failure') if $dbh->err;
 
     # return success
     MogileFS::Class->invalidate_cache;

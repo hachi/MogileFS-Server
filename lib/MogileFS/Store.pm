@@ -68,7 +68,33 @@ sub _valid_params {
     return %ret;
 }
 
+sub was_duplicate_error {
+    my $self = shift;
+    my $dbh = $self->dbh;
+    die "UNIMPLEMENTED";
+}
+
 # --------------------------------------------------------------------------
+
+# return new classid on success (non-zero integer), die on failure
+sub create_class {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(dmid classname mindevcount)], @_);
+    die "UNIMPLEMENTED";
+}
+
+# return 1 on success (or miss), 0 on duplicate name failure, die (exception) on db failure
+sub update_class {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(dmid classid classname mindevcount)], @_);
+    my $rv = eval {
+        $self->dbh->do("UPDATE class SET classname=?, mindevcount=? WHERE dmid=? AND classid=?",
+                       undef, $arg{classname}, $arg{mindevcount}, $arg{dmid}, $arg{classid});
+    };
+    return 0 if $self->was_duplicate_error;
+    $self->condthrow;
+    return 1;
+}
 
 sub nfiles_with_dmid_classid_devcount {
     my ($self, $dmid, $classid, $devcount) = @_;
