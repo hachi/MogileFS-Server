@@ -1,6 +1,7 @@
 CHANGES.mogilefsd
 CHANGES.mogstored
 doc/fsck-notes.txt
+lib/MogileFS/Server.pm
 lib/MogileFS/Class.pm
 lib/MogileFS/Device.pm
 lib/MogileFS/Host.pm
