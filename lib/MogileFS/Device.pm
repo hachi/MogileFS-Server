@@ -2,6 +2,7 @@ package MogileFS::Device;
 use strict;
 use warnings;
 use Carp qw(croak);
+use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
 my %singleton;      # devid -> instance
 my $last_load = 0;  # unixtime we last reloaded devices from database
@@ -192,7 +193,7 @@ sub invalidate_cache {
 sub check_cache {
     my $class = shift;
     my $now = time();
-    return if $last_load > $now - 5;
+    return if $last_load > $now - DEVICE_SUMMARY_CACHE_TIMEOUT;
     MogileFS::Device->reload_devices;
 }
 
