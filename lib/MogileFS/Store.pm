@@ -6,7 +6,11 @@ use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
 
 sub new {
     my ($class) = @_;
-    my $dsn = MogileFS->config('db_dsn');
+    return $class->new_from_dsn_user_pass(map { MogileFS->config($_) } qw(db_dsn db_user db_pass));
+}
+
+sub new_from_dsn_user_pass {
+    my ($class, $dsn, $user, $pass) = @_;
     my $subclass;
     if ($dsn =~ /^DBI:mysql:/i) {
         $subclass = "MogileFS::Store::MySQL";
@@ -14,9 +18,9 @@ sub new {
         die "Unknown database type: $dsn";
     }
     my $self = bless {
-        dsn    => MogileFS->config('db_dsn'),
-        user   => MogileFS->config('db_user'),
-        pass   => MogileFS->config('db_pass'),
+        dsn    => $dsn,
+        user   => $user,
+        pass   => $pass,
     }, $subclass;
     $self->init;
     return $self;

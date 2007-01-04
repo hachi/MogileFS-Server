@@ -2,6 +2,7 @@ package MogileFS::Config;
 use strict;
 require Exporter;
 use MogileFS::ProcManager;
+use Getopt::Long;
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw($DEBUG config set_config);
