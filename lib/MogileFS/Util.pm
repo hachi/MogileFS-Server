@@ -50,7 +50,9 @@ sub error {
     my ($errmsg) = @_;
     $last_error = $errmsg;
     if (my $worker = MogileFS::ProcManager->is_child) {
-        $worker->send_to_parent("error $errmsg");
+        my $msg = "error $errmsg";
+        $msg =~ s/\s+$//;
+        $worker->send_to_parent($msg);
     } else {
         MogileFS::ProcManager->NoteError(\$errmsg);
         Mgd::log('debug', $errmsg);

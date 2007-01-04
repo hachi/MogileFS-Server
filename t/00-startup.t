@@ -23,7 +23,7 @@ require 't/lib/mogtestlib.pl';
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 50;
+    plan tests => 53;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
@@ -67,6 +67,18 @@ while (! -e "$mogroot{1}/dev1/usage" &&
 my $tmptrack = create_temp_tracker($tempdb);
 ok($tmptrack);
 
+my $mogc = MogileFS::Client->new(
+                                 domain => "testdom",
+                                 hosts  => [ "127.0.0.1:7001" ],
+                                 );
+my $be = $mogc->{backend}; # gross, reaching inside of MogileFS::Client
+
+# test some basic commands to backend
+ok($be->do_request("test", {}), "test ping worked");
+ok(!$be->do_request("test", {crash => 1}), "crash didn't");
+ok($be->do_request("test", {}), "test ping again worked");
+
+
 ok($tmptrack->mogadm("domain", "add", "todie"), "created todie domain");
 ok($tmptrack->mogadm("domain", "delete", "todie"), "delete todie domain");
 ok(!$tmptrack->mogadm("domain", "delete", "todie"), "didn't delete todie domain again");
@@ -87,18 +99,12 @@ ok($tmptrack->mogadm("device", "add", "hostB", 4), "created dev4 on hostB");
 #ok($tmptrack->mogadm("device", "mark", "hostB", 3, "alive"), "dev3 alive");
 #ok($tmptrack->mogadm("device", "mark", "hostB", 4, "alive"), "dev4 alive");
 
-my $mogc = MogileFS::Client->new(
-                                 domain => "testdom",
-                                 hosts  => [ "127.0.0.1:7001" ],
-                                 );
-
 # wait for monitor
-my $be = $mogc->{backend}; # gross, reaching inside of MogileFS::Client
 {
     my $was = $be->{timeout};  # can't use local on phash :(
     $be->{timeout} = 10;
-    ok($be->do_request("do_monitor_round", {}), "waited for monitor");
-    die $be->errstr if $be->err;
+    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+        or die "Failed to wait for monitor";
     $be->{timeout} = $was;
 }
 
@@ -146,14 +152,11 @@ ok($be->do_request("rename", {
     to_key   => "file1renamed",
     domain   => "testdom",
 }), "renamed file1 to file1renamed");
-die $be->errstr if $be->err;
 
 ok($be->do_request("delete", {
     key    => "file1renamed",
     domain => "testdom",
 }), "deleted file1renamed");
-die $be->errstr if $be->err;
-
 
 # create a couple hundred files now
 my $n_files = 100;

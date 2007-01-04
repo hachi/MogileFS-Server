@@ -6,6 +6,7 @@ use warnings;
 
 use base 'MogileFS::Worker';
 use fields qw(querystarttime reqid);
+use MogileFS::Util qw(error);
 
 sub new {
     my ($class, $psock) = @_;
@@ -99,7 +100,13 @@ sub process_line {
         if ($cmd_handler) {
             my $args = decode_url_args(\$args);
             local $MogileFS::REQ_altzone = ($args->{zone} && $args->{zone} eq 'alt');
-            $cmd_handler->($self, $args);
+            eval {
+                $cmd_handler->($self, $args);
+            };
+            if ($@) {
+                error("Error running command '$cmd': $@");
+                return $self->err_line("failure");
+            }
             return;
         }
     }
@@ -152,6 +159,16 @@ sub cmd_sleep {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
     sleep($args->{duration} || 10);
+    return $self->ok_line;
+}
+
+sub cmd_test {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+    if ($args->{crash}) {
+        my $n = int(0.5);
+        my $crash = 1 / $n;  # divide by zero! (will get caught)
+    }
     return $self->ok_line;
 }
 
