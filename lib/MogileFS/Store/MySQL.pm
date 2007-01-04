@@ -180,6 +180,19 @@ sub update_devcount_atomic {
     return 1;
 }
 
+# enqueue a fidid for replication, from a specific deviceid (can be undef), in a given number of seconds.
+sub enqueue_for_replication {
+    my ($self, $fidid, $from_devid, $in) = @_;
+
+    my $nexttry = 0;
+    if ($in) {
+        $nexttry = "UNIX_TIMESTAMP() + " . int($in);
+    }
+
+    $self->dbh->do("INSERT IGNORE INTO file_to_replicate ".
+                   "SET fid=?, fromdevid=?, nexttry=$nexttry", undef, $fidid, $from_devid);
+}
+
 1;
 
 __END__

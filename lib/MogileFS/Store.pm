@@ -285,7 +285,11 @@ sub update_devcount {
     return 1;
 }
 
-
+# enqueue a fidid for replication, from a specific deviceid (can be undef), in a given number of seconds.
+sub enqueue_for_replication {
+    my ($self, $fidid, $fromdevid, $in) = @_;
+    die "UNIMPLEMENTED";
+}
 
 1;
 
