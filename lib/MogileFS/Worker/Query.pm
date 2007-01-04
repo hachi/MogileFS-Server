@@ -618,13 +618,14 @@ sub cmd_delete_domain {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $domain = $args->{domain};
-    return $self->err_line('no_domain') unless length $domain;
+    my $domain = $args->{domain} or
+        return $self->err_line('no_domain');
 
     # FIXME: add some sort of authentication/limitation on this?
+    my $dom = MogileFS::Domain->of_namespace($domain) or
+        return $self->err_line('domain_not_found');
 
-    my $dmid = MogileFS::Domain->id_of_name($domain);
-    return $self->err_line('domain_not_found') unless $dmid;
+    my $dmid = $dom->id;
 
     # ensure it has no classes
     my $classes = MogileFS::Class->dmid_classes($dmid);

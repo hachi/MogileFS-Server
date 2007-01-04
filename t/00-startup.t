@@ -23,7 +23,7 @@ require 't/lib/mogtestlib.pl';
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 46;
+    plan tests => 49;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
@@ -66,6 +66,10 @@ while (! -e "$mogroot{1}/dev1/usage" &&
 
 my $tmptrack = create_temp_tracker($tempdb);
 ok($tmptrack);
+
+ok($tmptrack->mogadm("domain", "add", "todie"), "created todie domain");
+ok($tmptrack->mogadm("domain", "delete", "todie"), "delete todie domain");
+ok(!$tmptrack->mogadm("domain", "delete", "todie"), "didn't delete todie domain again");
 
 ok($tmptrack->mogadm("domain", "add", "testdom"), "created test domain");
 ok($tmptrack->mogadm("class", "add", "testdom", "2copies", "--mindevcount=2"), "created 2copies class in testdom");
