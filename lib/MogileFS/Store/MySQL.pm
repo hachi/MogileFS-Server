@@ -165,6 +165,7 @@ sub add_fidid_to_devid {
     return 0;
 }
 
+# update the device count for a given fidid
 sub update_devcount_atomic {
     my ($self, $fidid) = @_;
     my $lockname = "mgfs:fid:$fidid";

@@ -272,6 +272,7 @@ sub get_all_devices {
     return @return;
 }
 
+# update the device count for a given fidid
 sub update_devcount {
     my ($self, $fidid) = @_;
     my $dbh = $self->dbh;
