@@ -12,12 +12,17 @@ sub new {
     } else {
         die "Unknown database type: $dsn";
     }
-    return bless {
+    my $self = bless {
         dsn    => MogileFS->config('db_dsn'),
         user   => MogileFS->config('db_user'),
         pass   => MogileFS->config('db_pass'),
     }, $subclass;
+    $self->init;
+    return $self;
 }
+
+sub init { 1 }
+sub post_dbi_connect { 1 }
 
 sub recheck_dbh {
     my $self = shift;
@@ -40,6 +45,7 @@ sub dbh {
         RaiseError => 0,  # FIXME: FUTURE: turn this on.  have to validate all callers first
     }) or
         die "Failed to connect to database: " . DBI->errstr;
+    $self->post_dbi_connect;
     return $self->{dbh};
 }
 

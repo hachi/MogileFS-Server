@@ -333,9 +333,9 @@ sub replicate {
 
     my $lock;  # bool: whether we got the lock or not
     my $lockname = "mgfs:fid:$fid:replicate";
+    my $sto = Mgd::get_store();
     my $unlock = sub {
-        $dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname)
-            if $lock;
+        $sto->release_lock($lockname) if $lock;  # FIXME: Store::MySQL-specific!
     };
 
     my $retunlock = sub {
@@ -363,7 +363,7 @@ sub replicate {
     return $retunlock->(0, "no_devices", "Device information from get_device_summary is empty")
         unless $devs && %$devs;
 
-    $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 1)", undef, $lockname);
+    $lock = $sto->get_lock($lockname, 1);  # FIXME: Store::MySQL-specific!
     return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock $lockname")
         unless $lock;
 

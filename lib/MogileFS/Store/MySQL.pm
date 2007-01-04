@@ -3,6 +3,46 @@ use strict;
 use warnings;
 use base 'MogileFS::Store';
 
+sub init {
+    my $self = shift;
+    $self->SUPER::init;
+    $self->{lock_depth} = 0;
+}
+
+sub post_dbi_connect {
+    my $self = shift;
+    $self->SUPER::post_dbi_connect;
+    $self->{lock_depth} = 0;
+}
+
+# attempt to grab a lock of lockname, and timeout after timeout seconds.
+# returns 1 on success and 0 on timeout
+sub get_lock {
+    my ($self, $lockname, $timeout) = @_;
+    die "Lock recursion detected (grabbing $lockname, had $self->{last_lock}).  Bailing out." if $self->{lock_depth};
+
+    my $lock = $self->dbh->selectrow_array("SELECT GET_LOCK(?, ?)", undef, $lockname, $timeout);
+    if ($lock) {
+        $self->{lock_depth} = 1;
+        $self->{last_lock}  = $lockname;
+    }
+    return $lock;
+}
+
+# attempt to release a lock of lockname.
+# returns 1 on success and 0 if no lock we have has that name.
+sub release_lock {
+    my ($self, $lockname) = @_;
+    my $rv = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+    $self->{lock_depth} = 0;
+    return $rv;
+}
+
+
+# --------------------------------------------------------------------------
+# Things
+# --------------------------------------------------------------------------
+
 sub register_tempfile {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fid dmid key classid devids)], @_);
@@ -92,26 +132,6 @@ sub add_fidid_to_devid {
 
     return 1 if $rv > 0;
     return 0;
-}
-
-my $lock_count = 0;
-
-# attempt to grab a lock of lockname, and timeout after timeout seconds.
-# returns 1 on success and 0 on timeout
-sub get_lock {
-    my ($self, $lockname, $timeout) = @_;
-    my $lock = $self->dbh->selectrow_array("SELECT GET_LOCK(?, ?)", undef, $lockname, $timeout);
-    die "Lock recursion detected, bailing out" if $lock && $lock_count++;
-    return $lock;
-}
-
-# attempt to release a lock of lockname.
-# returns 1 on success and 0 if no lock we have has that name.
-sub release_lock {
-    my ($self, $lockname) = @_;
-    my $lock = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
-    $lock_count-- if $lock;
-    return $lock;
 }
 
 1;
