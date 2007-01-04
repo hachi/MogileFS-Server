@@ -9,7 +9,7 @@ use warnings;
 my %singleton;  # dmid -> MogileFS::Domain
 
 my %id2name; # dmid -> domainname(namespace)
-my %name2id; # dmid -> domainname(namespace)
+my %name2id; # domainname(namespace) -> dmid
 
 my $last_load = 0;
 
@@ -70,6 +70,10 @@ sub reload_domains {
     $last_load = $now;
 }
 
+# FIXME: should probably have an invalidate_cache variant that only
+# flushes locally (for things like "get_domains" or "get_hosts", where
+# it needs to be locally correct for the semantics of the command, but
+# no need to propogate a cache invalidation to our peers)
 sub invalidate_cache {
     $last_load = 0;
     %id2name = ();
@@ -77,6 +81,19 @@ sub invalidate_cache {
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->invalidate_meta("domain");
     }
+}
+
+sub check_cache {
+    my $class = shift;
+    my $now = time();
+    return if $last_load > $now - 5;
+    MogileFS::Domain->reload_domains;
+}
+
+sub domains {
+    my $class = shift;
+    $class->check_cache;
+    return map { $class->of_dmid($_) } keys %id2name;
 }
 
 # --------------------------------------------------------------------------

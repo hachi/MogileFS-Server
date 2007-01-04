@@ -849,32 +849,32 @@ sub cmd_get_domains {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
+    MogileFS::Domain->invalidate_cache;
+
     my $dbh = Mgd::get_dbh()
         or return $self->err_line("nodb");
 
-    my $domains = $dbh->selectall_arrayref('SELECT dmid, namespace FROM domain');
-
     my $ret = {};
-    my $outercount = 0;
-    foreach my $row (@$domains) {
-        $ret->{"domain" . ++$outercount} = $row->[1];
+    my $dm_n = 0;
+    foreach my $dom (MogileFS::Domain->domains) {
+        $ret->{"domain" . ++$dm_n} = $dom->name;
 
         # setup the return row for this set of classes
         my $classes = $dbh->selectall_arrayref
-            ('SELECT classname, mindevcount FROM class WHERE dmid = ?', undef, $row->[0]);
-        my $innercount = 0;
+            ('SELECT classname, mindevcount FROM class WHERE dmid = ?', undef, $dom->id);
+        my $cl_n = 0;
         foreach my $irow (@$classes) {
-            $ret->{"domain${outercount}class" . ++$innercount . "name"} = $irow->[0];
-            $ret->{"domain${outercount}class" . $innercount . "mindevcount"} = $irow->[1];
+            $ret->{"domain${dm_n}class" . ++$cl_n . "name"} = $irow->[0];
+            $ret->{"domain${dm_n}class" . $cl_n . "mindevcount"} = $irow->[1];
         }
 
         # record the default class and mindevcount
-        $ret->{"domain${outercount}class" . ++$innercount . "name"} = 'default';
-        $ret->{"domain${outercount}class" . $innercount . "mindevcount"} = $Mgd::default_mindevcount;
+        $ret->{"domain${dm_n}class" . ++$cl_n . "name"} = 'default';
+        $ret->{"domain${dm_n}class" . $cl_n . "mindevcount"} = $Mgd::default_mindevcount;
 
-        $ret->{"domain${outercount}classes"} = $innercount;
+        $ret->{"domain${dm_n}classes"} = $cl_n;
     }
-    $ret->{"domains"} = $outercount;
+    $ret->{"domains"} = $dm_n;
 
     return $self->ok_line($ret);
 }
