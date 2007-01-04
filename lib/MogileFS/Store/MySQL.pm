@@ -173,12 +173,17 @@ sub update_devcount_atomic {
     my $lockname = "mgfs:fid:$fidid";
 
     my $lock = eval { $self->get_lock($lockname, 10) };
-    warn "getlock failed: $@" if $@;
-    return 0 unless $lock;
+
+    # Check to make sure the lock didn't timeout, then we want to bail.
+    return 0 if defined $lock && $lock == 0;
+
+    # Checking $@ is pointless for the time because we just want to plow ahead
+    # even if the get_lock trapped a recursion and threw a fatal error.
 
     $self->update_devcount($fidid);
 
-    $self->release_lock($lockname);
+    # Don't release the lock if we never got it.
+    $self->release_lock($lockname) if $lock;
     return 1;
 }
 
