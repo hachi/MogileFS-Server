@@ -281,6 +281,7 @@ sub update_devcount {
     $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
               $ct, $fidid);
 
+    return 1;
 }
 
 
