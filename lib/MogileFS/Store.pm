@@ -291,6 +291,17 @@ sub enqueue_for_replication {
     die "UNIMPLEMENTED";
 }
 
+# takes two arguments, devid and limit, both required. returns an arrayref of fidids.
+sub get_fidids_by_device {
+    my ($self, $devid, $limit) = @_;
+
+    my $dbh = $self->dbh;
+    my $fidids = $dbh->selectcol_arrayref("SELECT fid FROM file_on WHERE devid = ? LIMIT $limit",
+                                          undef, $devid);
+    die "Error selecting jobs to reap: " . $dbh->errstr if $dbh->err;
+    return $fidids;
+}
+
 1;
 
 __END__

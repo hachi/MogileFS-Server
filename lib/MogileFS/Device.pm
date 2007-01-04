@@ -374,10 +374,8 @@ sub fid_list {
     croak("No limit specified") unless $limit && $limit =~ /^\d+$/;
     croak("Unknown options to fid_list") if %opts;
 
-    my $dbh = Mgd::get_dbh();
-    my $fidids = $dbh->selectcol_arrayref("SELECT fid FROM file_on WHERE devid = ? LIMIT $limit",
-                                          undef, $self->devid);
-    die "Error selecting jobs to reap: " . $dbh->errstr if $dbh->err;
+    my $sto = Mgd::get_store();
+    my $fidids = $sto->get_fidids_by_device($self->devid, $limit);
     return map {
         MogileFS::FID->new($_)
     } @{$fidids || []};
