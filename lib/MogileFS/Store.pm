@@ -220,12 +220,6 @@ sub get_all_domains {
     return map { ($_->[0], $_->[1]) } @{$domains || []};
 }
 
-# given a dmid, return the namespace of the domain
-sub get_domain_namespace {
-    my ($self, $dmid) = @_;
-    return $self->dbh->selectrow_array("SELECT namespace FROM domain WHERE dmid=?", undef, $dmid);
-}
-
 # add a record of fidid existing on devid
 # returns 1 on success, 0 on duplicate
 sub add_fidid_to_devid {
