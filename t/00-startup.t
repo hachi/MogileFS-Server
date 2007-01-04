@@ -23,7 +23,7 @@ require 't/lib/mogtestlib.pl';
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 49;
+    plan tests => 50;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
@@ -113,13 +113,16 @@ my $data = "My test file.\n" x 1024;
 print $fh $data;
 ok(close($fh), "closed file");
 
+# verify we can't delete the domain now
+ok(!$tmptrack->mogadm("domain", "delete", "testdom"), "can't delete domain in use");
+
+# wait for it to replicate
 my $tries = 1;
 my @urls;
 while ($tries++ < 10 && (@urls = $mogc->get_paths("file1")) < 2) {
     sleep 1;
 }
 is(scalar @urls, 2, "replicated to 2 paths");
-
 my $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_replicate");
 is($to_repl_rows, 0, "no more files to replicate");
 

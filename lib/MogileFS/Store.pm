@@ -76,6 +76,18 @@ sub was_duplicate_error {
 
 # --------------------------------------------------------------------------
 
+sub delete_domain {
+    my ($self, $dmid) = @_;
+    return $self->dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
+}
+
+sub domain_has_files {
+    my ($self, $dmid) = @_;
+    my $has_a_fid = $self->dbh->selectrow_array('SELECT fid FROM file WHERE dmid = ? LIMIT 1',
+                                                undef, $dmid);
+    return $has_a_fid ? 1 : 0;
+}
+
 # return new classid on success (non-zero integer), die on failure
 sub create_class {
     my $self = shift;

@@ -63,6 +63,10 @@ sub reload_domains {
         $id2name{$v} = $k;
     }
 
+    foreach my $dmid (keys %singleton) {
+        delete $singleton{$dmid} unless $id2name{$dmid};
+    }
+
     $last_load = $now;
 }
 
@@ -81,5 +85,19 @@ sub invalidate_cache {
 
 sub id    { $_[0]->{dmid} }
 sub name  { $_[0]->{ns}   }
+
+sub has_files {
+    my $self = shift;
+    return Mgd::get_store()->domain_has_files($self->id);
+}
+
+# returns true if deleted.
+sub delete {
+    my $self = shift;
+    die "Can't delete a domain ($self->{ns}) with files" if $self->has_files;
+    my $rv = Mgd::get_store()->delete_domain($self->id);
+    MogileFS::Domain->invalidate_cache;
+    return $rv;
+}
 
 1;

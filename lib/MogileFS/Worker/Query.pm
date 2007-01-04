@@ -628,24 +628,16 @@ sub cmd_delete_domain {
     my $dmid = $dom->id;
 
     # ensure it has no classes
-    my $classes = MogileFS::Class->dmid_classes($dmid);
-    return $self->err_line('failure') unless $classes;
+    my $classes = MogileFS::Class->dmid_classes($dmid); # FIXME: my @classes = $dom->classes;
+    return $self->err_line('failure') unless $classes; # FIXME: remove, use exceptions
     return $self->err_line('domain_not_empty') if %$classes;
 
     # and ensure it has no files (fast: key based)
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
-    my $has_a_fid = $dbh->selectrow_array('SELECT fid FROM file WHERE dmid = ? LIMIT 1',
-                                          undef, $dmid);
-    return $self->err_line('failure') if $dbh->err;
-    return $self->err_line('domain_has_files') if $has_a_fid;
+    return $self->err_line('domain_has_files') if $dom->has_files;
 
     # all clear, nuke it
-    $dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
-    return $self->err_line('failure') if $dbh->err;
+    $dom->delete;
 
-    # return the domain we nuked
-    MogileFS::Domain->invalidate_cache;
     return $self->ok_line({ domain => $domain });
 }
 
