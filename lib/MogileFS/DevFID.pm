@@ -79,10 +79,8 @@ sub _make_full_url {
 sub add_to_db {
     my ($self, $no_lock) = @_;
 
-    my $dbh = Mgd::get_dbh();
-    my $rv = $dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?",
-                      undef, $self->{fidid}, $self->{devid});
-    if ($rv > 0) {
+    my $sto = Mgd::get_store();
+    if ($sto->add_fidid_to_devid($self->{fidid}, $self->{devid})) {
         return $self->fid->update_devcount(no_lock => $no_lock);
     } else {
         # was already on that device

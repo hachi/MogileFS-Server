@@ -194,6 +194,13 @@ sub get_domain_namespace {
     return $self->dbh->selectrow_array("SELECT namespace FROM domain WHERE dmid=?", undef, $dmid);
 }
 
+# add a record of fidid existing on devid
+# returns 1 on success, 0 on duplicate
+sub add_fidid_to_devid {
+    my ($self, $fidid, $devid) = @_;
+    die "UNIMPLEMENTED";
+}
+
 1;
 
 __END__
