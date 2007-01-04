@@ -159,11 +159,8 @@ sub reload_devices {
 
     MogileFS::Host->check_cache;
 
-    my $dbh = Mgd::get_dbh();
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
-                            "mb_used, mb_asof, status, weight FROM device");
-    $sth->execute;
-    while (my $row = $sth->fetchrow_hashref) {
+    my $sto = Mgd::get_store();
+    foreach my $row ($sto->get_all_devices) {
         my $dev =
             MogileFS::Device->of_devid($row->{devid});
         $dev->absorb_dbrow($row);

@@ -201,6 +201,20 @@ sub add_fidid_to_devid {
     die "UNIMPLEMENTED";
 }
 
+# get all devices from database, returns them as list of hashrefs, hashrefs being the row contents.
+sub get_all_devices {
+    my ($self) = @_;
+    my $sth = $self->dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
+                                "mb_used, mb_asof, status, weight FROM device");
+    $sth->execute;
+    my @return;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @return, $row;
+    }
+    return @return;
+}
+
+
 1;
 
 __END__
