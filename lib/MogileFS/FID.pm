@@ -64,14 +64,8 @@ sub enqueue_for_replication {
     my $in       = delete $opts{in};
     my $from_dev = delete $opts{from_device};  # devid or Device object
     croak("Unknown options to enqueue_for_replication") if %opts;
-    my $dbh = Mgd::get_dbh();
     my $from_devid = (ref $from_dev ? $from_dev->id : $from_dev) || undef;
-    my $nexttry = 0;
-    if ($in) {
-        $nexttry = "UNIX_TIMESTAMP() + " . int($in);
-    }
-    $dbh->do("INSERT IGNORE INTO file_to_replicate ".
-             "SET fid=?, fromdevid=?, nexttry=$nexttry", undef, $self->id, $from_devid);
+    Mgd::get_store()->enqueue_for_replication($self->id, $from_devid, $in);
 }
 
 sub mark_unreachable {
