@@ -818,19 +818,13 @@ sub cmd_delete_host {
 
     my $hostid = $host->id;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
-
     foreach my $dev (MogileFS::Device->devices) {
         return $self->err_line('host_not_empty')
             if $dev->hostid == $hostid && $dev->status ne "dead";
     }
 
-    my $res = $dbh->do("DELETE FROM host WHERE hostid = ?", undef, $hostid);
-    return $self->err_line('failure')
-        unless $res;
+    $host->delete;
 
-    MogileFS::Host->invalidate_cache;
     return $self->ok_line;
 }
 

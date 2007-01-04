@@ -189,6 +189,13 @@ sub overview_hashref {
     return $ret;
 }
 
+sub delete {
+    my $host = shift;
+    my $rv = Mgd::get_store()->delete_host($host->id);
+    MogileFS::Host->invalidate_cache;
+    return $rv;
+}
+
 # --------------------------------------------------------------------------
 
 sub _load {

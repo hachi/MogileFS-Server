@@ -76,6 +76,13 @@ sub was_duplicate_error {
 
 # --------------------------------------------------------------------------
 
+# return true if deleted, 0 if didn't exist, exception if error
+sub delete_host {
+    my ($self, $hostid) = @_;
+    return $self->dbh->do("DELETE FROM host WHERE hostid = ?", undef, $hostid);
+}
+
+# return true if deleted, 0 if didn't exist, exception if error
 sub delete_domain {
     my ($self, $dmid) = @_;
     return $self->dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
