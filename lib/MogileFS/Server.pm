@@ -18,16 +18,19 @@ use Socket ();
 
 use MogileFS::Util qw(daemonize);
 use MogileFS::Sys;
+use MogileFS::Config;
+
+use MogileFS::ProcManager;
 use MogileFS::Connection::Client;
 use MogileFS::Connection::Worker;
+
 use MogileFS::Worker::Query;
 use MogileFS::Worker::Delete;
 use MogileFS::Worker::Replicate;
 use MogileFS::Worker::Reaper;
 use MogileFS::Worker::Monitor;
 use MogileFS::Worker::Checker;
-use MogileFS::ProcManager;
-use MogileFS::Config;
+
 use MogileFS::HTTPFile;
 use MogileFS::Class;
 use MogileFS::Device;
@@ -35,8 +38,10 @@ use MogileFS::Host;
 use MogileFS::FID;
 use MogileFS::Domain;
 use MogileFS::DevFID;
+
 use MogileFS::Store;
-use MogileFS::Store::MySQL;
+use MogileFS::Store::MySQL;  # FIXME: don't load this until after reading their config, but before fork.
+
 use MogileFS::ReplicationPolicy::MultipleHosts;
 
 my $server; # server singleton
@@ -196,6 +201,13 @@ sub get_store {
     return $store if $store && $store_pid == $$;
     $store_pid = $$;
     return $store = MogileFS::Store->new;
+}
+
+# only for t/ scripts to explicitly set a store, without loading in a config
+sub set_store {
+    my ($s) = @_;
+    $store = $s;
+    $store_pid = $$;
 }
 
 # log stuff to syslog or the screen

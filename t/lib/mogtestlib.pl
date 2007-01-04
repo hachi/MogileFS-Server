@@ -5,6 +5,11 @@ use DBI;
 use FindBin qw($Bin);
 use IO::Socket::INET;
 
+sub init_store {
+    my $tempdb = shift;
+    Mgd::set_store(MogileFS::Store->new_from_dsn_user_pass($tempdb->dsn, $tempdb->user, $tempdb->pass));
+}
+
 sub create_temp_db {
     my $dbname = "tmp_mogiletest";
     create_mysql_db($dbname);

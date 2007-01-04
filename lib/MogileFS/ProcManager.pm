@@ -4,6 +4,8 @@ use warnings;
 use POSIX qw(:sys_wait_h sigprocmask SIGINT SIG_BLOCK SIG_UNBLOCK);
 use Symbol;
 use Socket;
+use MogileFS::Connection::Client;
+use MogileFS::Connection::Worker;
 
 # This class handles keeping lists of workers and clients and
 # assigning them to eachother when things happen.  You don't actually
