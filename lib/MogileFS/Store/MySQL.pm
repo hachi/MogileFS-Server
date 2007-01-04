@@ -94,6 +94,26 @@ sub add_fidid_to_devid {
     return 0;
 }
 
+my $lock_count = 0;
+
+# attempt to grab a lock of lockname, and timeout after timeout seconds.
+# returns 1 on success and 0 on timeout
+sub get_lock {
+    my ($self, $lockname, $timeout) = @_;
+    my $lock = $self->dbh->selectrow_array("SELECT GET_LOCK(?, ?)", undef, $lockname, $timeout);
+    die "Lock recursion detected, bailing out" if $lock && $lock_count++;
+    return $lock;
+}
+
+# attempt to release a lock of lockname.
+# returns 1 on success and 0 if no lock we have has that name.
+sub release_lock {
+    my ($self, $lockname) = @_;
+    my $lock = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+    $lock_count-- if $lock;
+    return $lock;
+}
+
 1;
 
 __END__
