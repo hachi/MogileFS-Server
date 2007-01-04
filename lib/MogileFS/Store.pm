@@ -2,6 +2,7 @@ package MogileFS::Store;
 use strict;
 use warnings;
 use Carp qw(croak);
+use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
 
 sub new {
     my ($class) = @_;

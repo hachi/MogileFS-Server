@@ -1,6 +1,8 @@
 package MogileFS::Store::MySQL;
 use strict;
 use warnings;
+use DBI;
+use DBD::mysql;
 use base 'MogileFS::Store';
 
 # --------------------------------------------------------------------------
