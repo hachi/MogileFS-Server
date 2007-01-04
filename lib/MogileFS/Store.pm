@@ -259,6 +259,18 @@ sub get_all_devices {
     return @return;
 }
 
+sub update_devcount {
+    my ($self, $fidid) = @_;
+    my $dbh = $self->dbh;
+    my $ct = $dbh->selectrow_array("SELECT COUNT(*) FROM file_on WHERE fid=?",
+                                   undef, $fidid);
+
+    $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
+              $ct, $fidid);
+
+}
+
+
 
 1;
 

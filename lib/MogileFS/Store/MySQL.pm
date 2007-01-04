@@ -165,6 +165,20 @@ sub add_fidid_to_devid {
     return 0;
 }
 
+sub update_devcount_atomic {
+    my ($self, $fidid) = @_;
+    my $lockname = "mgfs:fid:$fidid";
+
+    my $lock = eval { $self->get_lock($lockname, 10) };
+    warn "getlock failed: $@" if $@;
+    return 0 unless $lock;
+
+    $self->update_devcount($fidid);
+
+    $self->release_lock($lockname);
+    return 1;
+}
+
 1;
 
 __END__
