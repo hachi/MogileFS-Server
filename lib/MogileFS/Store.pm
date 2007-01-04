@@ -207,6 +207,19 @@ sub add_fidid_to_devid {
     die "UNIMPLEMENTED";
 }
 
+# get all hosts from database, returns them as list of hashrefs, hashrefs being the row contents.
+sub get_all_hosts {
+    my ($self) = @_;
+    my $sth = $self->dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
+                                  "hostip, http_port, http_get_port, altip, altmask FROM host");
+    $sth->execute;
+    my @ret;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @ret, $row;
+    }
+    return @ret;
+}
+
 # get all devices from database, returns them as list of hashrefs, hashrefs being the row contents.
 sub get_all_devices {
     my ($self) = @_;

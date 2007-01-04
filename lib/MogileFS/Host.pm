@@ -57,11 +57,8 @@ sub reload_hosts {
         $host->{_loaded} = 0;
     }
 
-    my $dbh = Mgd::get_dbh();
-    my $sth = $dbh->prepare("SELECT /*!40000 SQL_CACHE */ hostid, status, hostname, " .
-                            "hostip, http_port, http_get_port, altip, altmask FROM host");
-    $sth->execute;
-    while (my $row = $sth->fetchrow_hashref) {
+    my $sto = Mgd::get_store();
+    foreach my $row ($sto->get_all_hosts) {
         die unless $row->{status} =~ /^\w+$/;
         my $ho =
             MogileFS::Host->of_hostid($row->{hostid});
