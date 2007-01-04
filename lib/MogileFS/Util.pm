@@ -2,12 +2,13 @@ package MogileFS::Util;
 use strict;
 use Carp qw(croak);
 use Time::HiRes;
+use MogileFS::Exception;
 
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(
                     error debug fatal daemonize weighted_list every dbcheck
-                    wait_for_readability wait_for_writeability
+                    wait_for_readability wait_for_writeability throw error_code
                     );
 
 sub every {
@@ -59,6 +60,7 @@ sub error {
     }
     return 0;
 }
+
 sub last_error {
     return $last_error;
 }
@@ -67,6 +69,17 @@ sub fatal {
     my ($errmsg) = @_;
     error($errmsg);
     die $errmsg;
+}
+
+sub throw {
+    my ($errcode) = @_;
+    MogileFS::Exception->new($errcode)->throw;
+}
+
+sub error_code {
+    my ($ex) = @_;
+    return unless UNIVERSAL::isa($ex, "MogileFS::Exception");
+    return $ex->code;
 }
 
 sub daemonize {
