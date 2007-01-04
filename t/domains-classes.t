@@ -42,9 +42,13 @@ $dom = MogileFS::Domain->create("foo");
 ok($dom, "created foo domain again");
 is(scalar MogileFS::Domain->domains, 1, "back to one domain");
 
+{
+    local $Mgd::_T_DOM_HAS_FILES = 1;
+    ok(!eval{ $dom->delete; }, "failed to delete domain");
+    is(error_code($@), "has_files", "because it had files");
+}
 
-
-
-
-
+my @classes = $dom->classes;
+is(scalar @classes, 1, "one class in domain")
+    or die;
 

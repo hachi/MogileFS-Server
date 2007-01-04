@@ -78,7 +78,7 @@ sub throw {
 
 sub error_code {
     my ($ex) = @_;
-    return unless UNIVERSAL::isa($ex, "MogileFS::Exception");
+    return "" unless UNIVERSAL::isa($ex, "MogileFS::Exception");
     return $ex->code;
 }
 

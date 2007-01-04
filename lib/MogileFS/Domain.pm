@@ -129,6 +129,7 @@ sub name  { $_[0]->{ns}   }
 
 sub has_files {
     my $self = shift;
+    return 1 if $Mgd::_T_DOM_HAS_FILES;
     return Mgd::get_store()->domain_has_files($self->id);
 }
 
@@ -138,10 +139,12 @@ sub classes {
     return MogileFS::Class->classes_of_domain($dom);
 }
 
-# returns true if deleted.
+# returns true if deleted.  throws exceptions on errors.  exception codes:
+#     'has_files' if it has files.
 sub delete {
     my $self = shift;
-    die "Can't delete a domain ($self->{ns}) with files" if $self->has_files;
+    throw("has_files") if $self->has_files;
+    # TODO: delete its classes
     my $rv = Mgd::get_store()->delete_domain($self->id);
     MogileFS::Domain->invalidate_cache;
     return $rv;
