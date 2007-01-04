@@ -22,6 +22,18 @@ sub new_from_dmid_and_key {
 
 # --------------------------------------------------------------------------
 
+sub exists {
+    die "NOT IMPLEMENTED";
+}
+
+sub classid {
+    die "NOT IMPLEMENTED";
+}
+
+sub dmid {
+    die "NOT IMPLEMENTED";
+}
+
 sub length {
     my $self = shift;
     die "FIXME: lazily load.  No length defined on this object" unless defined $self->{length};
