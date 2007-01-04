@@ -323,6 +323,8 @@ sub replicate {
     # bool:  if source was explicitly requested by caller
     my $fixed_source = $sdevid ? 1 : 0;
 
+    # TODO: make $fid an object (fix callers), then add $fidid if needed, and make the next
+    # line be $mclass ||= $fid->class. and fix callers to not need to pass in a class?
     $mclass ||= MogileFS::Class->of_fid($fid);
 
     my $policy_class = $mclass->policy_class;
