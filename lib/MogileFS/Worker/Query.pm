@@ -434,14 +434,9 @@ sub cmd_list_fids {
         if $tofid > $fromfid + 100 ||
            $tofid < $fromfid;
 
-    # get dbh to do the query
-    my $dbh = Mgd::get_dbh() or
-        return $self->err_line("nodb");
-    my $rows = $dbh->selectall_hashref('SELECT fid, dmid, dkey, length, classid, devcount ' .
-                                       'FROM file WHERE fid BETWEEN ? AND ?',
-                                       'fid', undef, $fromfid, $tofid);
-    return $self->err_line('failure') if $dbh->err || ! $rows;
-    return $self->ok_line({ fid_count => 0 }) unless %$rows;
+    my $rows = Mgd::get_store()->file_row_from_fid_range($fromfid, $tofid);
+    return $self->err_line('failure') unless $rows;
+    return $self->ok_line({ fid_count => 0 }) unless @$rows;
 
     # setup temporary storage of class/host
     my (%domains, %classes);
@@ -449,9 +444,9 @@ sub cmd_list_fids {
     # now iterate over our data rows and construct result
     my $ct = 0;
     my $ret = {};
-    foreach my $fid (keys %$rows) {
+    foreach my $r (@$rows) {
         $ct++;
-        my $r = $rows->{$fid};
+        my $fid = $r->{fid};
         $ret->{"fid_${ct}_fid"} = $fid;
         $ret->{"fid_${ct}_domain"} = ($domains{$r->{dmid}} ||= MogileFS::Domain->name_of_id($r->{dmid}));
         $ret->{"fid_${ct}_class"} = ($classes{$r->{dmid}}{$r->{classid}} ||= MogileFS::Class->class_name($r->{dmid}, $r->{classid}));
