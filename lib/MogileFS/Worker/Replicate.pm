@@ -5,6 +5,7 @@ use strict;
 use base 'MogileFS::Worker';
 use fields (
             'fidtodo',   # hashref { fid => 1 }
+            'peerrepl',  # hashref { fid => time() } # when peer started replicating
             );
 
 use List::Util ();
@@ -29,6 +30,7 @@ sub new {
     my $self = fields::new($class);
     $self->SUPER::new($psock);
     $self->{fidtodo} = {};
+    $self->{peerrepl} = {};
     return $self;
 }
 
@@ -37,6 +39,12 @@ sub process_line {
 
     if ($$lineref =~ /^repl_was_done (\d+)/) {
         delete $self->{fidtodo}{$1};
+        return 1;
+    }
+
+    if ($$lineref =~ /^repl_starting (\d+)/) {
+        my $fidid = $1;
+        $self->note_peer_replicating($fidid);
         return 1;
     }
 
@@ -125,6 +133,7 @@ sub replicate_using_torepl_table {
 
     foreach my $todo (@to_repl) {
         my $fid = $todo->{fid};
+        next if $self->peer_is_replicating($fid);
 
         my $errcode;
         my ($status, $unlock) = replicate($fid,
@@ -264,6 +273,7 @@ sub replicate_using_devcounts {
                 # now replicate this fid
                 $attempted++;
                 next unless $self->{fidtodo}{$fid};
+                next if $self->peer_is_replicating($fid);
 
                 if ($fidfailure{$fid}) {
                     if ($fidfailure{$fid} < $now) {
@@ -341,7 +351,14 @@ sub replicate {
         }
         $$errref = $errcode if $errref;
 
-        my $ret = $rv ? $rv : error($errmsg);
+        my $ret;
+        if ($errcode && $errcode eq "failed_getting_lock") {
+            # don't emit a warning with error() on lock failure.  not
+            # a big deal, don't scare people.
+            $ret = 0;
+        } else {
+            $ret = $rv ? $rv : error($errmsg);
+        }
         if ($no_unlock) {
             return ($ret, $unlock);
         } else {
@@ -356,6 +373,8 @@ sub replicate {
 
     return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock for fid $fidid")
         unless $sto->should_begin_replicating_fidid($fidid);
+
+    MogileFS::Worker->send_to_parent("repl_starting $fidid");
 
     # if the fid doesn't even exist, consider our job done!  no point
     # replicating file contents of a file no longer in the namespace.
@@ -483,6 +502,34 @@ sub replicate {
     } else {
         return $retunlock->(0, "policy_no_suggestions", "replication policy ran out of suggestions for us replicating fid $fidid");
     }
+}
+
+my $last_peerreplclean = 0;
+sub note_peer_replicating {
+    my ($self, $fidid) = @_;
+    my $now = time();
+    $self->{peerrepl}{$fidid} = $now;
+
+    # every minute, clean fids in this set older than 2 minutes
+    if ($now > $last_peerreplclean + 60) {
+        $last_peerreplclean = $now;
+        while (my ($k, $t) = each %{$self->{peerrepl}}) {
+            next if $t > $now - 120;
+            delete $self->{peerrepl}{$k};
+        }
+    }
+}
+
+# best effort optimization, doesn't have to be perfect (for instance,
+# doesn't currently know what peers on other hosts are doing, only
+# peer process).  just try to avoid lock contention trying to ask for
+# locks on replicating same files.  we say that if a file was started
+# by a peer in last 60 seconds, it's still being replicated.
+sub peer_is_replicating {
+    my ($self, $fidid) = @_;
+    my $t = $self->{peerrepl}{$fidid} or return 0;
+    my $rv = ($t > time() - 60);
+    return $rv;
 }
 
 # copies a file from one Perlbal to another utilizing HTTP

@@ -567,11 +567,17 @@ sub HandleChildRequest {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_unreachable $1", $child);
 
     } elsif ($cmd =~ /^repl_i_did (\d+)/) {
-        my $fid = $1;
+        my $fidid = $1;
 
         # announce to the other replicators that this fid was done and then drain the
         # queue to this person.
-        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_was_done $fid", $child);
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_was_done $fidid", $child);
+
+    } elsif ($cmd =~ /^repl_starting (\d+)/) {
+        my $fidid = $1;
+
+        # announce to the other replicators that this fid is starting to be replicated
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_starting $fidid", $child);
 
     } elsif ($cmd eq ":ping") {
 

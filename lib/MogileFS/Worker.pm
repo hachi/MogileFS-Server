@@ -67,6 +67,12 @@ sub still_alive {
 
 sub send_to_parent {
     my $self = shift;
+
+    # can be called as package method:  MogileFS::Worker->send_to_parent...
+    unless (ref $self) {
+        $self = MogileFS::ProcManager->is_child or die "assert[is_child]";
+    }
+
     my $write = "$_[0]\r\n";
     my $totallen = length $write;
     my $rv = syswrite($self->{psock}, $write);
