@@ -278,7 +278,7 @@ sub replicate_using_devcounts {
                 $self->read_from_parent;
                 $self->still_alive;
 
-                if (my $status = replicate($fid, class => $mclass)) {
+                if (my $status = replicate($fid)) {
                     # $status is either 0 (failure, handled below), 1 (success, we actually
                     # replicated this file), or 2 (success, but someone else replicated it).
                     # so if it's 2, we just want to go to the next fid.  this file is done.
@@ -318,7 +318,6 @@ sub replicate_using_devcounts {
 sub replicate {
     my ($fidid, %opts) = @_;
     my $errref    = delete $opts{'errref'};
-    my $mclass    = delete $opts{'class'};
     my $no_unlock = delete $opts{'no_unlock'};
     my $sdevid    = delete $opts{'source_devid'};
     die if %opts;
@@ -327,13 +326,6 @@ sub replicate {
     my $fixed_source = $sdevid ? 1 : 0;
 
     my $fid    = MogileFS::FID->new($fidid);
-    $mclass  ||= $fid->class;
-
-    my $policy_class = $mclass->policy_class;
-    eval "use $policy_class; 1;";
-    if ($@) {
-        return error("Failed to load policy class: $policy_class: $@");
-    }
 
     my $sto = Mgd::get_store();
     my $unlock = sub {
@@ -360,12 +352,23 @@ sub replicate {
         }
     };
 
+    unless ($fid->exists) {
+        return $retunlock->(0, "no_source", "FID $fidid doesn't exist.  skipping.");
+    }
+
+    my $cls = $fid->class;
+    my $policy_class = $cls->policy_class;
+    eval "use $policy_class; 1;";
+    if ($@) {
+        return error("Failed to load policy class: $policy_class: $@");
+    }
+
     # hashref of devid -> $device_row_href  (where devid is alive)
     my $devs = MogileFS::Device->map;
     return $retunlock->(0, "no_devices", "Device information from get_device_summary is empty")
         unless $devs && %$devs;
 
-    return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock")
+    return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock for fid $fidid")
         unless $sto->should_begin_replicating_fidid($fidid);
 
     # learn what this devices file is already on
@@ -402,7 +405,7 @@ sub replicate {
                                                  on_devs   => \@on_devs, # all device objects fid is on, dead or otherwise
                                                  all_devs  => $devs,
                                                  failed    => \%dest_failed,
-                                                 min       => $mclass->mindevcount,
+                                                 min       => $cls->mindevcount,
                                                  ))
     {
         # they can return either a dev hashref/object or a devid number.  we want the number.

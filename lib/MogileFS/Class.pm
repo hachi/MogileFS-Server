@@ -11,7 +11,12 @@ sub of_fid {
     # make $fid into a FID object:
     $fid = MogileFS::FID->new($fid) unless ref $fid;
     return undef unless $fid->exists;
-    return $pkg->of_dmid_classid($fid->dmid, $fid->classid);
+    my $cl = $pkg->of_dmid_classid($fid->dmid, $fid->classid);
+    return $cl if $cl;
+    # return the default class for this file, not undef.  this should
+    # always return a valid class for a valid FID.  files need to
+    # always have a mindevcount (default of 2), repl policy, etc.
+    return $pkg->of_dmid_classid($fid->dmid, 0);
 }
 
 # return MogileFS::Class, given a dmid and classid.  or returns the
@@ -26,10 +31,6 @@ sub of_dmid_classid {
     return $singleton{$dmid}{$classid} if
         $singleton{$dmid} &&
         $singleton{$dmid}{$classid};
-    # FIXME: return the default class for this file, not undef.  this
-    # should always return a valid class for a valid FID, even if it
-    # has no db row.  it still has a mindevcount (default of 2), repl
-    # policy,etc.
     return undef;
 }
 
