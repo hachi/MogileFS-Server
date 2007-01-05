@@ -32,5 +32,10 @@ sub modnames2paths {
         $m2p->{$tail} = $file;
     }
 
+    # these are symlinks in brad's lib
+    foreach my $k (keys %$m2p) {
+        delete $m2p->{$k} if $k eq "Danga::blib::lib::Danga::Socket" || $k eq "Danga::Socket";
+    }
+
     return $m2p;
 }
