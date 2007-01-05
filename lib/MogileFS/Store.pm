@@ -442,6 +442,29 @@ sub files_to_replicate {
     return values %$to_repl_map;
 }
 
+# although it's safe to have multiple tracker hosts and/or processes
+# replicating the same file, around, it's inefficient CPU/time-wise,
+# and it's also possible they pick different places and waste disk.
+# so the replicator asks the store interface when it's about to start
+# and when it's done replicating a fidid, so you can do something smart
+# and tell it not to.
+sub should_begin_replicating_fidid {
+    my ($self, $fidid) = @_;
+    warn("Inefficient implementation of should_begin_replicating_fidid() in $self!\n");
+    1;
+}
+
+# called when replicator is done replicating a fid, so you can cleanup whatever
+# you did in 'should_begin_replicating_fidid' above.
+sub note_done_replicating {
+    my ($self, $fidid) = @_;
+}
+
+sub delete_fid_from_file_to_replicate {
+    my ($self, $fidid) = @_;
+    $self->dbh->do("DELETE FROM file_to_replicate WHERE fid=?", undef, $fidid);
+}
+
 1;
 
 __END__

@@ -21,7 +21,6 @@ my %fidfailure;
 
 # { fid => 1 }; used to keep track of fids we find in the unreachable_fids table
 my %unreachable;
-my $dbh;
 
 sub end_of_time { ENDOFTIME; }
 
@@ -78,7 +77,7 @@ sub work {
         }
 
         $self->validate_dbh;
-        $dbh = $self->get_dbh or return 0;
+        my $dbh = $self->get_dbh or return 0;
 
         # update our unreachable fid list... we consider them good for 15 minutes
         my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
@@ -142,7 +141,7 @@ sub replicate_using_torepl_table {
             # also replicated it), but in the case of running with old
             # replicators from previous versions, -or- simply if the
             # other guy's delete failed, this cleans it up....
-            $dbh->do("DELETE FROM file_to_replicate WHERE fid=?", undef, $fid);
+            $sto->delete_fid_from_file_to_replicate($fid);
             $unlock->() if $unlock;
             next;
         }
@@ -177,6 +176,7 @@ sub replicate_using_torepl_table {
         # logic for setting the next try time appropriately
         my $update_nexttry = sub {
             my ($type, $delay) = @_;
+            my $dbh = Mgd::get_dbh();
             if ($type eq 'end_of_time') {
                 # special; update to a time that won't happen again, as we've encountered a scenario
                 # in which case we're really hosed
@@ -221,6 +221,10 @@ sub replicate_using_devcounts {
     my $sto = Mgd::get_store();
     return unless $sto->isa("MogileFS::Store::MySQL");
 
+    # call this $mdbh to indiciate it's a MySQL dbh, and to help grepping
+    # for old handles.  :)
+    my $mdbh = $sto->dbh;
+
     MogileFS::Class->foreach(sub {
         my $mclass = shift;
         my ($dmid, $classid, $min, $policy_class) = map { $mclass->$_ } qw(domainid classid mindevcount policy_class);
@@ -238,10 +242,10 @@ sub replicate_using_devcounts {
             my $now = time();
             $self->still_alive;
 
-            my $fids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
+            my $fids = $mdbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
                                                 "AND devcount = ? AND length IS NOT NULL ".
                                                 "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
-            die $dbh->errstr if $dbh->err;
+            die $mdbh->errstr if $mdbh->err;
             $self->{fidtodo}{$_} = 1 foreach @$fids;
 
             # increase devcount so we try to replicate the files at the next devcount
@@ -282,8 +286,8 @@ sub replicate_using_devcounts {
 
                     # if it was no longer reachable, mark it reachable
                     if (delete $unreachable{$fid}) {
-                        $dbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
-                        die $dbh->errstr if $dbh->err;
+                        $mdbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
+                        die $mdbh->errstr if $mdbh->err;
                     }
 
                     # housekeeping
@@ -331,11 +335,9 @@ sub replicate {
         return error("Failed to load policy class: $policy_class: $@");
     }
 
-    my $lock;  # bool: whether we got the lock or not
-    my $lockname = "mgfs:fid:$fidid:replicate";
     my $sto = Mgd::get_store();
     my $unlock = sub {
-        $sto->release_lock($lockname) if $lock;  # FIXME: Store::MySQL-specific!
+        $sto->note_done_replicating($fidid);
     };
 
     my $retunlock = sub {
@@ -363,9 +365,8 @@ sub replicate {
     return $retunlock->(0, "no_devices", "Device information from get_device_summary is empty")
         unless $devs && %$devs;
 
-    $lock = $sto->get_lock($lockname, 1);  # FIXME: Store::MySQL-specific!
-    return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock $lockname")
-        unless $lock;
+    return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock")
+        unless $sto->should_begin_replicating_fidid($fidid);
 
     # learn what this devices file is already on
     my @on_devs;       # all devices fid is on, reachable or not.
