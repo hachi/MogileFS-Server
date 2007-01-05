@@ -10,7 +10,7 @@ sub replicate_to {
 
     my $fid      = delete $args{fid};      # fid scalar to copy
     my $on_devs  = delete $args{on_devs};  # arrayref of device objects
-    my $all_devs = delete $args{all_devs}; # hashref of { devid => devobj }
+    my $all_devs = delete $args{all_devs}; # hashref of { devid => MogileFS::Device }
     my $failed   = delete $args{failed};   # hashref of { devid => 1 } of failed attempts this round
     my $min      = delete $args{min};      # configured min devcount for this class
 
@@ -19,6 +19,15 @@ sub replicate_to {
 
     # number of devices we currently live on
     my $already_on = @$on_devs;
+
+    # total disks available (not marked dead)
+    my $total_disks = scalar grep { ! $_->is_marked_dead } values %$all_devs;
+
+    # if we have two copies and that's all the disks there are
+    # anywhere, be happy enough, even if mindevcount is higher.  in
+    # that case, when they add more disks later, they'll need to fsck
+    # to make files replicate more.
+    return 0 if $already_on >= 2 && $already_on == $total_disks;
 
     # FIXME: this is NOT true.  make sure it's on 2+ hosts at least, if min > 1.
 

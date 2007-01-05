@@ -163,8 +163,6 @@ sub replicate_using_torepl_table {
         #
         # -- FATAL; DON'T TRY AGAIN --
         # no_source                  => it simply exists nowhere.  not that something's down, but file_on is empty.
-        # no_devices                 => no devices are configured.  at all.  why are we replicating something?
-        #                               how did something come into being since you can't delete devices?
 
         # bail if we failed getting the lock, that means someone else probably
         # already did it, so we should just move on
@@ -194,7 +192,7 @@ sub replicate_using_torepl_table {
         # now let's handle any error we want to consider a total failure; do not
         # retry at any point.  push this file off to the end so someone has to come
         # along and figure out what went wrong.
-        if ($errcode eq 'no_source' || $errcode eq 'no_devices') {
+        if ($errcode eq 'no_source') {
             $update_nexttry->( end_of_time => 1 );
             $unlock->() if $unlock;
             next;
@@ -352,9 +350,16 @@ sub replicate {
         }
     };
 
-    unless ($fid->exists) {
-        return $retunlock->(0, "no_source", "FID $fidid doesn't exist.  skipping.");
-    }
+    # hashref of devid -> MogileFS::Device
+    my $devs = MogileFS::Device->map
+        or die "No device map";
+
+    return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock for fid $fidid")
+        unless $sto->should_begin_replicating_fidid($fidid);
+
+    # if the fid doesn't even exist, consider our job done!  no point
+    # replicating file contents of a file no longer in the namespace.
+    return $retunlock->(1) unless $fid->exists;
 
     my $cls = $fid->class;
     my $policy_class = $cls->policy_class;
@@ -362,14 +367,6 @@ sub replicate {
     if ($@) {
         return error("Failed to load policy class: $policy_class: $@");
     }
-
-    # hashref of devid -> $device_row_href  (where devid is alive)
-    my $devs = MogileFS::Device->map;
-    return $retunlock->(0, "no_devices", "Device information from get_device_summary is empty")
-        unless $devs && %$devs;
-
-    return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock for fid $fidid")
-        unless $sto->should_begin_replicating_fidid($fidid);
 
     # learn what this devices file is already on
     my @on_devs;       # all devices fid is on, reachable or not.
