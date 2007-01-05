@@ -1,42 +1,36 @@
 #!/usr/bin/perl
 
 use strict;
-my @files = ("mogstored", "mogilefsd");
-push @files, `find lib -name '*.pm'`;
-chomp @files;
 
 my $base = "/home/lj/htdocs/dev/mogdocs/";
-#system("find $base -type f -exec rm {} \;");
-my %html; # perl file -> html file
+my $pshb = Goats->new;
+$pshb->batch_convert([qw(mogstored mogilefsd lib)], $base);
 
-foreach my $f (@files) {
-    my $outfile = $f;
-    $outfile =~ s!^lib/!!;
-    $outfile =~ s!\.pm$!!;
-    $outfile .= ".html";
-    system("install -D /dev/null $base/$outfile");
-    system("pod2html --podroot=. --podpath=.:lib --htmlroot=/dev/mogdocs $f > $base/$outfile");
-    print "F = $f => $outfile\n";
-    $html{$f} = $outfile;
-}
+package Goats;
 
-open (my $fh, ">$base/index.html") or die;
-print $fh "<html><head><title>MogileFS server docs</title></head><body><pre>";
-foreach my $f (@files) {
-    if (has_pod($f)) {
-        print $fh "<a href='$html{$f}'>$f</a>\n";
-    } else {
-        print $fh "$f\n";
+use strict;
+use base 'Pod::Simple::HTMLBatch';
+
+sub modnames2paths {
+    my ($self, $dirs) = @_;
+
+    my @files;
+    my @dirs;
+
+    foreach my $path (@{$dirs || []}) {
+        if (-f $path) {
+            push @files, $path;
+        } else {
+            push @dirs, $path;
+        }
     }
-}
-print $fh "</pre></body></html>\n";
-close($fh);
 
-sub has_pod {
-    my $f = shift;
-    open(my $fh, $f) or die;
-    while (<$fh>) {
-        return 1 if /=head1/;
+    my $m2p = $self->SUPER::modnames2paths(\@dirs);
+
+    foreach my $file (@files) {
+        my ($tail) = $file =~ m!([^/]+)\z!;
+        $m2p->{$tail} = $file;
     }
-    return 0;
+
+    return $m2p;
 }
