@@ -23,7 +23,7 @@ require 't/lib/mogtestlib.pl';
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 53;
+    plan tests => 57;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
@@ -108,16 +108,19 @@ ok($tmptrack->mogadm("device", "add", "hostB", 4), "created dev4 on hostB");
     $be->{timeout} = $was;
 }
 
-# create one sample file
-my $fh = $mogc->new_file("file1", "2copies");
-ok($fh, "got filehandle");
-unless ($fh) {
-    die "Error: " . $mogc->errstr;
+# create two sample files
+my $data = "My test file.\n" x 1024;
+foreach my $k (qw(file1 file2)) {
+    my $fh = $mogc->new_file($k, "2copies");
+    ok($fh, "got filehandle") or
+        die "Error: " . $mogc->errstr;
+    print $fh $data;
+    ok(close($fh), "closed file");
 }
 
-my $data = "My test file.\n" x 1024;
-print $fh $data;
-ok(close($fh), "closed file");
+# quick delete test
+ok($mogc->delete("file2"), "deleted file2")
+    or die "Error: " . $mogc->errstr;
 
 # verify we can't delete the domain now
 ok(!$tmptrack->mogadm("domain", "delete", "testdom"), "can't delete domain in use");
@@ -220,14 +223,21 @@ ok(try_for(15, sub {
 # kill hostB now
 ok($tmptrack->mogadm("host", "delete", "hostB"), "killed hostB");
 
-
-# enable fsck (job already running, but waiting for config update)
-
-# do get_paths again and wait for it to go to 2, reliably.  or, wait for 1st path to be $dead_url, which is now not dead.
-
-
-#$dbh->do("INSERT INTO file_to_replicate SET fid=7");
-#sleep 60;
+# delete them all, see if they go away.
+for my $n (1..$n_files) {
+    my $rv = $mogc->delete("manyhundred_$n")
+        or die "Failed to delete manyhundred_$n";
+}
+pass("deleted all $n_files files");
+try_for(20, sub {
+    my @files;
+    foreach my $hn (1, 3) {
+        my @lfiles = `find $mogroot{$hn} -type f -name '*.fid'`;
+        push @files, @lfiles;
+        diag("files on host $hn = " . scalar(@lfiles));
+    }
+    return @files == 0;
+});
 
 
 sub try_for {

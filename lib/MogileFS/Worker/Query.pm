@@ -170,10 +170,7 @@ sub cmd_sleep {
 sub cmd_test {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
-    if ($args->{crash}) {
-        my $n = int(0.5);
-        my $crash = 1 / $n;  # divide by zero! (will get caught)
-    }
+    die "Crashed on purpose" if $args->{crash};
     return $self->ok_line;
 }
 
