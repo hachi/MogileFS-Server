@@ -104,8 +104,13 @@ sub process_line {
                 $cmd_handler->($self, $args);
             };
             if ($@) {
-                error("Error running command '$cmd': $@");
-                return $self->err_line("failure");
+                my $errc = error_code($@);
+                if ($errc eq "dup") {
+                    return $self->err_line("dup");
+                } else {
+                    error("Error running command '$cmd': $@");
+                    return $self->err_line("failure");
+                }
             }
             return;
         }
@@ -711,14 +716,17 @@ sub cmd_create_host {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
+    my $hostname = $args->{host} or
+        return $self->err_line('no_host');
 
-    my $hostname = $args->{host};
-    return $self->err_line('no_host') unless $hostname;
+    my $host = MogileFS::Host->of_hostname($hostname);
 
-    # unless update, require ip/port
-    unless ($args->{update}) {
+    # if we're createing a new host, require ip/port, and default to
+    # host being down if client didn't specify
+    if ($args->{update}) {
+        return $self->err_line('host_not_found') unless $host;
+    } else {
+        return $self->err_line('host_exists') if $host;
         return $self->err_line('no_ip') unless $args->{ip};
         return $self->err_line('no_port') unless $args->{port};
         $args->{status} ||= 'down';
@@ -727,42 +735,20 @@ sub cmd_create_host {
     return $self->err_line('unknown_state')
         unless $args->{status} =~ /^(?:alive|down|dead)$/;
 
-    my $host = MogileFS::Host->of_hostname($hostname);
-    if ($args->{update}) {
-        return $self->err_line('host_not_found') if ! $host;
-    } else {
-        return $self->err_line('host_exists') if $host;
+    # arguments all good, let's do it.
+
+    $host ||= MogileFS::Host->create($hostname, $args->{ip});
+    my %setter = (
+                  status  => "set_status",
+                  ip      => "set_ip",
+                  port    => "set_http_port",
+                  getport => "set_http_get_port",
+                  altip   => "set_alt_ip",
+                  altmask => "set_alt_mask",
+                  );
+    while (my ($f, $meth) = each %setter) {
+        $host->$meth($args->{$f}) if exists $args->{$f};
     }
-    my $hid = $host ? $host->id : 0;
-
-    # update or insert at this point
-    if ($args->{update}) {
-        # create an update list; basically we take our input arguments, map them
-        # to the database columns, see if this argument was passed (so we don't
-        # overwrite other things), and then quote the input and set it
-        my %map = ( ip => 'hostip', port => 'http_port', getport => 'http_get_port',
-                    altip => 'altip', altmask => 'altmask',
-                    status => 'status', );
-        my $set = join(', ', map { $map{$_} . " = " . $dbh->quote($args->{$_}) }
-                             grep { exists $args->{$_} }
-                             keys %map);
-
-        # now do the update
-        $dbh->do("UPDATE host SET $set WHERE hostid = ?", undef, $hid);
-    } else {
-        # get the max host id in use (FIXME: racy!)
-        $hid = ($dbh->selectrow_array('SELECT MAX(hostid) FROM host') || 0) + 1;
-
-        # now insert the new host
-        $dbh->do("INSERT INTO host (hostid, status, http_port, http_get_port, hostname, hostip, altip, altmask) " .
-                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                 undef, $hid, map { $args->{$_} } qw(status port getport host ip altip altmask));
-    }
-    return $self->err_line('failure') if $dbh->err;
-
-    # force a host reload
-    MogileFS::Host->invalidate_cache;
-    $host = MogileFS::Host->of_hostid($hid);
 
     # return success
     return $self->ok_line($host->overview_hashref);
@@ -1112,6 +1098,7 @@ sub err_line {
 
     my $err_code = shift;
     my $err_text = shift || {
+        'dup' => "Duplicate name/number used.",
         'after_mismatch' => "Pattern does not match the after-value?",
         'bad_params' => "Invalid parameters to command; please see documentation",
         'class_exists' => "That class already exists in that domain",

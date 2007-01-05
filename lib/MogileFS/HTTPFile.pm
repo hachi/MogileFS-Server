@@ -1,5 +1,6 @@
 package MogileFS::HTTPFile;
 use strict;
+use warnings;
 use Carp qw(croak);
 use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
 use MogileFS::Util qw(error wait_for_readability wait_for_writeability);
@@ -215,7 +216,8 @@ sub size {
     $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
     return error("no time remaining to write HEAD request to $path") if $time_remain <= 0;
 
-    my $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
+    $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
+    # FIXME: we don't even look at $rv ?
     return error("get_file_size() read timeout ($time_remain) for HTTP HEAD for size of $path")
         unless wait_for_readability(fileno($httpsock), $time_remain);
 

@@ -81,6 +81,16 @@ sub was_duplicate_error {
     die "UNIMPLEMENTED";
 }
 
+# run a subref (presumably a database update) in an eval, because you expect it to
+# maybe fail on duplicate key error, and throw a dup exception for you, else return
+# its return value
+sub conddup {
+    my ($self, $code) = @_;
+    my $rv = eval { $code->(); };
+    throw("dup") if $self->was_duplicate_error;
+    return $rv;
+}
+
 # --------------------------------------------------------------------------
 
 # return true if deleted, 0 if didn't exist, exception if error
@@ -217,11 +227,10 @@ sub tempfile_row_from_fid {
 # return 1 on success, throw "dup" on duplicate devid or throws other error on failure
 sub create_device {
     my ($self, $devid, $hostid, $status) = @_;
-    my $rv = eval {
+    my $rv = $self->conddup(sub {
         $self->dbh->do("INSERT INTO device SET devid=?, hostid=?, status=?", undef,
                        $devid, $hostid, $status);
-    };
-    throw("dup") if $self->was_duplicate_error;
+    });
     $self->condthrow;
     die "error making device $devid\n" unless $rv > 0;
     return 1;
@@ -393,6 +402,30 @@ sub replicate_now {
 sub create_domain {
     my ($self, $name) = @_;
     die "UNIMPLEMENTED";
+}
+
+sub update_host_property {
+    my ($self, $hostid, $col, $val) = @_;
+    $self->conddup(sub {
+        $self->dbh->do("UPDATE host SET $col=? WHERE hostid=?", undef, $val, $hostid);
+    });
+    return 1;
+}
+
+# return ne hostid, or throw 'dup' on error.
+# NOTE: you need to put them into the initial 'down' state.
+sub create_host {
+    my ($self, $hostname, $ip) = @_;
+    my $dbh = $self->dbh;
+    # racy! lazy. no, better: portable! how often does this happen? :)
+    my $hid = ($dbh->selectrow_array('SELECT MAX(hostid) FROM host') || 0) + 1;
+    my $rv = $self->conddup(sub {
+        $dbh->do("INSERT INTO host (hostid, hostname, hostip, status) ".
+                 "VALUES (?, ?, ?, 'down')",
+                 undef, $hid, $hostname, $ip);
+    });
+    return $hid if $rv;
+    die "db failure";
 }
 
 1;
