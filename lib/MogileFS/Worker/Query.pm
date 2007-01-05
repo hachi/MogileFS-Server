@@ -575,9 +575,6 @@ sub cmd_create_device {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
-
     my $status = $args->{state} || "alive";
     return $self->err_line("invalid_state") unless $status =~ /^alive|down|readonly$/;
 
