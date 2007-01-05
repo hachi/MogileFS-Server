@@ -9,7 +9,7 @@ use File::Copy ();
 use Carp;
 use File::Basename ();
 use File::Path ();
-use Sys::Syslog;
+use Sys::Syslog ();
 use Time::HiRes ();
 use Net::Netmask;
 use LWP::UserAgent;
@@ -74,12 +74,12 @@ sub run {
     MogileFS::ProcManager->set_min_workers('checker'     => MogileFS->config('checker_jobs'));
 
     # open up our log
-    openlog('mogilefsd', 'pid', 'daemon');
+    Sys::Syslog::openlog('mogilefsd', 'pid', 'daemon');
     Mgd::log('info', 'beginning run');
 
     unless (MogileFS::ProcManager->write_pidfile) {
         Mgd::log('info', "Couldn't write pidfile, ending run");
-        closelog();
+        Sys::Syslog::closelog();
         exit 1;
     }
 
@@ -91,7 +91,7 @@ sub run {
         print STDERR "Sent SIGTERM to $count children.\n" if $DEBUG;
         MogileFS::ProcManager->remove_pidfile;
         Mgd::log('info', 'ending run due to SIGTERM');
-        closelog();
+        Sys::Syslog::closelog();
 
         exit 0;
     };
@@ -144,7 +144,7 @@ sub run {
         exit 1;
     }
     Mgd::log('info', 'ending run');
-    closelog();
+    Sys::Syslog::closelog();
     exit(0);
 }
 
@@ -219,7 +219,7 @@ sub log {
         printf(shift(@_) . "\n", @_);
     } else {
         # just pass the parameters to syslog
-        syslog(@_);
+        Sys::Syslog::syslog(@_);
     }
 }
 
