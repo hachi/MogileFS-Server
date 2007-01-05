@@ -392,10 +392,7 @@ sub fid_list {
 
 sub forget_about {
     my ($dev, $fid) = @_;
-    my $dbh = Mgd::get_dbh();
-    $dbh->do('DELETE FROM file_on WHERE fid = ? AND devid = ?',
-             undef, $fid->id, $dev->id);
-    die $dbh->errstr if $dbh->err;
+    Mgd::get_store()->remove_fidid_from_devid($fid->id, $dev->id);
     return 1;
 }
 

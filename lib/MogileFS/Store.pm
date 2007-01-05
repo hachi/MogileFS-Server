@@ -316,6 +316,16 @@ sub add_fidid_to_devid {
     die "UNIMPLEMENTED";
 }
 
+# remove a record of fidid existing on devid
+# returns 1 on success, 0 if not there anyway
+sub remove_fidid_from_devid {
+    my ($self, $fidid, $devid) = @_;
+    my $rv = $self->dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
+                            undef, $fidid, $devid);
+    $self->condthrow;
+    return $rv;
+}
+
 # get all hosts from database, returns them as list of hashrefs, hashrefs being the row contents.
 sub get_all_hosts {
     my ($self) = @_;
