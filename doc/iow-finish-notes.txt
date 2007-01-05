@@ -1,0 +1,59 @@
+MogileFS::Worker::Monitor:
+
+    $iow->on_stats(sub {
+        my ($host, $stats) = @_;
+        ....
+    });
+
+* document (POD) wtf that interface is, parameters, etc.
+
+* might be better if parameters were $host, $devid, etc..?
+
+* do in callback:
+    my $dev = MogileFS::Device->of_devid($devid);
+    # verify device lines up to host?  eh, optional
+
+    $dev->set_observed_io_activity;
+
+sub set_observed_io_activity {
+   # set internal field
+   if (my $worker = MogileFS::ProcManager->is_child) {
+      $worker->send_to_parent(":set_dev_io $devid $weight");
+   }
+}
+
+in ProcManger.pm (where Connection/Worker.pm dispatches :foo commands)
+
+   if (/^:set_dev_io (......)/) {
+        $self->send_to_all_children(qw[query replicate ??], ":set_dev_io $devid $weight");
+   }
+
+in MogileFS/Worker.pm (base class)
+
+   if (^:set_dev_io (......)/) {
+       local $NO_SEND_UP = 1;
+       my $dev = MogileFS::Device->of_devid($devid);
+       $dev->set_observed_io_activity;
+   }
+
+Now, everything has it...
+
+Worker/Query.pm, cmd_get_paths, ....
+
+    # randomly weight the devices:
+    my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dmap->{$_}->weight ?
+                                                     $dmap->{$_}->weight : 100 ] } @devids);
+
+Instead, use ->observed_io_activity, not ->weight.
+
+Then weight is kinda useless, and add a comment to that effect in the setters/getters in Device.pm
+
+
+... and a test?  fake the IO reader (IOStatWatcher) to respect env:
+
+   $ENV{T_FAKE_IOW_DEV1} = 5;   # 5% activity
+   $ENV{T_FAKE_IOW_DEV2} = 90;  # 90% activity
+
+then a bunch of get_paths over and over, see if get_paths results are
+about 5% for dev1 and 90% for dev2.  (at least 10x more?  etc)
+
