@@ -792,6 +792,11 @@ sub cmd_get_paths {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
+    # TODO: overload meaning of 'noverify' to also mean "cachable with memcached", when we add
+    #       memcache support. then cache in memcached:
+    #              (dmid, dkey) -> fidid    (and invalidate this when key is replaced)
+    #              fidid -> [@devids]
+
     # validate domain for plugins
     $args->{dmid} = $self->check_domain($args)
         or return $self->err_line('domain_not_found');
