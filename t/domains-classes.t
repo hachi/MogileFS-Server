@@ -12,7 +12,7 @@ require "$Bin/lib/mogtestlib.pl";
 
 my $rootdbh = eval { root_dbh(); };
 if ($rootdbh) {
-    plan tests => 5;
+    plan tests => 27;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;

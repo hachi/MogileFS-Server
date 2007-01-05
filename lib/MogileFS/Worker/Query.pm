@@ -584,25 +584,30 @@ sub cmd_create_device {
     my $devid = $args->{devid};
     return $self->err_line("invalid_devid") unless $devid && $devid =~ /^\d+$/;
 
-    my $hostid;
+    my ($host, $hostid);
+
     MogileFS::Host->check_cache;
     if ($args->{hostid} && $args->{hostid} =~ /^\d+$/) {
         $hostid = $args->{hostid};
-        my $host = MogileFS::Host->of_hostid($hostid);
+        $host = MogileFS::Host->of_hostid($hostid);
         return $self->err_line("unknown_hostid") unless $host && $host->exists;
     } elsif (my $hname = $args->{hostname}) {
-        my $host = MogileFS::Host->of_hostname($hname);
+        $host = MogileFS::Host->of_hostname($hname);
         return $self->err_line("unknown_host") unless $host;
         $hostid = $host->id;
+    } else {
+        return $self->err_line("bad_args", "No hostid/hostname parameter");
     }
 
-    $dbh->do("INSERT INTO device SET devid=?, hostid=?, status=?", undef,
-             $devid, $hostid, $status);
-    if ($dbh->err) {
-        return $self->err_line("existing_devid");
+    if (eval { MogileFS::Device->create(devid  => $devid,
+                                        hostid => $hostid,
+                                        status => $status) }) {
+        return $self->ok_line;
     }
-    MogileFS::Device->invalidate_cache;
-    return $self->ok_line;
+
+    my $errc = error_code($@);
+    return $self->err_line("existing_devid") if $errc;
+    die $@;  # rethrow;
 }
 
 sub cmd_create_domain {

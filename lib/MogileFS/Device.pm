@@ -8,6 +8,15 @@ my %singleton;      # devid -> instance
 my $last_load = 0;  # unixtime we last reloaded devices from database
 my $all_loaded = 0; # bool: have we loaded all the devices?
 
+# throws "dup" on duplicate devid.  returns new MogileFS::Device object on success.
+# %args include devid, hostid, and status (in (alive, down, readonly))
+sub create {
+    my ($pkg, %args) = @_;
+    my $devid = Mgd::get_store()->create_device(@args{qw(devid hostid status)});
+    MogileFS::Device->invalidate_cache;
+    return $pkg->of_devid($devid);
+}
+
 sub of_devid {
     my ($class, $devid) = @_;
     croak("Invalid devid") unless $devid;

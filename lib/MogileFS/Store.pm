@@ -214,6 +214,19 @@ sub tempfile_row_from_fid {
                                          undef, $fidid);
 }
 
+# return 1 on success, throw "dup" on duplicate devid or throws other error on failure
+sub create_device {
+    my ($self, $devid, $hostid, $status) = @_;
+    my $rv = eval {
+        $self->dbh->do("INSERT INTO device SET devid=?, hostid=?, status=?", undef,
+                       $devid, $hostid, $status);
+    };
+    throw("dup") if $self->was_duplicate_error;
+    $self->condthrow;
+    die "error making device $devid\n" unless $rv > 0;
+    return 1;
+}
+
 sub update_device_usage {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
