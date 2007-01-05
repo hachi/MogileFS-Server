@@ -465,6 +465,22 @@ sub delete_fid_from_file_to_replicate {
     $self->dbh->do("DELETE FROM file_to_replicate WHERE fid=?", undef, $fidid);
 }
 
+# Given a dmid prefix after and limit, return an arrayref of dkey from the file
+# table.
+sub get_keys_like {
+    my ($self, $dmid, $prefix, $after, $limit) = @_;
+    # fix the input... prefix always ends with a % so that it works
+    # in a LIKE call, and after is either blank or something
+    $prefix ||= '';
+    $prefix .= '%';
+    $after ||= '';
+
+    # now select out our keys
+    return $self->dbh->selectcol_arrayref
+        ('SELECT dkey FROM file WHERE dmid = ? AND dkey LIKE ? AND dkey > ? ' .
+         "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, $after);
+}
+
 1;
 
 __END__

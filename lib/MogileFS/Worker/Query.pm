@@ -480,23 +480,11 @@ sub cmd_list_keys {
         $prefix =~ s/_/\\_/g;
     }
 
-    # now fix the input... prefix always ends with a % so that it works
-    # in a LIKE call, and after is either blank or something
-    $prefix ||= '';
-    $prefix .= '%';
-    $after ||= '';
     $limit ||= 1000;
     $limit += 0;
     $limit = 1000 if $limit > 1000;
 
-    # get DB handle
-    my $dbh = Mgd::get_dbh() or
-        return $self->err_line("nodb");
-
-    # now select out our keys
-    my $keys = $dbh->selectcol_arrayref
-        ('SELECT dkey FROM file WHERE dmid = ? AND dkey LIKE ? AND dkey > ? ' .
-         "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, $after);
+    my $keys = Mgd::get_store()->get_keys_like($dmid, $prefix, $after, $limit);
 
     # if we got nothing, say so
     return $self->err_line('none_match') unless $keys && @$keys;
