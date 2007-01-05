@@ -799,9 +799,6 @@ sub cmd_get_domains {
 
     MogileFS::Domain->invalidate_cache;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
-
     my $ret = {};
     my $dm_n = 0;
     foreach my $dom (MogileFS::Domain->domains) {
@@ -838,9 +835,6 @@ sub cmd_get_paths {
     my $key = $args->{key} or return $self->err_line("no_key");
 
     # get DB handle
-    my $dbh = Mgd::get_dbh() or
-        return $self->err_line("nodb");
-
     my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
         or return $self->err_line("unknown_key");
 
@@ -852,12 +846,11 @@ sub cmd_get_paths {
     };
 
     # is this fid still owned by this key?
-    my $devids = $dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
-                                          undef, $fidid) || [];
+    my @devids = $fid->devids;
 
     # randomly weight the devices
     my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dmap->{$_}->weight ?
-                                                     $dmap->{$_}->weight : 100 ] } @$devids);
+                                                     $dmap->{$_}->weight : 100 ] } @devids);
 
     # keep one partially-bogus path around just in case we have nothing else to send.
     my $backup_path;

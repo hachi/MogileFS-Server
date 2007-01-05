@@ -193,10 +193,17 @@ sub file_row_from_dmid_key {
 # classid, devcount" provided a $dmid and $key (dkey).  or undef if no
 # row.
 sub file_row_from_fidid {
-    my ($self, $fid) = @_;
+    my ($self, $fidid) = @_;
     return $self->dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
                                          "FROM file WHERE fid=?",
-                                         undef, $fid);
+                                         undef, $fidid);
+}
+
+# return array of devids that a fidid is on
+sub fid_devids {
+    my ($self, $fidid) = @_;
+    return @{ $self->dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
+                                             undef, $fidid) || [] };
 }
 
 # return hashref of columns classid, dmid, dkey, given a $fidid, or return undef

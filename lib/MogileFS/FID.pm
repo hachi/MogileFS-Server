@@ -116,6 +116,12 @@ sub rename {
     return $sto->rename_file($fid->id, $to_key);
 }
 
+# returns array of devids that this fid is on
+sub devids {
+    my $self = shift;
+    return Mgd::get_store()->fid_devids($self->id);
+}
+
 1;
 
 __END__
