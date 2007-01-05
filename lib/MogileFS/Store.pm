@@ -388,6 +388,13 @@ sub replicate_now {
     die "UNIMPLEMENTED";
 }
 
+# creates a new domain, given a domain namespace string.  return the dmid on success,
+# throw 'dup' on duplicate name.
+sub create_domain {
+    my ($self, $name) = @_;
+    die "UNIMPLEMENTED";
+}
+
 1;
 
 __END__

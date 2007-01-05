@@ -215,6 +215,24 @@ sub replicate_now {
     return $self->dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() WHERE nexttry > UNIX_TIMESTAMP()");
 }
 
+# creates a new domain, given a domain namespace string.  return the dmid on success,
+# throw 'dup' on duplicate name.
+sub create_domain {
+    my ($self, $name) = @_;
+    my $dbh = $self->dbh;
+
+    # get the max domain id
+    my $maxid = $dbh->selectrow_array('SELECT MAX(dmid) FROM domain') || 0;
+    my $rv = eval {
+        $dbh->do('INSERT INTO domain (dmid, namespace) VALUES (?, ?)',
+                 undef, $maxid + 1, $name);
+    };
+    if ($self->was_duplicate_error) {
+        throw("dup");
+    }
+    return $maxid+1 if $rv;
+    die "failed to make domain";  # FIXME: the above is racy.
+}
 
 1;
 

@@ -103,21 +103,13 @@ sub domains {
 sub create {
     my ($pkg, $name) = @_;
 
-    my $dbh = Mgd::get_dbh();
-
-    if (my $dmid = MogileFS::Domain->id_of_name($name)) {
-        throw("dup");
-    }
-
-    # get the max domain id
-    my $maxid = $dbh->selectrow_array('SELECT MAX(dmid) FROM domain') || 0;
-    $dbh->do('INSERT INTO domain (dmid, namespace) VALUES (?, ?)',
-             undef, $maxid + 1, $name);
-    throw("db") if $dbh->err;
+    # throws 'dup':
+    my $dmid = Mgd::get_store()->create_domain($name)
+        or die "create domain didn't return a dmid";
 
     # return the domain id we created
     MogileFS::Domain->invalidate_cache;
-    return MogileFS::Domain->of_dmid($maxid+1);
+    return MogileFS::Domain->of_dmid($dmid);
 }
 
 # --------------------------------------------------------------------------
