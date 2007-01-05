@@ -428,6 +428,20 @@ sub create_host {
     die "db failure";
 }
 
+# return array of row hashrefs containing columns: (fid, fromdevid,
+# failcount, flags, nexttry)
+sub files_to_replicate {
+    my ($self, $limit) = @_;
+    my $to_repl_map = $self->dbh->selectall_hashref(qq{
+        SELECT fid, fromdevid, failcount, flags, nexttry
+        FROM file_to_replicate
+        WHERE nexttry <= UNIX_TIMESTAMP()
+        ORDER BY nexttry
+        LIMIT $limit
+    }, "fid") or return ();
+    return values %$to_repl_map;
+}
+
 1;
 
 __END__

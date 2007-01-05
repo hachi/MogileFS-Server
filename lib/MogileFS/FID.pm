@@ -122,6 +122,12 @@ sub devids {
     return Mgd::get_store()->fid_devids($self->id);
 }
 
+# return FID's class
+sub class {
+    my $self = shift;
+    return MogileFS::Class->of_fid($self);
+}
+
 1;
 
 __END__
