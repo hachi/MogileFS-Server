@@ -2,6 +2,7 @@ package MogileFS::Store;
 use strict;
 use warnings;
 use Carp qw(croak);
+use MogileFS::Util qw(throw);
 use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
 
 sub new {
@@ -66,6 +67,7 @@ sub condthrow {
 }
 
 sub _valid_params {
+    croak("Odd number of parameters!") if scalar(@_) % 2;
     my ($self, $vlist, %uarg) = @_;
     my %ret;
     $ret{$_} = delete $uarg{$_} foreach @$vlist;
@@ -100,22 +102,39 @@ sub domain_has_files {
     return $has_a_fid ? 1 : 0;
 }
 
+sub class_has_files {
+    my ($self, $dmid, $clid) = @_;
+    my $has_a_fid = $self->dbh->selectrow_array('SELECT fid FROM file WHERE dmid = ? AND classid = ? LIMIT 1',
+                                                undef, $dmid, $clid);
+    return $has_a_fid ? 1 : 0;
+}
+
 # return new classid on success (non-zero integer), die on failure
+# throw 'dup' on duplicate name
 sub create_class {
-    my $self = shift;
-    my %arg  = $self->_valid_params([qw(dmid classname mindevcount)], @_);
+    my ($self, $dmid, $classname) = @_;
     die "UNIMPLEMENTED";
 }
 
-# return 1 on success (or miss), 0 on duplicate name failure, die (exception) on db failure
-sub update_class {
+# return 1 on success, throw "dup" on duplicate name error, die otherwise
+sub update_class_name {
     my $self = shift;
-    my %arg  = $self->_valid_params([qw(dmid classid classname mindevcount)], @_);
+    my %arg  = $self->_valid_params([qw(dmid classid classname)], @_);
     my $rv = eval {
-        $self->dbh->do("UPDATE class SET classname=?, mindevcount=? WHERE dmid=? AND classid=?",
-                       undef, $arg{classname}, $arg{mindevcount}, $arg{dmid}, $arg{classid});
+        $self->dbh->do("UPDATE class SET classname=? WHERE dmid=? AND classid=?",
+                       undef, $arg{classname}, $arg{dmid}, $arg{classid});
     };
-    return 0 if $self->was_duplicate_error;
+    throw("dup") if $self->was_duplicate_error;
+    $self->condthrow;
+    return 1;
+}
+
+# return 1 on success, die otherwise
+sub update_class_mindevcount {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(dmid classid mindevcount)], @_);
+    $self->dbh->do("UPDATE class SET mindevcount=? WHERE dmid=? AND classid=?",
+                   undef, $arg{mindevcount}, $arg{dmid}, $arg{classid});
     $self->condthrow;
     return 1;
 }
@@ -170,6 +189,16 @@ sub file_row_from_dmid_key {
                                          undef, $dmid, $key);
 }
 
+# return hashref of row containing columns "fid, dmid, dkey, length,
+# classid, devcount" provided a $dmid and $key (dkey).  or undef if no
+# row.
+sub file_row_from_fidid {
+    my ($self, $fid) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
+                                         "FROM file WHERE fid=?",
+                                         undef, $fid);
+}
+
 # return hashref of columns classid, dmid, dkey, given a $fidid, or return undef
 sub tempfile_row_from_fid {
     my ($self, $fidid) = @_;
@@ -201,6 +230,12 @@ sub set_device_weight {
 sub set_device_state {
     my ($self, $devid, $state) = @_;
     $self->dbh->do('UPDATE device SET status = ? WHERE devid = ?', undef, $state, $devid);
+    $self->condthrow;
+}
+
+sub delete_class {
+    my ($self, $dmid, $cid) = @_;
+    $self->dbh->do("DELETE FROM class WHERE dmid = ? AND classid = ?", undef, $dmid, $cid);
     $self->condthrow;
 }
 
@@ -242,6 +277,16 @@ sub get_all_domains {
     my ($self) = @_;
     my $domains = $self->dbh->selectall_arrayref('SELECT namespace, dmid FROM domain');
     return map { ($_->[0], $_->[1]) } @{$domains || []};
+}
+
+# returns an array of hashrefs, one hashref per row in the 'class' table
+sub get_all_classes {
+    my ($self) = @_;
+    my (@ret, $row);
+    my $sth = $self->dbh->prepare("SELECT dmid, classid, classname, mindevcount FROM class");
+    $sth->execute;
+    push @ret, $row while $row = $sth->fetchrow_hashref;
+    return @ret;
 }
 
 # add a record of fidid existing on devid

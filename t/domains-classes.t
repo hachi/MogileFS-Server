@@ -51,4 +51,36 @@ is(scalar MogileFS::Domain->domains, 1, "back to one domain");
 my @classes = $dom->classes;
 is(scalar @classes, 1, "one class in domain")
     or die;
+is($classes[0]->name, "default", "is the default class");
+is($classes[0]->classid, 0, ".. of classid 0");
+ok(defined $classes[0]->classid, ".. which is defined");
+
+my $cla = $dom->create_class("classA");
+ok($cla, "created classA");
+is(scalar($dom->classes), 2, "two classes now");
+
+my $clb = $dom->create_class("classB");
+ok($clb, "created classB");
+is(scalar($dom->classes), 3, "three classes now");
+
+{
+    my $dup = eval { $dom->create_class("classA") }; # can't create this again
+    ok(!$dup, "didn't create dup of A");
+    is(error_code($@), "dup", "because it was a dup");
+}
+
+ok($clb->set_name("classB2"), "renamed classB to B2");
+is($clb->name, "classB2", "and it renamed");
+
+ok(!eval { $clb->set_name("classA") }, "failed to rename B2 to classA");
+is(error_code($@), "dup", "because it was a dup");
+
+ok($clb->delete, "deleted class");
+is(scalar($dom->classes), 2, "two classes now");
+
+
+
+
+
+
 

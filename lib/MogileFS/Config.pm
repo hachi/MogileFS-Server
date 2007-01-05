@@ -42,6 +42,7 @@ sub set_config_no_broadcast {
 }
 
 set_config("mogstored_stream_port" => $MOGSTORED_STREAM_PORT);
+set_config('default_mindevcount', 2);
 
 our (
     %cmdline,
@@ -67,7 +68,7 @@ our (
     $pidfile,
    );
 
-our $default_mindevcount;
+my $default_mindevcount;
 
 sub load_config {
     my $dummy_workerport;
@@ -153,7 +154,7 @@ sub load_config {
     $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0 );
     $pidfile        = choose_value( 'pidfile', "" );
 
-    $default_mindevcount = choose_value( 'default_mindevcount', 2 );
+    choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
     $old_repl_compat = choose_value( 'old_repl_compat', 1 );

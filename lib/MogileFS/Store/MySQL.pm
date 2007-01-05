@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use DBI;
 use DBD::mysql;
+use MogileFS::Util qw(throw);
 use base 'MogileFS::Store';
 
 # --------------------------------------------------------------------------
@@ -59,21 +60,29 @@ sub release_lock {
 # Data-access things we override
 # --------------------------------------------------------------------------
 
+# throw 'dup' on duplicate name
 sub create_class {
-    my $self = shift;
-    my %arg  = $self->_valid_params([qw(dmid classname mindevcount)], @_);
+    my ($self, $dmid, $classname) = @_;
     my $dbh = $self->dbh;
 
     # get the max class id in this domain
     my $maxid = $dbh->selectrow_array
-        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $arg{dmid}) || 0;
+        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
 
     # now insert the new class
-    my $rv = $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                      undef, $arg{dmid}, $maxid + 1, $arg{classname}, $arg{mindevcount});
+    my $rv = eval {
+        $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
+                 undef, $dmid, $maxid + 1, $classname, 2);
+    };
+    if ($@ || $dbh->err) {
+        # first is mysql's error code for duplicates
+        if ($self->was_duplicate_error) {
+            throw("dup");
+        }
+    }
     return $maxid + 1 if $rv;
     $self->condthrow;
-    return 0;
+    die;
 }
 
 sub register_tempfile {

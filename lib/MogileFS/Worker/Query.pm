@@ -6,7 +6,7 @@ use warnings;
 
 use base 'MogileFS::Worker';
 use fields qw(querystarttime reqid);
-use MogileFS::Util qw(error);
+use MogileFS::Util qw(error error_code);
 
 sub new {
     my ($class, $psock) = @_;
@@ -609,25 +609,19 @@ sub cmd_create_domain {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
+    my $domain = $args->{domain} or
+        return $self->err_line('no_domain');
 
-    my $domain = $args->{domain};
-    return $self->err_line('no_domain') unless length $domain;
+    # TODO: auth/permissions?
 
-    # FIXME: add some sort of authentication/limitation on this?
+    my $dom = eval { MogileFS::Domain->create($domain); };
+    if ($@) {
+        if (error_code($@) eq "dup") {
+            return $self->err_line('domain_exists');
+        }
+        return $self->err_line('failure', "$@");
+    }
 
-    my $dmid = MogileFS::Domain->id_of_name($domain);
-    return $self->err_line('domain_exists') if $dmid;
-
-    # get the max domain id
-    my $maxid = $dbh->selectrow_array('SELECT MAX(dmid) FROM domain') || 0;
-    $dbh->do('INSERT INTO domain (dmid, namespace) VALUES (?, ?)',
-             undef, $maxid + 1, $domain);
-    return $self->err_line('failure') if $dbh->err;
-
-    # return the domain id we created
-    MogileFS::Domain->invalidate_cache;
     return $self->ok_line({ domain => $domain });
 }
 
@@ -638,24 +632,16 @@ sub cmd_delete_domain {
     my $domain = $args->{domain} or
         return $self->err_line('no_domain');
 
-    # FIXME: add some sort of authentication/limitation on this?
     my $dom = MogileFS::Domain->of_namespace($domain) or
         return $self->err_line('domain_not_found');
 
-    my $dmid = $dom->id;
+    if (eval { $dom->delete }) {
+        return $self->ok_line({ domain => $domain });
+    }
 
-    # ensure it has no classes
-    my $classes = MogileFS::Class->dmid_classes($dmid); # FIXME: my @classes = $dom->classes;
-    return $self->err_line('failure') unless $classes; # FIXME: remove, use exceptions
-    return $self->err_line('domain_not_empty') if %$classes;
-
-    # and ensure it has no files (fast: key based)
-    return $self->err_line('domain_has_files') if $dom->has_files;
-
-    # all clear, nuke it
-    $dom->delete;
-
-    return $self->ok_line({ domain => $domain });
+    my $err = error_code($@);
+    return $self->err_line('domain_has_files') if $err eq "has_files";
+    return $self->err_line("failure");
 }
 
 sub cmd_create_class {
@@ -671,46 +657,20 @@ sub cmd_create_class {
     my $mindevcount = $args->{mindevcount}+0;
     return $self->err_line('invalid_mindevcount') unless $mindevcount > 0;
 
-    # FIXME: add some sort of authentication/limitation on this?
+    my $dom  = MogileFS::Domain->of_namespace($domain) or
+        return $self->err_line('domain_not_found');
 
-    my $dmid = MogileFS::Domain->id_of_name($domain);
-    return $self->err_line('no_domain') unless $dmid;
-
-    my $cid = MogileFS::Class->class_id($dmid, $class);
+    my $cls = $dom->class($class);
     if ($args->{update}) {
-        return $self->err_line('class_not_found') if ! $cid;
+        return $self->err_line('class_not_found') if ! $cls;
+        $cls->set_name($class);
     } else {
-        return $self->err_line('class_exists') if $cid;
+        return $self->err_line('class_exists') if $cls;
+        $cls = $dom->create_class($class);
     }
-
-    my $sto = Mgd::get_store();
-
-    # update or insert at this point
-    if ($args->{update}) {
-        # TODO: this is kinda lame that we use the store directly here.
-        # we should load the class object, then update that, and have that
-        # use the store.
-        my $rv = eval {
-            $sto->update_class(
-                               dmid        => $dmid,
-                               classid     => $cid,
-                               classname   => $class,
-                               mindevcount => $mindevcount,
-                               );
-        };
-        return $self->err_line('failure') unless $rv;
-    } else {
-        # TODO: also lame in same way as above
-        my $new_cid = $sto->create_class(
-                                         dmid        => $dmid,
-                                         classname   => $class,
-                                         mindevcount => $mindevcount,
-                                         );
-        return $self->err_line('failure') unless $new_cid;
-    }
+    $cls->set_mindevcount($mindevcount);
 
     # return success
-    MogileFS::Class->invalidate_cache;
     return $self->ok_line({ class => $class, mindevcount => $mindevcount, domain => $domain });
 }
 
@@ -728,33 +688,21 @@ sub cmd_delete_class {
 
     my $domain = $args->{domain};
     return $self->err_line('no_domain') unless length $domain;
-
     my $class = $args->{class};
     return $self->err_line('no_class') unless length $domain;
 
-    # FIXME: add some sort of authentication/limitation on this?
+    my $dom  = MogileFS::Domain->of_namespace($domain) or
+        return $self->err_line('domain_not_found');
+    my $cls = $dom->class($class) or
+        return $self->err_line('class_not_found');
 
-    my $dmid = MogileFS::Domain->id_of_name($domain);
-    return $self->err_line('domain_not_found') unless $dmid;
+    if (eval { $cls->delete }) {
+        return $self->ok_line({ domain => $domain, class => $class });
+    }
 
-    my $cid = MogileFS::Class->class_id($dmid, $class);
-    return $self->err_line('class_not_found') unless $cid;
-
-    # and ensure it has no files (fast: key based)
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line("nodb");
-    my $has_a_fid = $dbh->selectrow_array('SELECT fid FROM file WHERE dmid = ? AND classid = ? LIMIT 1',
-                                          undef, $dmid, $cid);
-    return $self->err_line('failure') if $dbh->err;
-    return $self->err_line('class_has_files') if $has_a_fid;
-
-    # all clear, nuke it
-    $dbh->do("DELETE FROM class WHERE dmid = ? AND classid = ?", undef, $dmid, $cid);
-    return $self->err_line('failure') if $dbh->err;
-
-    # return the class we nuked
-    MogileFS::Class->invalidate_cache;
-    return $self->ok_line({ domain => $domain, class => $class });
+    my $errc = error_code($@);
+    return $self->err_line('class_has_files') if $errc eq "has_files";
+    return $self->err_line('failure');
 }
 
 sub cmd_create_host {
@@ -857,21 +805,14 @@ sub cmd_get_domains {
     my $ret = {};
     my $dm_n = 0;
     foreach my $dom (MogileFS::Domain->domains) {
-        $ret->{"domain" . ++$dm_n} = $dom->name;
-
-        # setup the return row for this set of classes
-        my $classes = $dbh->selectall_arrayref
-            ('SELECT classname, mindevcount FROM class WHERE dmid = ?', undef, $dom->id);
+        $dm_n++;
+        $ret->{"domain${dm_n}"} = $dom->name;
         my $cl_n = 0;
-        foreach my $irow (@$classes) {
-            $ret->{"domain${dm_n}class" . ++$cl_n . "name"} = $irow->[0];
-            $ret->{"domain${dm_n}class" . $cl_n . "mindevcount"} = $irow->[1];
+        foreach my $cl ($dom->classes) {
+            $cl_n++;
+            $ret->{"domain${dm_n}class${cl_n}name"}        = $cl->name;
+            $ret->{"domain${dm_n}class${cl_n}mindevcount"} = $cl->mindevcount;
         }
-
-        # record the default class and mindevcount
-        $ret->{"domain${dm_n}class" . ++$cl_n . "name"} = 'default';
-        $ret->{"domain${dm_n}class" . $cl_n . "mindevcount"} = $Mgd::default_mindevcount;
-
         $ret->{"domain${dm_n}classes"} = $cl_n;
     }
     $ret->{"domains"} = $dm_n;

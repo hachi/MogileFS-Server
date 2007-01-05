@@ -150,4 +150,18 @@ sub delete {
     return $rv;
 }
 
+# returns named class of domain
+sub class {
+    my ($dom, $clname) = @_;
+    foreach my $cl (MogileFS::Class->classes_of_domain($dom)) {
+        return $cl if $cl->name eq $clname;
+    }
+    return;
+}
+
+sub create_class {
+    my ($dom, $clname) = @_;
+    return MogileFS::Class->create_class($dom, $clname);
+}
+
 1;

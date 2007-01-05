@@ -8,6 +8,11 @@ sub new {
     croak("Invalid fidid") unless $fidid;
     return bless {
         fidid    => $fidid,
+        dmid     => undef,
+        dkey     => undef,
+        length   => undef,
+        classid  => undef,
+        _loaded  => 0,
     }, $class;
 }
 
@@ -16,31 +21,56 @@ sub new_from_dmid_and_key {
     my ($class, $dmid, $key) = @_;
     my $row = Mgd::get_store()->file_row_from_dmid_key($dmid, $key)
         or return undef;
-    $row->{fidid} = delete $row->{fid};
+    $row->{fidid}   = delete $row->{fid};
+    $row->{_loaded} = 1;
     return bless $row, $class;
 }
 
 # --------------------------------------------------------------------------
 
 sub exists {
-    die "NOT IMPLEMENTED";
+    my $self = shift;
+    $self->_tryload;
+    return $self->{_loaded};
 }
 
 sub classid {
-    die "NOT IMPLEMENTED";
+    my $self = shift;
+    $self->_load;
+    return $self->{classid};
 }
 
 sub dmid {
-    die "NOT IMPLEMENTED";
+    my $self = shift;
+    $self->_load;
+    return $self->{dmid};
 }
 
 sub length {
     my $self = shift;
-    die "FIXME: lazily load.  No length defined on this object" unless defined $self->{length};
+    $self->_load;
     return $self->{length};
 }
 
 sub id { $_[0]{fidid} }
+
+# force loading, or die.
+sub _load {
+    return 1 if $_[0]{_loaded};
+    my $self = shift;
+    croak("FID\#$self->fidid} doesn't exist") unless $self->_tryload;
+}
+
+# return 1 if loaded, or 0 if not exist
+sub _tryload {
+    return 1 if $_[0]{_loaded};
+    my $self = shift;
+    my $row = Mgd::get_store()->file_row_from_fidid($self->{fidid})
+        or return 0;
+    $self->{$_} = $row->{$_} foreach qw(dmid dkey length classid);
+    $self->{_loaded} = 1;
+    return 1;
+}
 
 sub update_devcount {
     my ($self, %opts) = @_;

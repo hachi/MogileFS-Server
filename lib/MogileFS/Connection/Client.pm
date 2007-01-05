@@ -68,19 +68,15 @@ sub handle_admin_command {
 
     } elsif ($cmd =~ /^repl/) {
         my $sto = Mgd::get_store();
-        my $mdcs = MogileFS::Class->mindevcounts;
-        foreach my $dmid (sort keys %$mdcs) {
-            my $dmname = MogileFS::Domain->name_of_id($dmid);
-            foreach my $classid (sort keys %{$mdcs->{$dmid}}) {
-                my $min = $mdcs->{$dmid}->{$classid};
-                next unless $min > 1;
-                my $classname = MogileFS::Class->class_name($dmid, $classid) || '_default';
-                foreach my $ct (1..$min-1) {
-                    my $count = $sto->nfiles_with_dmid_classid_devcount($dmid, $classid, $ct);
-                    push @out, "$dmname $classname $ct $count";
-                }
+        MogileFS::Class->foreach(sub {
+            my ($cl, $dmid, $clid) = @_;
+            my $dmname = $cl->domain->name;
+            my $clname = $cl->name;
+            foreach my $ct (1..($cl->mindevcount - 1)) {
+                my $count = $sto->nfiles_with_dmid_classid_devcount($dmid, $clid, $ct);
+                push @out, "$dmname $clname $ct $count";
             }
-        }
+        });
 
     } elsif ($cmd =~ /^shutdown/) {
         print "User requested shutdown: $args\n";
