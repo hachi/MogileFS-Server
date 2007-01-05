@@ -359,6 +359,12 @@ sub get_fidids_by_device {
     return $fidids;
 }
 
+# reschedule all deferred replication, return number rescheduled
+sub replicate_now {
+    my ($self) = @_;
+    die "UNIMPLEMENTED";
+}
+
 1;
 
 __END__

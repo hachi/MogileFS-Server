@@ -1049,11 +1049,7 @@ sub cmd_noop {
 sub cmd_replicate_now {
     my MogileFS::Worker::Query $self = shift;
 
-    my $dbh = Mgd::get_dbh()
-        or return $self->err_line('nodb');
-    my $rv = $dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() WHERE nexttry > UNIX_TIMESTAMP()");
-
-    return $self->err_line('db', $dbh->errstr) if $dbh->err;
+    my $rv = Mgd::get_store()->replicate_now;
     return $self->ok_line({ count => int($rv) });
 }
 

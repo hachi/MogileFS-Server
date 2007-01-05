@@ -209,6 +209,13 @@ sub enqueue_for_replication {
                    "SET fid=?, fromdevid=?, nexttry=$nexttry", undef, $fidid, $from_devid);
 }
 
+# reschedule all deferred replication, return number rescheduled
+sub replicate_now {
+    my ($self) = @_;
+    return $self->dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() WHERE nexttry > UNIX_TIMESTAMP()");
+}
+
+
 1;
 
 __END__
