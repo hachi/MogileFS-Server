@@ -699,8 +699,7 @@ sub wake_a {
     if ($child) {
         $child->wake_a($class);
     } else {
-        my $rv = MogileFS::ProcManager->ImmediateSendToChildrenByJob($class, ":wake_up", $fromchild, "just_one");
-        warn "Waking up one $class from $fromchild = $rv\n";
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob($class, ":wake_up", $fromchild, "just_one");
     }
 }
 
