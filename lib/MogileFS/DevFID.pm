@@ -14,6 +14,9 @@ sub new {
 
 # --------------------------------------------------------------------------
 
+sub devid { $_[0]{devid} }
+sub fidid { $_[0]{fidid} }
+
 sub device {
     my $self = shift;
     return $self->{dev} ||= MogileFS::Device->of_devid($self->{devid});

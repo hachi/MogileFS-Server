@@ -96,19 +96,17 @@ sub process_tempfiles {
 
     # insert the right rows into file_on and file_to_delete and remove the
     # now expunged (or soon to be) rows from tempfile
-    my (@questions, @binds, @fids);
+    my (@devfids, @fidids);
     foreach my $row (@$tempfiles) {
-        push @fids, $row->[0];
+        push @fidids, $row->[0];
         foreach my $devid (split /,/, $row->[1]) {
-            push @questions, "(?, ?)";
-            push @binds, $row->[0], $devid;
+            push @devfids, MogileFS::DevFID->new($devid, $row->[0]);
         }
     }
 
-    # TODO: error checking
-    $sto->dbh->do("INSERT IGNORE INTO file_on (fid, devid) VALUES " . join(',', @questions), undef, @binds);
-    $sto->dbh->do("INSERT IGNORE INTO file_to_delete VALUES " . join(',', map { "(?)" } @fids), undef, @fids);
-    $sto->dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fids) . ")");
+    $sto->mass_insert_file_on(@devfids);
+    $sto->dbh->do("INSERT IGNORE INTO file_to_delete VALUES " . join(',', map { "(?)" } @fidids), undef, @fidids);
+    $sto->dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fidids) . ")");
     return 1;
 }
 

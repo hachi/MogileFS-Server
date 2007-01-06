@@ -504,6 +504,18 @@ sub old_tempfiles {
                                           "WHERE createtime < UNIX_TIMESTAMP() - $secs_old LIMIT 50");
 }
 
+# given an array of MogileFS::DevFID objects, mass-insert them all
+# into file_on (ignoring if they're already present)
+sub mass_insert_file_on {
+    my ($self, @devfids) = @_;
+    my @qmarks = map { "(?,?)" } @devfids;
+    my @binds  = map { $_->fidid, $_->devid } @devfids;
+
+    $self->dbh->do("INSERT IGNORE INTO file_on (fid, devid) VALUES " . join(',', @qmarks), undef, @binds);
+    $self->condthrow;
+    return 1;
+}
+
 
 1;
 
