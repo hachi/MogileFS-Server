@@ -61,9 +61,13 @@ sub ping {
 }
 
 sub condthrow {
-    my $self = shift;
+    my ($self, $optmsg) = @_;
     my $dbh = $self->dbh;
-    die "Database error: " . $dbh->errstr if $dbh->err;
+    return unless $dbh->err;
+    my ($pkg, $fn, $line) = caller;
+    my $msg = "Database error from $pkg/$fn/$line: " . $dbh->errstr;
+    $msg .= ": $optmsg" if $optmsg;
+    croak($msg);
 }
 
 sub _valid_params {
@@ -491,6 +495,15 @@ sub get_keys_like {
         ('SELECT dkey FROM file WHERE dmid = ? AND dkey LIKE ? AND dkey > ? ' .
          "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, $after);
 }
+
+# return arrayref of all tempfile rows (themselves also arrayrefs, of [$fidid, $devids])
+# that were created $secs_ago seconds ago or older.
+sub old_tempfiles {
+    my ($self, $secs_old) = @_;
+    return $self->dbh->selectall_arrayref("SELECT fid, devids FROM tempfile " .
+                                          "WHERE createtime < UNIX_TIMESTAMP() - $secs_old LIMIT 50");
+}
+
 
 1;
 

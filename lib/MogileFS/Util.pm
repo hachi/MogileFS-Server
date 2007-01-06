@@ -7,7 +7,7 @@ use MogileFS::Exception;
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(
-                    error debug fatal daemonize weighted_list every dbcheck
+                    error debug fatal daemonize weighted_list every
                     wait_for_readability wait_for_writeability throw error_code
                     );
 
@@ -178,14 +178,6 @@ sub weighted_list {
 
     push @ret, $getone->() while @list;
     return @ret;
-}
-
-sub dbcheck {
-    my ($dbh, $errmsg) = @_;
-    return unless $dbh->err;
-    $errmsg .= ": " . $dbh->err . ": " . $dbh->errstr;
-    error($errmsg);  # propogate to parent for listeners
-    die $errmsg;
 }
 
 # given a file descriptor number and a timeout, wait for that descriptor to

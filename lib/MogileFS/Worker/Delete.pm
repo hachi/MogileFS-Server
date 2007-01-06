@@ -3,7 +3,7 @@ package MogileFS::Worker::Delete;
 
 use strict;
 use base 'MogileFS::Worker';
-use MogileFS::Util qw(error dbcheck);
+use MogileFS::Util qw(error);
 
 # we select 1000 but only do a random 100 of them, to allow
 # for stateless paralleism
@@ -34,9 +34,7 @@ sub work {
   PASS:
     while (1) {
         $self->parent_ping;
-
         $self->validate_dbh;
-        my $dbh = $self->get_dbh;
 
         # see if we have anything from the parent
         my $start_time = time();
@@ -49,9 +47,9 @@ sub work {
             # call our workers, and have them do things
             #    RETVAL = 0; I think I am done working for now
             #    RETVAL = 1; I have more work to do
-            my $tempres = $self->process_tempfiles($dbh);
-            $self->reenqueue_delayed_deletes($dbh);
-            my $delres = $self->process_deletes($dbh);
+            my $tempres = $self->process_tempfiles;
+            $self->reenqueue_delayed_deletes;
+            my $delres = $self->process_deletes;
 
             # unless someone did some work, let's sleep
             unless ($tempres || $delres) {
@@ -66,6 +64,7 @@ sub work {
 }
 
 sub process_tempfiles {
+    my $self = shift;
     # also clean the tempfile table
     #mysql> select * from tempfile where createtime < unix_timestamp() - 86400 limit 50;
     #+--------+------------+---------+------+---------+--------+
@@ -88,12 +87,11 @@ sub process_tempfiles {
     #    add fid to fids_to_delete table,
     #    delete from tempfile where fid=?
 
-    my ($self, $dbh) = @_;
 
     # dig up some temporary files to purge
+    my $sto = Mgd::get_store();
     my $too_old = int($ENV{T_TEMPFILE_TOO_OLD}) || 3600;
-    my $tempfiles = $dbh->selectall_arrayref("SELECT fid, devids FROM tempfile " .
-                                             "WHERE createtime < UNIX_TIMESTAMP() - $too_old LIMIT 50");
+    my $tempfiles = $sto->old_tempfiles($too_old);
     return 0 unless $tempfiles && @$tempfiles;
 
     # insert the right rows into file_on and file_to_delete and remove the
@@ -108,14 +106,17 @@ sub process_tempfiles {
     }
 
     # TODO: error checking
-    $dbh->do("INSERT IGNORE INTO file_on (fid, devid) VALUES " . join(',', @questions), undef, @binds);
-    $dbh->do("INSERT IGNORE INTO file_to_delete VALUES " . join(',', map { "(?)" } @fids), undef, @fids);
-    $dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fids) . ")");
+    $sto->dbh->do("INSERT IGNORE INTO file_on (fid, devid) VALUES " . join(',', @questions), undef, @binds);
+    $sto->dbh->do("INSERT IGNORE INTO file_to_delete VALUES " . join(',', map { "(?)" } @fids), undef, @fids);
+    $sto->dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fids) . ")");
     return 1;
 }
 
 sub process_deletes {
-    my ($self, $dbh) = @_;
+    my $self = shift;
+
+    my $sto = Mgd::get_store();
+    my $dbh = $sto->dbh;
 
     my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
                                           "FROM file_to_delete fd ".
@@ -136,14 +137,14 @@ sub process_deletes {
         my $done_with_fid = sub {
             my $reason = shift;
             $dbh->do("DELETE FROM file_to_delete WHERE fid=?", undef, $fid);
-            dbcheck($dbh, "Failure to delete from file_to_delete for fid=$fid");
+            $sto->condthrow("Failure to delete from file_to_delete for fid=$fid");
         };
 
         my $done_with_devid = sub {
             my $reason = shift;
             $dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
                      undef, $fid, $devid);
-            dbcheck($dbh, "Failure to delete from file_on for $fid/$devid");
+            $sto->condthrow("Failure to delete from file_on for $fid/$devid");
             die "Failed to delete from file_on: " . $dbh->errstr if $dbh->err;
         };
 
@@ -152,7 +153,7 @@ sub process_deletes {
             $dbh->do("INSERT IGNORE INTO file_to_delete_later (fid, delafter) ".
                      "VALUES (?,UNIX_TIMESTAMP()+$secs)", undef,
                      $fid);
-            dbcheck($dbh, "Failure to insert into file_to_delete_later");
+            $sto->condthrow("Failure to insert into file_to_delete_later");
             error("delete of fid $fid rescheduled: $reason") if $Mgd::DEBUG >= 2;
             $done_with_fid->("rescheduled");
         };
@@ -243,7 +244,11 @@ sub process_deletes {
 }
 
 sub reenqueue_delayed_deletes {
-    my ($self, $dbh) = @_;
+    my $self = shift;
+
+    my $sto = Mgd::get_store();
+    my $dbh = $sto->dbh;
+
     my $fids = $dbh->selectcol_arrayref(qq{
         SELECT fid
         FROM file_to_delete_later
@@ -254,10 +259,10 @@ sub reenqueue_delayed_deletes {
 
     $dbh->do("INSERT IGNORE INTO file_to_delete (fid) VALUES " .
              join(",", map { "($_)" } @$fids));
-    dbcheck($dbh, "reenqueue file_to_delete insert");
+    $sto->condthrow("reenqueue file_to_delete insert");
     $dbh->do("DELETE FROM file_to_delete_later WHERE fid IN (" .
              join(",", @$fids) . ")");
-    dbcheck($dbh, "reenqueue file_to_delete_later delete");
+    $sto->condthrow("reenqueue file_to_delete_later delete");
 }
 
 1;
