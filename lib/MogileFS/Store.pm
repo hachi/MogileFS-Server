@@ -465,6 +465,17 @@ sub delete_fid_from_file_to_replicate {
     $self->dbh->do("DELETE FROM file_to_replicate WHERE fid=?", undef, $fidid);
 }
 
+sub reschedule_file_to_replicate_absolute {
+    my ($self, $fid, $abstime) = @_;
+    $self->dbh->do("UPDATE file_to_replicate SET nexttry = ?, failcount = failcount + 1 WHERE fid = ?",
+                   undef, $abstime, $fid);
+}
+
+sub reschedule_file_to_replicate_relative {
+    my ($self, $fid, $in_n_secs) = @_;
+    die "UNIMPLEMENTED.  (see MySQL subclass)";
+}
+
 # Given a dmid prefix after and limit, return an arrayref of dkey from the file
 # table.
 sub get_keys_like {

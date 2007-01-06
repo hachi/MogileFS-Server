@@ -215,6 +215,12 @@ sub replicate_now {
     return $self->dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() WHERE nexttry > UNIX_TIMESTAMP()");
 }
 
+sub reschedule_file_to_replicate_relative {
+    my ($self, $fid, $in_n_secs) = @_;
+    $self->dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() + ?, failcount = failcount + 1 WHERE fid = ?",
+                   undef, $in_n_secs, $fid);
+}
+
 # creates a new domain, given a domain namespace string.  return the dmid on success,
 # throw 'dup' on duplicate name.
 sub create_domain {

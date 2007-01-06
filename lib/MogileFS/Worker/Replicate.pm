@@ -88,6 +88,9 @@ sub work {
         my $dbh = $self->get_dbh or return 0;
 
         # update our unreachable fid list... we consider them good for 15 minutes
+        # FIXME: uh, what is this even used for nowadays?  it made more sense in mogilefs 1.x,
+        # so maybe we kinda need it for compatibility?  but maybe we could ditch it here and
+        # instead use the file_to_replicate table's row sat ENDOFTIME as meaning the same?
         my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
         die $dbh->errstr if $dbh->err;
         foreach my $r (@{$urfids || []}) {
@@ -183,19 +186,17 @@ sub replicate_using_torepl_table {
         # logic for setting the next try time appropriately
         my $update_nexttry = sub {
             my ($type, $delay) = @_;
-            my $dbh = Mgd::get_dbh();
+            my $sto = Mgd::get_store();
             if ($type eq 'end_of_time') {
-                # special; update to a time that won't happen again, as we've encountered a scenario
-                # in which case we're really hosed
-                $dbh->do("UPDATE file_to_replicate SET nexttry = " . ENDOFTIME . ", failcount = failcount + 1 WHERE fid = ?",
-                         undef, $fid);
+                # special; update to a time that won't happen again,
+                # as we've encountered a scenario in which case we're
+                # really hosed
+                $sto->reschedule_file_to_replicate_absolute($fid, ENDOFTIME);
+            } elsif ($type eq "offset") {
+                $sto->reschedule_file_to_replicate_relative($fid, $delay+0);
             } else {
-                my $extra = $type eq 'offset' ? 'UNIX_TIMESTAMP() +' : '';
-                $dbh->do("UPDATE file_to_replicate SET nexttry = $extra ?, failcount = failcount + 1 WHERE fid = ?",
-                         undef, $delay+0, $fid);
+                $sto->reschedule_file_to_replicate_absolute($fid, $delay+0);
             }
-            error("Failed setting nexttry of fid $fid to $type $delay: " . $dbh->errstr)
-                if $dbh->err;
         };
 
         # now let's handle any error we want to consider a total failure; do not
