@@ -131,10 +131,17 @@ sub class_name {
 sub class_id {
     my ($pkg, $dmid, $classname) = @_;
     return undef unless $dmid > 0 && length $classname;
-    foreach my $cl ($pkg->classes_of_domain($dmid)) {
-        return $cl->classid if $cl->name eq $classname;
-    }
-    return;
+    # tries to get it first from cache, then reloads and tries again.
+    my $get = sub {
+        foreach my $cl ($pkg->classes_of_domain($dmid)) {
+            return $cl->classid if $cl->name eq $classname;
+        }
+        return undef;
+    };
+    my $id = $get->();
+    return $id if $id;
+    MogileFS::Class->reload_classes;
+    return $get->();
 }
 
 sub classes_of_domain {

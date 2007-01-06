@@ -13,6 +13,11 @@ our @EXPORT_OK = qw(
 
 sub every {
     my ($delay, $code) = @_;
+    my ($worker, $psock_fd);
+    if ($worker = MogileFS::ProcManager->is_child) {
+        $psock_fd = $worker->psock_fd;
+    }
+  CODERUN:
     while (1) {
         my $start = Time::HiRes::time();
         my $explicit_sleep = undef;
@@ -24,12 +29,29 @@ sub every {
             });
         }
 
-        my $took = Time::HiRes::time() - $start;
-        my $sleep_for = $delay - $took;
-        if (defined $explicit_sleep) {
-            Time::HiRes::sleep($explicit_sleep);
-        } else {
-            Time::HiRes::sleep($sleep_for) if $sleep_for > 0;
+        my $now = Time::HiRes::time();
+        my $took = $now - $start;
+        my $sleep_for = defined $explicit_sleep ? $explicit_sleep : ($delay - $took);
+        next unless $sleep_for > 0;
+
+        # simple case, not in a child process (this never happens currently)
+        unless ($psock_fd) {
+            Time::HiRes::sleep($sleep_for);
+            next;
+        }
+
+        while ($sleep_for > 0) {
+            my $last_time_pre_sleep = $now;
+            $worker->forget_woken_up;
+            if (wait_for_readability($psock_fd, $sleep_for)) {
+                # TODO: uncomment this and watch an idle server and how many wakeups.  could optimize.
+                #local $Mgd::POST_SLEEP_DEBUG = 1;
+                #warn "WOKEN UP FROM SLEEP in $worker [$$]\n";
+                $worker->read_from_parent;
+                next CODERUN if $worker->was_woken_up;
+            }
+            $now = Time::HiRes::time();
+            $sleep_for -= ($now - $last_time_pre_sleep);
         }
     }
 }
@@ -172,7 +194,7 @@ sub wait_for_readability {
     my ($fileno, $timeout) = @_;
     return 0 unless $fileno && $timeout >= 0;
 
-    my $rin;
+    my $rin = '';
     vec($rin, $fileno, 1) = 1;
     my $nfound = select($rin, undef, undef, $timeout);
 
@@ -184,7 +206,7 @@ sub wait_for_writeability {
     my ($fileno, $timeout) = @_;
     return 0 unless $fileno && $timeout;
 
-    my $rout;
+    my $rout = '';
     vec($rout, $fileno, 1) = 1;
     my $nfound = select(undef, $rout, undef, $timeout);
 

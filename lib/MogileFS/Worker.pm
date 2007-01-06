@@ -5,6 +5,8 @@ use fields ('psock',              # socket for parent/child communications
             'readbuf',            # unparsed data from parent
             'monitor_has_run',    # true once we've heard of the monitor job being alive
             'last_ping',          # time we last said we're alive
+            'woken_up',           # bool: if we've been woken up
+            'last_wake'           # hashref: { $class -> time() } when we last woke up a certain job class
             );
 
 use MogileFS::Util qw(error);
@@ -22,9 +24,15 @@ sub new {
     $self->{last_bcast_state} = {};
     $self->{monitor_has_run}  = 0;
     $self->{last_ping}        = 0;
+    $self->{last_wake}        = {};
 
     IO::Handle::blocking($psock, 0);
     return $self;
+}
+
+sub psock_fd {
+    my $self = shift;
+    return fileno($self->{psock});
 }
 
 sub validate_dbh {
@@ -70,7 +78,8 @@ sub send_to_parent {
 
     # can be called as package method:  MogileFS::Worker->send_to_parent...
     unless (ref $self) {
-        $self = MogileFS::ProcManager->is_child or die "assert[is_child]";
+        $self = MogileFS::ProcManager->is_child
+            or return;
     }
 
     my $write = "$_[0]\r\n";
@@ -119,6 +128,12 @@ sub read_from_parent {
             } else {
                 die "Error reading pipe from parent: $!\n";
             }
+        }
+
+        if ($Mgd::POST_SLEEP_DEBUG) {
+            my $out = $buf;
+            $out =~ s/\s+$//;
+            warn "proc ${self}[$$] read: [$out]\n"
         }
         $self->{readbuf} .= $buf;
 
@@ -238,6 +253,11 @@ sub process_generic_command {
         return 1;
     }
 
+    if ($$lineref =~ /^:wake_up/) {
+        $self->{woken_up} = 1;
+        return 1;
+    }
+
     if ($$lineref =~ /^:set_config_from_parent (\S+) (.+)/) {
         # the 'no_broadcast' API keeps us from looping forever.
         MogileFS::Config->set_config_no_broadcast($1, $2);
@@ -246,6 +266,25 @@ sub process_generic_command {
     # TODO: warn on unknown commands?
 
     return 0;
+}
+
+sub was_woken_up {
+    my MogileFS::Worker $self = shift;
+    return $self->{woken_up};
+}
+
+sub forget_woken_up {
+    my MogileFS::Worker $self = shift;
+    $self->{woken_up} = 0;
+}
+
+# don't wake processes more than once a second... not necessary.
+sub wake_a {
+    my ($self, $class) = @_;
+    my $now = time();
+    return if ($self->{last_wake}{$class}||0) == $now;
+    $self->{last_wake}{$class} = $now;
+    $self->send_to_parent(":wake_a $class");
 }
 
 1;

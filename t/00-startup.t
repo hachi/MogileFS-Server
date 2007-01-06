@@ -126,14 +126,21 @@ ok($mogc->delete("file2"), "deleted file2")
 ok(!$tmptrack->mogadm("domain", "delete", "testdom"), "can't delete domain in use");
 
 # wait for it to replicate
-my $tries = 1;
 my @urls;
-while ($tries++ < 10 && (@urls = $mogc->get_paths("file1")) < 2) {
-    sleep 1;
-}
-is(scalar @urls, 2, "replicated to 2 paths");
-my $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_replicate");
-is($to_repl_rows, 0, "no more files to replicate");
+ok(try_for(10, sub {
+    @urls = $mogc->get_paths("file1");
+    my $nloc = @urls;
+    if ($nloc < 2) {
+        diag("file1 still only on $nloc devices");
+        return 0;
+    }
+    return 1;
+}), "replicated to 2 paths");
+
+ok(try_for(3, sub {
+    my $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_replicate");
+    return $to_repl_rows == 0;
+}), "no more files to replicate");
 
 my $p1 = MogPath->new($urls[0]);
 my $p2 = MogPath->new($urls[1]);
@@ -163,13 +170,14 @@ ok($be->do_request("delete", {
 
 # create a couple hundred files now
 my $n_files = 100;
+diag("Creating $n_files files...");
 for my $n (1..$n_files) {
     my $fh = $mogc->new_file("manyhundred_$n", "2copies")
-        or die "Failed to create manyhundred_$n";
+        or die "Failed to create manyhundred_$n: " . $mogc->errstr;
     my $data = "File number $n.\n" x 512;
     print $fh $data;
     close($fh) or die "Failed to close manyhundred_$n";
-    diag("created $n/$n_files") if $n % 25 == 0;
+    diag("created $n/$n_files") if $n % 10 == 0;
 }
 pass("Created a ton of files");
 

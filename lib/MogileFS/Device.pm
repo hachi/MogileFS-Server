@@ -429,6 +429,10 @@ sub set_state {
     my $sto = Mgd::get_store();
     $sto->set_device_state($dev->id, $state);
     MogileFS::Device->invalidate_cache;
+
+    # wake a reaper process up from sleep to get started as soon as possible
+    # on re-replication
+    MogileFS::ProcManager->wake_a("reaper") if $state eq "dead";
 }
 
 # --------------------------------------------------------------------------
