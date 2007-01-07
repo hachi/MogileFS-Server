@@ -32,10 +32,15 @@ sub new_from_dsn_user_pass {
         dsn    => $dsn,
         user   => $user,
         pass   => $pass,
-        raise_errors => 0,  # will default to true later
+        raise_errors => $class->want_raise_errors,
     }, $subclass;
     $self->init;
     return $self;
+}
+
+sub want_raise_errors {
+     # will default to true later
+    0;
 }
 
 sub new_from_mogdbsetup {
@@ -413,6 +418,7 @@ sub TABLE_device {
    hostid     MEDIUMINT UNSIGNED NOT NULL,
 
    status  ENUM('alive','dead','down'),
+   weight  MEDIUMINT DEFAULT 100,
 
    mb_total   MEDIUMINT UNSIGNED,
    mb_used    MEDIUMINT UNSIGNED,
@@ -726,7 +732,8 @@ sub get_all_hosts {
 sub get_all_devices {
     my ($self) = @_;
     my $sth = $self->dbh->prepare("SELECT /*!40000 SQL_CACHE */ devid, hostid, mb_total, " .
-                                "mb_used, mb_asof, status, weight FROM device");
+                                  "mb_used, mb_asof, status, weight FROM device");
+    $self->condthrow;
     $sth->execute;
     my @return;
     while (my $row = $sth->fetchrow_hashref) {

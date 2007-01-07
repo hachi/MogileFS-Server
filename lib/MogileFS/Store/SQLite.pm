@@ -11,6 +11,8 @@ use File::Temp ();
 # Package methods we override
 # --------------------------------------------------------------------------
 
+sub want_raise_errors { 1 }
+
 sub dsn_of_dbhost {
     my ($class, $dbname, $host) = @_;
     return "DBI:SQLite:$dbname";
