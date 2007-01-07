@@ -92,6 +92,16 @@ sub grant_privileges {
         or die "Failed to grant privileges: " . $rdbh->errstr . "\n";
 }
 
+sub can_replace      { 0 }
+sub can_insertignore { 0 }
+
+sub ignore_replace {
+    my $self = shift;
+    return "INSERT IGNORE " if $self->can_insertignore;
+    return "REPLACE " if $self->can_replace;
+    die "Can't INSERT IGNORE or REPLACE?";
+}
+
 my $on_status = sub {};
 my $on_confirm = sub { 1 };
 sub on_status  { my ($pkg, $code) = @_; $on_status  = $code; };
@@ -156,11 +166,11 @@ sub condthrow {
 }
 
 sub dowell {
-    my ($self, $sql) = @_;
-    my $rv = eval { $self->dbh->do($sql) };
-    return $rv unless $@;
+    my ($self, $sql, @do_params) = @_;
+    my $rv = eval { $self->dbh->do($sql, @do_params) };
+    return $rv unless $@ || $self->dbh->err;
     warn "Error with SQL: $sql\n";
-    Carp::confess($@);
+    Carp::confess($@ || $self->dbh->errstr);
 }
 
 sub _valid_params {
@@ -683,7 +693,10 @@ sub get_all_classes {
 # returns 1 on success, 0 on duplicate
 sub add_fidid_to_devid {
     my ($self, $fidid, $devid) = @_;
-    die "UNIMPLEMENTED";
+    my $rv = $self->dowell($self->ignore_replace . " INTO file_on (fid, devid) VALUES (?,?)",
+                           undef, $fidid, $devid);
+    return 1 if $rv > 0;
+    return 0;
 }
 
 # remove a record of fidid existing on devid
@@ -868,8 +881,7 @@ sub mass_insert_file_on {
     my @qmarks = map { "(?,?)" } @devfids;
     my @binds  = map { $_->fidid, $_->devid } @devfids;
 
-    $self->dbh->do("INSERT IGNORE INTO file_on (fid, devid) VALUES " . join(',', @qmarks), undef, @binds);
-    $self->condthrow;
+    $self->dowell($self->ignore_replace . " INTO file_on (fid, devid) VALUES " . join(',', @qmarks), undef, @binds);
     return 1;
 }
 

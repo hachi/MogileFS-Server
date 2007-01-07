@@ -53,6 +53,9 @@ sub table_exists {
     };
 }
 
+sub can_replace      { 1 }
+sub can_insertignore { 1 }
+
 # --------------------------------------------------------------------------
 # Functions specific to Store::MySQL subclass.  Not in parent.
 # --------------------------------------------------------------------------
@@ -235,16 +238,6 @@ sub rename_file {
     }
     $self->condthrow;
     return 1;
-}
-
-# add a record of fidid existing on devid
-# returns 1 on success, 0 on duplicate
-sub add_fidid_to_devid {
-    my ($self, $fidid, $devid) = @_;
-    my $rv = $self->dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?", undef, $fidid, $devid);
-
-    return 1 if $rv > 0;
-    return 0;
 }
 
 # update the device count for a given fidid

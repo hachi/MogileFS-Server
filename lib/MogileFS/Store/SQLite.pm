@@ -21,6 +21,9 @@ sub dsn_of_root {
     return "DBI:SQLite:$dbname";
 }
 
+sub can_replace { 1 }
+sub can_insertignore { 0 }
+
 # --------------------------------------------------------------------------
 # Store-related things we override
 # --------------------------------------------------------------------------
@@ -39,7 +42,7 @@ sub was_duplicate_error {
 sub new_temp {
     my ($fh, $filename) = File::Temp::tempfile();
 
-    system("$FindBin::Bin/../mogdbsetup", "--type=SQLite", "-v", "--yes", "--dbname=$filename")
+    system("$FindBin::Bin/../mogdbsetup", "--type=SQLite", "--yes", "--dbname=$filename")
         and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
 
     return MogileFS::Store->new_from_dsn_user_pass("DBI:SQLite:$filename",
@@ -147,6 +150,17 @@ sub filter_create_sql {
 # Data-access things we override
 # --------------------------------------------------------------------------
 
+sub mass_insert_file_on {
+    my ($self, @devfids) = @_;
+    foreach my $df (@devfids) {
+        $self->SUPER::mass_insert_file_on($df);
+    }
+    return 1;
+}
+
+
+################# LEFTOVERS from MYSQL:
+
 # throw 'dup' on duplicate name
 sub create_class {
     my ($self, $dmid, $classname) = @_;
@@ -251,16 +265,6 @@ sub rename_file {
     }
     $self->condthrow;
     return 1;
-}
-
-# add a record of fidid existing on devid
-# returns 1 on success, 0 on duplicate
-sub add_fidid_to_devid {
-    my ($self, $fidid, $devid) = @_;
-    my $rv = $self->dbh->do("INSERT IGNORE INTO file_on SET fid=?, devid=?", undef, $fidid, $devid);
-
-    return 1 if $rv > 0;
-    return 0;
 }
 
 # update the device count for a given fidid
