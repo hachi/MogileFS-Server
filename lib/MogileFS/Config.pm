@@ -3,6 +3,7 @@ use strict;
 require Exporter;
 use MogileFS::ProcManager;
 use Getopt::Long;
+use MogileFS::Store;
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw($DEBUG config set_config);
@@ -15,10 +16,6 @@ $DEFAULT_MOG_ROOT = "/mnt/mogilefs";
 $MOGSTORED_STREAM_PORT = 7501;
 
 use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
-
-# this is incremented whenever the schema changes.  server will refuse
-# to start-up with an old schema version
-use constant SCHEMA_VERSION => 7;
 
 my %conf;
 sub set_config {
@@ -204,9 +201,9 @@ run 'mogdbsetup'.
     }
 
     my $sversion = MogileFS::Config->server_setting('schema_version') || 0;
-    unless ($sversion == SCHEMA_VERSION || MogileFS::Config->config('no_schema_check')) {
-        my $exp = SCHEMA_VERSION;
-        die "Server's database schema version of $sversion doesn't match expected value of $exp.  Halting.\n\n".
+    my $expect_ver = MogileFS::Store->latest_schema_version;
+    unless ($sversion == $expect_ver || MogileFS::Config->config('no_schema_check')) {
+        die "Server's database schema version of $sversion doesn't match expected value of $expect_ver.  Halting.\n\n".
             "Please run mogdbsetup to upgrade your schema.\n";
     }
 }

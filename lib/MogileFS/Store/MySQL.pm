@@ -43,6 +43,16 @@ sub was_duplicate_error {
     return 1 if $dbh->err == 1062 || $dbh->errstr =~ /duplicate/i;
 }
 
+sub table_exists {
+    my ($self, $table) = @_;
+    return eval {
+        my $sth = $self->dbh->prepare("DESCRIBE $table");
+        $sth->execute;
+        my $rec = $sth->fetchrow_hashref;
+        return $rec ? 1 : 0;
+    };
+}
+
 # --------------------------------------------------------------------------
 # Functions specific to Store::MySQL subclass.  Not in parent.
 # --------------------------------------------------------------------------
@@ -68,6 +78,19 @@ sub release_lock {
     my $rv = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
     $self->{lock_depth} = 0;
     return $rv;
+}
+
+sub column_type {
+    my ($self, $table, $col) = @_;
+    my $sth = $self->dbh->prepare("DESCRIBE $table");
+    $sth->execute;
+    while (my $rec = $sth->fetchrow_hashref) {
+        if ($rec->{Field} eq $col) {
+            $sth->finish;
+            return $rec->{Type};
+        }
+    }
+    return undef;
 }
 
 # --------------------------------------------------------------------------
@@ -299,6 +322,45 @@ sub note_done_replicating {
     my ($self, $fidid) = @_;
     my $lockname = "mgfs:fid:$fidid:replicate";
     $self->release_lock($lockname);
+}
+
+sub upgrade_add_host_getport {
+    my $self = shift;
+    # see if they have the get port, else update it
+    unless ($self->column_type("host", "http_get_port")) {
+        $self->dowell("ALTER TABLE host ADD COLUMN http_get_port MEDIUMINT UNSIGNED AFTER http_port");
+    }
+
+}
+sub upgrade_add_host_altip {
+    my $self = shift;
+    unless ($self->column_type("host", "altip")) {
+        $self->dowell("ALTER TABLE host ADD COLUMN altip VARCHAR(15) AFTER hostip");
+        $self->dowell("ALTER TABLE host ADD COLUMN altmask VARCHAR(18) AFTER altip");
+        $self->dowell("ALTER TABLE host ADD UNIQUE altip (altip)");
+    }
+}
+
+sub upgrade_add_device_asof {
+    my $self = shift;
+    unless ($self->column_type("device", "mb_asof")) {
+        $self->dowell("ALTER TABLE device ADD COLUMN mb_asof INT(10) UNSIGNED AFTER mb_used");
+    }
+}
+
+sub upgrade_add_device_weight {
+    my $self = shift;
+    unless ($self->column_type("device", "weight")) {
+        $self->dowell("ALTER TABLE device ADD COLUMN weight MEDIUMINT DEFAULT 100 AFTER status");
+    }
+
+}
+
+sub upgrade_add_device_readonly {
+    my $self = shift;
+    unless ($self->column_type("device", "status") =~ /readonly/) {
+        $self->dowell("ALTER TABLE device MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly')");
+    }
 }
 
 1;

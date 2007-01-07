@@ -5,6 +5,10 @@ use Carp qw(croak);
 use MogileFS::Util qw(throw);
 use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
 
+# this is incremented whenever the schema changes.  server will refuse
+# to start-up with an old schema version
+use constant SCHEMA_VERSION => 7;
+
 sub new {
     my ($class) = @_;
     return $class->new_from_dsn_user_pass(map { MogileFS->config($_) } qw(db_dsn db_user db_pass));
@@ -70,7 +74,7 @@ sub new_from_mogdbsetup {
 
 sub create_db_if_not_exists {
     my ($pkg, $rdbh, $dbname) = @_;
-    $rdbh->do("CREATE DATABASE IF NOT EXISTS $dbname")
+    $rdbh->do("CREATE DATABASE $dbname")
         or die "Failed to create database '$dbname': " . $rdbh->errstr . "\n";
 }
 
@@ -91,6 +95,7 @@ sub on_confirm { my ($pkg, $code) = @_; $on_confirm = $code; };
 sub status     { my ($pkg, $msg)  = @_; $on_status->($msg);  };
 sub confirm    { my ($pkg, $msg)  = @_; $on_confirm->($msg) or die "Aborted.\n"; };
 
+sub latest_schema_version { SCHEMA_VERSION }
 
 sub raise_errors {
     my $self = shift;
@@ -146,6 +151,12 @@ sub condthrow {
     croak($msg);
 }
 
+sub dowell {
+    my ($self, $sql) = @_;
+    $self->dbh->do($sql);
+    $self->condthrow;
+}
+
 sub _valid_params {
     croak("Odd number of parameters!") if scalar(@_) % 2;
     my ($self, $vlist, %uarg) = @_;
@@ -172,6 +183,264 @@ sub conddup {
 }
 
 # --------------------------------------------------------------------------
+
+sub setup_database {
+    my $sto = shift;
+
+    # schema history:
+    #   7: adds file_to_delete_later table
+    my $curver = $sto->schema_version;
+
+    my $latestver = SCHEMA_VERSION;
+    if ($curver == $latestver) {
+        status("Schema already up-to-date at version $curver.");
+        return 1;
+    }
+
+    if ($curver > $latestver) {
+        die "Your current schema version is $curver, but this version of mogdbsetup only knows up to $latestver.  Aborting to be safe.\n";
+    }
+
+    if ($curver) {
+        confirm("Install/upgrade your schema from version $curver to version $latestver?");
+    }
+
+    foreach my $t (qw(
+                      domain class file tempfile file_to_delete
+                      unreachable_fids file_on file_on_corrupt host
+                      device server_settings file_to_replicate
+                      file_to_delete_later
+                      )) {
+        $sto->create_table($t);
+    }
+
+    $sto->upgrade_add_host_getport;
+    $sto->upgrade_add_host_altip;
+    $sto->upgrade_add_device_asof;
+    $sto->upgrade_add_device_weight;
+    $sto->upgrade_add_device_readonly;
+
+    return 1;
+}
+
+sub schema_version {
+    my $self = shift;
+    my $dbh = $self->dbh;
+    return eval {
+        $dbh->selectrow_array("SELECT value FROM server_settings WHERE field='schema_version'") || 0;
+    } || 0;
+}
+
+sub create_table {
+    my ($self, $table) = @_;
+    my $dbh = $self->dbh;
+    return 1 if $self->table_exists($table);
+    my $meth = "TABLE_$table";
+    my $sql = $self->$meth;
+    $self->status("Running SQL: $sql;");
+    $dbh->do($sql) or
+        die "Failed to create table $table: " . $dbh->errstr;
+}
+
+
+sub TABLE_domain {
+    # classes are tied to domains.  domains can have classes of items
+    # with different mindevcounts.
+    #
+    # a minimum devcount is the number of copies the system tries to
+    # maintain for files in that class
+    #
+    # unspecified classname means classid=0 (implicit class), and that
+    # implies mindevcount=2
+    "CREATE TABLE domain (
+   dmid         SMALLINT UNSIGNED NOT NULL,
+   PRIMARY KEY  (dmid),
+   namespace    VARCHAR(255),
+   UNIQUE (namespace))"
+}
+
+sub TABLE_class {
+    "CREATE TABLE class (
+      dmid          SMALLINT UNSIGNED NOT NULL,
+      classid       TINYINT UNSIGNED NOT NULL,
+      PRIMARY KEY (dmid,classid),
+      classname     VARCHAR(50),
+      UNIQUE      (dmid,classname),
+      mindevcount   TINYINT UNSIGNED NOT NULL
+)"
+}
+
+# the length field is only here for easy verifications of content
+# integrity when copying around.  no sums or content types or other
+# metadata here.  application can handle that.
+#
+# classid is what class of file this belongs to.  for instance, on fotobilder
+# there will be a class for original pictures (the ones the user uploaded)
+# and a class for derived images (scaled down versions, thumbnails, greyscale, etc)
+# each domain can setup classes and assign the minimum redundancy level for
+# each class.  fotobilder will use a 2 or 3 minimum copy redundancy for original
+# photos and and a 1 minimum for derived images (which means the sole device
+# for a derived image can die, bringing devcount to 0 for that file, but
+# the application can recreate it from its original)
+sub TABLE_file {
+    "CREATE TABLE file (
+   fid          INT UNSIGNED NOT NULL,
+   PRIMARY KEY  (fid),
+
+   dmid          SMALLINT UNSIGNED NOT NULL,
+   dkey           VARCHAR(255),     # domain-defined
+   UNIQUE dkey  (dmid, dkey),
+
+   length        INT UNSIGNED,        # 4GB limit
+
+   classid       TINYINT UNSIGNED NOT NULL,
+   devcount      TINYINT UNSIGNED NOT NULL,
+   INDEX devcount (dmid,classid,devcount)
+)"
+}
+
+sub TABLE_tempfile {
+    "CREATE TABLE tempfile (
+   fid          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+   PRIMARY KEY  (fid),
+
+   createtime   INT UNSIGNED NOT NULL,
+   classid      TINYINT UNSIGNED NOT NULL,
+   dmid          SMALLINT UNSIGNED NOT NULL,
+   dkey           VARCHAR(255),
+   devids       VARCHAR(60)
+)"
+}
+
+# files marked for death when their key is overwritten.  then they get a new
+# fid, but since the old row (with the old fid) had to be deleted immediately,
+# we need a place to store the fid so an async job can delete the file from
+# all devices.
+sub TABLE_file_to_delete {
+    "CREATE TABLE file_to_delete (
+   fid  INT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid)
+)"
+}
+
+# if the replicator notices that a fid has no sources, that file gets inserted
+# into the unreachable_fids table.  it is up to the application to actually
+# handle fids stored in this table.
+sub TABLE_unreachable_fids {
+    "CREATE TABLE unreachable_fids (
+   fid        INT UNSIGNED NOT NULL,
+   lastupdate INT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid),
+   INDEX (lastupdate)
+)"
+}
+
+# what files are on what devices?  (most likely physical devices,
+# as logical devices of RAID arrays would be costly, and mogilefs
+# already handles redundancy)
+#
+# the devid index lets us answer "What files were on this now-dead disk?"
+sub TABLE_file_on {
+    "CREATE TABLE file_on (
+   fid          INT UNSIGNED NOT NULL,
+   devid        MEDIUMINT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid, devid),
+   INDEX (devid)
+)"
+}
+
+# if application or framework detects an error in one of the duplicate files
+# for whatever reason, it can register its complaint and the framework
+# will do some verifications and fix things up w/ an async job
+# MAYBE: let application tell us the SHA1/MD5 of the file for us to check
+#        on the other devices?
+sub TABLE_file_on_corrupt {
+    "CREATE TABLE file_on_corrupt (
+   fid          INT UNSIGNED NOT NULL,
+   devid        MEDIUMINT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid, devid)
+)"
+}
+
+# hosts (which contain devices...)
+sub TABLE_host {
+    "CREATE TABLE host (
+   hostid     MEDIUMINT UNSIGNED NOT NULL,
+   PRIMARY KEY (hostid),
+
+   status     ENUM('alive','dead','down'),
+   http_port  MEDIUMINT UNSIGNED DEFAULT 7500,
+   http_get_port MEDIUMINT UNSIGNED,
+
+   hostname   VARCHAR(40),
+   UNIQUE     (hostname),
+   hostip     VARCHAR(15),
+   UNIQUE     (hostip),
+   altip      VARCHAR(15),
+   UNIQUE     (altip),
+   altmask    VARCHAR(18)
+)"
+}
+
+# disks...
+sub TABLE_device {
+    "CREATE TABLE device (
+   devid   MEDIUMINT UNSIGNED NOT NULL,
+   PRIMARY KEY (devid),
+
+   hostid     MEDIUMINT UNSIGNED NOT NULL,
+
+   status  ENUM('alive','dead','down'),
+   INDEX   (status),
+
+   mb_total   MEDIUMINT UNSIGNED,
+   mb_used    MEDIUMINT UNSIGNED,
+   mb_asof    INT UNSIGNED
+)"
+}
+
+sub TABLE_server_settings {
+    "CREATE TABLE server_settings (
+   field   VARCHAR(50) PRIMARY KEY,
+   value   VARCHAR(255))"
+}
+
+sub TABLE_file_to_replicate {
+    # nexttry is time to try to replicate it next.
+    #   0 means immediate.  it's only on one host.
+    #   1 means lower priority.  it's on 2+ but isn't happy where it's at.
+    #   unixtimestamp means at/after that time.  some previous error occurred.
+    # fromdevid, if not null, means which devid we should replicate from.  perhaps it's the only non-corrupt one.  otherwise, wherever.
+    # failcount.  how many times we've failed, just for doing backoff of nexttry.
+    # flags.  reserved for future use.
+    "CREATE TABLE file_to_replicate (
+   fid        INT UNSIGNED NOT NULL PRIMARY KEY,
+   nexttry    INT UNSIGNED NOT NULL,
+   INDEX (nexttry),
+   fromdevid  INT UNSIGNED,
+   failcount  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+   flags      SMALLINT UNSIGNED NOT NULL DEFAULT 0
+   )"
+}
+
+sub TABLE_file_to_delete_later {
+    "CREATE TABLE file_to_delete_later (
+   fid  INT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid),
+   delafter INT UNSIGNED NOT NULL,
+   INDEX (delafter)
+)"
+}
+
+# these five only necessary for MySQL, since no other database existed
+# before, so they can just create the tables correctly to begin with.
+# in the future, there might be new alters that non-MySQL databases
+# will have to implement.
+sub upgrade_add_host_getport { 1 }
+sub upgrade_add_host_altip { 1 }
+sub upgrade_add_device_asof { 1 }
+sub upgrade_add_device_weight { 1 }
+sub upgrade_add_device_readonly { 1 }
 
 # return true if deleted, 0 if didn't exist, exception if error
 sub delete_host {
@@ -592,6 +861,11 @@ sub mass_insert_file_on {
     return 1;
 }
 
+sub set_schema_vesion {
+    my ($self, $ver) = @_;
+    $ver = int($ver);
+    $self->dowell("REPLACE INTO server_settings SET field='schema_version', value=$ver");
+}
 
 1;
 
