@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 use strict;
 use Getopt::Long;
-use DBI;
-use DBD::mysql;
+use lib 'lib';
+use MogileFS::Store;
 
 my %args = (
             dbhost => "localhost",
@@ -17,6 +17,7 @@ my $opt_help;
 my $opt_verbose = 0;
 my $opt_yes = 0;
 my $opt_noschemabump;
+my $dbtype = "MySQL";
 
 usage()
     unless GetOptions(
@@ -30,6 +31,7 @@ usage()
                       "verbose"          => \$opt_verbose,
                       "yes"              => \$opt_yes,
                       "noschemabump"     => \$opt_noschemabump,
+                      "type=s"           => \$dbtype,
                       );
 
 usage() if $opt_help;
@@ -69,30 +71,24 @@ Options:
 USAGE
 }
 
+my $sclass = "MogileFS::Store::$dbtype";
+eval "use $sclass; 1;" or die "Failed to load $sclass: $@";
+
 confirm("This will attempt to setup or upgrade your MogileFS database.\nIt won't destroy existing data.\nRun with --help for more information.  Run with --yes to shut up these prompts.\n\nContinue?", 0);
 
-my $dbh = normal_conn();
-if (! $dbh) {
-    status("couldn't connect to database as mogilefs user.  trying root...");
-    my $rdbh = root_conn();
+$sclass->on_status(\&status);
+$sclass->on_confirm(\&confirm);
 
-    confirm("Create database name '$args{dbname}'?");
-    $rdbh->do("CREATE DATABASE IF NOT EXISTS $args{dbname}")
-        or die "Failed to create database '$args{dbname}': " . $rdbh->errstr . "\n";
+my $sto = $sclass->new_from_mogdbsetup(
+                                       map { $_ => $args{$_} }
+                                       qw(dbhost dbname
+                                          dbrootuser dbrootpass
+                                          dbuser dbpass)
+                                       );
+my $dbh = $sto->dbh;
 
-    confirm("Grant all privileges to user '$args{dbuser}', connecting from anywhere, to the mogilefs database?");
-    $rdbh->do("GRANT ALL PRIVILEGES ON $args{dbname}.* TO $args{dbuser}\@'\%' IDENTIFIED BY ?",
-             undef, $args{dbpass})
-        or die "Failed to grant privileges: " . $rdbh->errstr . "\n";
-    $rdbh->do("GRANT ALL PRIVILEGES ON $args{dbname}.* TO $args{dbuser}\@'localhost' IDENTIFIED BY ?",
-             undef, $args{dbpass})
-        or die "Failed to grant privileges: " . $rdbh->errstr . "\n";
 
-    $dbh = normal_conn() or
-        die "Failed to connect to MySQL w/ normal rights, as user $args{dbuser}: " . $DBI::errstr;
-}
-
-upgrade_database($args{dbhost}, $args{dbname}, $args{dbuser}, $args{dbpass})
+upgrade_database($sto)
     or die "Database upgrade failed.\n";
 
 warn "Done.\n" if $opt_verbose;
@@ -105,16 +101,16 @@ sub confirm {
     my $def = shift;
     $def = 1 unless defined $def;
 
-    return if $opt_yes;
+    return 1 if $opt_yes;
     my $deftext = $def ? "[Y/n]" : "[N/y]";
 
     print "\n$q $deftext: ";
     my $ans = <STDIN>;
     if ($ans =~ /^\s*$/) {
         die "Stopped.\n" unless $def;
-        return;
+        return 0;
     }
-    return if $ans =~ /^y/i;
+    return 1 if $ans =~ /^y/i;
     die "Stopped.\n";
 }
 
@@ -122,30 +118,8 @@ sub status {
     warn "$_[0]\n" if $opt_verbose;
 }
 
-sub root_conn {
-    my $dbh;
-    $dbh = DBI->connect("DBI:mysql:mysql;host=" . $args{dbhost}, $args{dbrootuser}, $args{dbrootpass})
-        or die "Failed to connect to MySQL w/ admin rights, as user $args{dbrootuser}: " . $dbh->errstr;
-    status("connected to database as admin user: $args{dbrootuser}");
-    $dbh->{PrintError} = 0;
-    return $dbh;
-}
-
-sub normal_conn {
-    my $dbh;
-    $dbh = DBI->connect("DBI:mysql:$args{dbname};host=$args{dbhost}",
-                        $args{dbuser}, $args{dbpass}, {
-                            PrintError => 0,
-                        })
-        or return undef;
-    $dbh->{PrintError} = 0;
-    status("connected to database as regular user: $args{dbuser}");
-    $dbh->{RaiseError} = 1;
-    return $dbh;
-}
-
 sub upgrade_database {
-    my ($host, $name, $user, $pass) = @_;
+    my $sto = shift;
 
     my $SCHEMA_VERSION = 7;
     # schema history:

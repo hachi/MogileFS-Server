@@ -7,6 +7,20 @@ use MogileFS::Util qw(throw);
 use base 'MogileFS::Store';
 
 # --------------------------------------------------------------------------
+# Package methods we override
+# --------------------------------------------------------------------------
+
+sub dsn_of_dbhost {
+    my ($class, $dbname, $host) = @_;
+    return "DBI:mysql:$dbname;host=$host";
+}
+
+sub dsn_of_root {
+    my ($class, $dbname, $hosot) = @_;
+    return "DBI:mysql:mysql";
+}
+
+# --------------------------------------------------------------------------
 # Store-related things we override
 # --------------------------------------------------------------------------
 

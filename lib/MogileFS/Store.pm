@@ -24,9 +24,78 @@ sub new_from_dsn_user_pass {
         dsn    => $dsn,
         user   => $user,
         pass   => $pass,
+        raise_errors => 0,  # will default to true later
     }, $subclass;
     $self->init;
     return $self;
+}
+
+sub new_from_mogdbsetup {
+    my ($class, %args) = @_;
+    # where args is:  dbhost dbname dbrootuser dbrootpass dbuser dbpass
+    my $dsn = $class->dsn_of_dbhost($args{dbname}, $args{dbhost});
+
+    my $try_make_sto = sub {
+        my $dbh = DBI->connect($dsn, $args{dbuser}, $args{dbpass}, {
+            PrintError => 0,
+        }) or return undef;
+        my $sto = $class->new_from_dsn_user_pass($dsn, $args{dbuser}, $args{dbpass});
+        $sto->raise_errors;
+        return $sto;
+    };
+
+    # upgrading, apparently, as this database already exists.
+    my $sto = $try_make_sto->();
+    return $sto if $sto;
+
+    # otherwise, we need to make the requested database, setup permissions, etc
+    $class->status("couldn't connect to database as mogilefs user.  trying root...");
+    my $rdbh = DBI->connect($class->dsn_of_root, $args{dbrootuser}, $args{dbrootpass}, {
+        PrintError => 0,
+    }) or
+        die "Failed to connect to $dsn as specified root user: " . DBI->errstr . "\n";
+    $class->status("connected to database as root user.");
+
+    $class->confirm("Create database name '$args{dbname}'?");
+    $class->create_db_if_not_exists($rdbh, $args{dbname});
+    $class->confirm("Grant all privileges to user '$args{dbuser}', connecting from anywhere, to the mogilefs database '$args{dbname}'?");
+    $class->grant_privileges($rdbh, $args{dbname}, $args{dbuser}, $args{dbpass});
+
+    # should be ready now:
+    $sto = $try_make_sto->();
+    return $sto if $sto;
+
+    die "Failed to connect to database as regular user, even after creating it and setting up permissions as the root user.";
+}
+
+sub create_db_if_not_exists {
+    my ($pkg, $rdbh, $dbname) = @_;
+    $rdbh->do("CREATE DATABASE IF NOT EXISTS $dbname")
+        or die "Failed to create database '$dbname': " . $rdbh->errstr . "\n";
+}
+
+sub grant_privileges {
+    my ($pkg, $rdbh, $dbname, $user, $pass) = @_;
+    $rdbh->do("GRANT ALL PRIVILEGES ON $dbname.* TO $user\@'\%' IDENTIFIED BY ?",
+             undef, $pass)
+        or die "Failed to grant privileges: " . $rdbh->errstr . "\n";
+    $rdbh->do("GRANT ALL PRIVILEGES ON $dbname.* TO $user\@'localhost' IDENTIFIED BY ?",
+             undef, $pass)
+        or die "Failed to grant privileges: " . $rdbh->errstr . "\n";
+}
+
+my $on_status = sub {};
+my $on_confirm = sub { 1 };
+sub on_status  { my ($pkg, $code) = @_; $on_status  = $code; };
+sub on_confirm { my ($pkg, $code) = @_; $on_confirm = $code; };
+sub status     { my ($pkg, $msg)  = @_; $on_status->($msg);  };
+sub confirm    { my ($pkg, $msg)  = @_; $on_confirm->($msg) or die "Aborted.\n"; };
+
+
+sub raise_errors {
+    my $self = shift;
+    $self->{raise_errors} = 1;
+    $self->dbh->{RaiseError} = 1;
 }
 
 sub dsn  { $_[0]{dsn}  }
@@ -54,7 +123,8 @@ sub dbh {
     $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
         PrintError => 0,
         AutoCommit => 1,
-        RaiseError => 0,  # FIXME: FUTURE: turn this on.  have to validate all callers first
+        # FUTURE: will default to on (have to validate all callers first):
+        RaiseError => ($self->{raise_errors} || 0),
     }) or
         die "Failed to connect to database: " . DBI->errstr;
     $self->post_dbi_connect;
