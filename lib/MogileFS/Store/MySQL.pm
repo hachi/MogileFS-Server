@@ -57,6 +57,40 @@ sub release_lock {
 }
 
 # --------------------------------------------------------------------------
+# Test suite things we override
+# --------------------------------------------------------------------------
+
+sub new_temp {
+    my $dbname = "tmp_mogiletest";
+    _create_mysql_db($dbname);
+
+    system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname")
+        and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
+
+    return MogileFS::Store->new_from_dsn_user_pass("DBI:mysql:$dbname",
+                                                   "root",
+                                                   "");
+}
+
+my $rootdbh;
+sub _root_dbh {
+    return $rootdbh ||= DBI->connect("DBI:mysql:mysql", "root", "", { RaiseError => 1 })
+        or die "Couldn't connect to local MySQL database a root";
+}
+
+sub _create_mysql_db {
+    my $dbname = shift;
+    _drop_mysql_db($dbname);
+    _root_dbh()->do("CREATE DATABASE $dbname");
+}
+
+sub _drop_mysql_db {
+    my $dbname = shift;
+    _root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
+}
+
+
+# --------------------------------------------------------------------------
 # Data-access things we override
 # --------------------------------------------------------------------------
 

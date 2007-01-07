@@ -5,6 +5,10 @@ use warnings;
 use Test::More;
 use FindBin qw($Bin);
 
+use MogileFS::Server;
+use MogileFS::Store::MySQL;
+use MogileFS::Util qw(error_code);
+
 use lib "$Bin/../../api/perl/lib";
 BEGIN {
     $ENV{PERL5LIB} = "$Bin/../../api/perl/lib" . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
@@ -21,24 +25,16 @@ require 't/lib/mogtestlib.pl';
 # add file,
 # etc
 
-my $rootdbh = eval { root_dbh(); };
-if ($rootdbh) {
-    plan tests => 57;
+my $sto = eval { temp_store(); };
+if ($sto) {
+    plan tests => 55;
 } else {
-    plan skip_all => "Can't connect to local MySQL as root user.";
+    plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
 
-my $tempdb = create_temp_db();
-isa_ok $tempdb, "DBHandle";
-my $dbh = $tempdb->dbh;
-
+my $dbh = $sto->dbh;
 my $rv;
-$rv = system("$Bin/../mogdbsetup", "--yes", "--dbname=" . $tempdb->name);
-ok(!$rv, "database setup proceeded without problems");
-
-$rv = system("$Bin/../mogdbsetup", "--yes", "--dbname=" . $tempdb->name);
-ok(!$rv, "database setup ran again without problems");
 
 use File::Temp;
 my %mogroot;
@@ -64,7 +60,7 @@ while (! -e "$mogroot{1}/dev1/usage" &&
     sleep 1;
 }
 
-my $tmptrack = create_temp_tracker($tempdb);
+my $tmptrack = create_temp_tracker($sto);
 ok($tmptrack);
 
 my $mogc = MogileFS::Client->new(
@@ -237,7 +233,8 @@ for my $n (1..$n_files) {
         or die "Failed to delete manyhundred_$n";
 }
 pass("deleted all $n_files files");
-try_for(20, sub {
+
+ok(try_for(20, sub {
     my @files;
     foreach my $hn (1, 3) {
         my @lfiles = `find $mogroot{$hn} -type f -name '*.fid'`;
@@ -245,7 +242,7 @@ try_for(20, sub {
         diag("files on host $hn = " . scalar(@lfiles));
     }
     return @files == 0;
-});
+}), "and they're gone from filesystem");
 
 
 sub try_for {

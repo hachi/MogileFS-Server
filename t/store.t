@@ -10,21 +10,13 @@ use MogileFS::Store::MySQL;
 use MogileFS::Util qw(error_code);
 require "$Bin/lib/mogtestlib.pl";
 
-my $rootdbh = eval { root_dbh(); };
-if ($rootdbh) {
-    plan tests => 8;
+my $sto = eval { temp_store(); };
+if ($sto) {
+    plan tests => 7;
 } else {
     plan skip_all => "Can't connect to local MySQL as root user.";
     exit 0;
 }
-
-my $tempdb = create_temp_db();
-init_store($tempdb);
-my $sto = Mgd::get_store();
-
-my $rv;
-$rv = system("$Bin/../mogdbsetup", "--yes", "--dbname=" . $tempdb->name);
-ok(!$rv, "database setup proceeded without problems");
 
 my $df = MogileFS::DevFID->new(100, 200);
 ok($df, "made devfid");

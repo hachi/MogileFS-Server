@@ -15,6 +15,8 @@ sub new_from_dsn_user_pass {
     my $subclass;
     if ($dsn =~ /^DBI:mysql:/i) {
         $subclass = "MogileFS::Store::MySQL";
+    } elsif ($dsn =~ /^DBI:SQLite:/i) {
+        $subclass = "MogileFS::Store::SQLite";
     } else {
         die "Unknown database type: $dsn";
     }
@@ -26,6 +28,10 @@ sub new_from_dsn_user_pass {
     $self->init;
     return $self;
 }
+
+sub dsn  { $_[0]{dsn}  }
+sub user { $_[0]{user} }
+sub pass { $_[0]{pass} }
 
 sub init { 1 }
 sub post_dbi_connect { 1 }

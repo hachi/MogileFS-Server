@@ -5,36 +5,22 @@ use DBI;
 use FindBin qw($Bin);
 use IO::Socket::INET;
 
-sub init_store {
-    my $tempdb = shift;
-    Mgd::set_store(MogileFS::Store->new_from_dsn_user_pass($tempdb->dsn, $tempdb->user, $tempdb->pass));
+sub temp_store {
+    my $type = $ENV{MOGTEST_DBTYPE} || "MySQL";
+    die "Bogus type" unless $type =~ /^\w+$/;
+    my $store = "MogileFS::Store::$type";
+    eval "use $store; 1;";
+    if ($@) {
+        die "Failed to load $store: $@\n";
+    }
+    my $sto = $store->new_temp;
+    Mgd::set_store($sto);
+    return $sto;
 }
 
-sub create_temp_db {
-    my $dbname = "tmp_mogiletest";
-    create_mysql_db($dbname);
-    return DBHandle->new($dbname);
-}
-
-my $rootdbh;
-sub root_dbh {
-    return $rootdbh ||= DBI->connect("DBI:mysql:mysql", "root", "", { RaiseError => 1 })
-        or die "Couldn't connect to database";
-}
-
-sub create_mysql_db {
-    my $dbname = shift;
-    drop_mysql_db($dbname);
-    root_dbh()->do("CREATE DATABASE $dbname");
-}
-
-sub drop_mysql_db {
-    my $dbname = shift;
-    root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
-}
 
 sub create_temp_tracker {
-    my $db = shift;
+    my $sto = shift;
 
     my $pid = fork();
     my $whoami = `whoami`;
@@ -53,9 +39,9 @@ sub create_temp_tracker {
              ($whoami eq "root" ? "--user=root" : ()),
              "--skipconfig",
              "--workers=2",
-             "--dsn=" . $db->dsn,
-             "--dbuser=" . $db->user,
-             "--dbpass=" . $db->pass);
+             "--dsn=" . $sto->dsn,
+             "--dbuser=" . $sto->user,
+             "--dbpass=" . $sto->pass);
     }
 
     for (1..3) {
@@ -96,34 +82,6 @@ sub create_mogstored {
     }
     return undef;
 }
-
-############################################################################
-package DBHandle;
-sub new {
-    my ($class, $name) = @_;
-    return bless { name => $name }, $class;
-}
-
-sub dbh {
-    my $self = shift;
-    return $self->{dbh} ||= DBI->connect($self->dsn, $self->user, $self->pass, { RaiseError => 1 })
-        or die "Couldn't connect to '$self->{name}' database";
-}
-
-sub name {
-    my $self = shift;
-    return $self->{name};
-}
-
-sub dsn {
-    my $self = shift;
-    return "DBI:mysql:$self->{name}";
-}
-
-*username = \&user;
-sub user { "root" }
-*password = \&pass;
-sub pass { "" }
 
 ############################################################################
 package ProcessHandle;
