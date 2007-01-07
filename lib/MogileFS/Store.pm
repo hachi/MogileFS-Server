@@ -21,6 +21,10 @@ sub new_from_dsn_user_pass {
         $subclass = "MogileFS::Store::MySQL";
     } elsif ($dsn =~ /^DBI:SQLite:/i) {
         $subclass = "MogileFS::Store::SQLite";
+    } elsif ($dsn =~ /^DBI:Oracle:/i) {
+        $subclass = "MogileFS::Store::Oracle";
+    } elsif ($dsn =~ /^DBI:Pg:/i) {
+        $subclass = "MogileFS::Store::Postgres";
     } else {
         die "Unknown database type: $dsn";
     }
