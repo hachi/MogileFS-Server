@@ -6,7 +6,6 @@ use Test::More;
 use FindBin qw($Bin);
 
 use MogileFS::Server;
-use MogileFS::Store::MySQL;
 use MogileFS::Util qw(error_code);
 require "$Bin/lib/mogtestlib.pl";
 

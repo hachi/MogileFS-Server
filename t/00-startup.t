@@ -6,7 +6,6 @@ use Test::More;
 use FindBin qw($Bin);
 
 use MogileFS::Server;
-use MogileFS::Store::MySQL;
 use MogileFS::Util qw(error_code);
 
 use lib "$Bin/../../api/perl/lib";
@@ -17,7 +16,6 @@ use MogileFS::Client;
 
 require 't/lib/mogtestlib.pl';
 
-# create temp mysql db,
 # use mogadm to init it,
 # mogstored on temp dir,
 # register mogstored temp dir,

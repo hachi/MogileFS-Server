@@ -6,7 +6,6 @@ use Test::More;
 use FindBin qw($Bin);
 
 use MogileFS::Server;
-use MogileFS::Store::MySQL;
 use MogileFS::Util qw(error_code);
 require "$Bin/lib/mogtestlib.pl";
 
@@ -14,7 +13,7 @@ my $sto = eval { temp_store(); };
 if ($sto) {
     plan tests => 7;
 } else {
-    plan skip_all => "Can't connect to local MySQL as root user.";
+    plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
 
