@@ -157,8 +157,10 @@ sub condthrow {
 
 sub dowell {
     my ($self, $sql) = @_;
-    $self->dbh->do($sql);
-    $self->condthrow;
+    my $rv = eval { $self->dbh->do($sql) };
+    return $rv unless $@;
+    warn "Error with SQL: $sql\n";
+    Carp::confess($@);
 }
 
 sub _valid_params {
@@ -235,15 +237,25 @@ sub schema_version {
     } || 0;
 }
 
+sub filter_create_sql { my ($self, $sql) = @_; return $sql; }
+
 sub create_table {
     my ($self, $table) = @_;
     my $dbh = $self->dbh;
     return 1 if $self->table_exists($table);
     my $meth = "TABLE_$table";
     my $sql = $self->$meth;
+    $sql = $self->filter_create_sql($sql);
     $self->status("Running SQL: $sql;");
     $dbh->do($sql) or
         die "Failed to create table $table: " . $dbh->errstr;
+    my $imeth = "INDEXES_$table";
+    my @indexes = eval { $self->$imeth };
+    foreach $sql (@indexes) {
+        $self->status("Running SQL: $sql;");
+        $dbh->do($sql) or
+            die "Failed to create indexes on $table: " . $dbh->errstr;
+    }
 }
 
 
@@ -257,8 +269,7 @@ sub TABLE_domain {
     # unspecified classname means classid=0 (implicit class), and that
     # implies mindevcount=2
     "CREATE TABLE domain (
-   dmid         SMALLINT UNSIGNED NOT NULL,
-   PRIMARY KEY  (dmid),
+   dmid         SMALLINT UNSIGNED NOT NULL PRIMARY KEY,
    namespace    VARCHAR(255),
    UNIQUE (namespace))"
 }
@@ -369,20 +380,19 @@ sub TABLE_file_on_corrupt {
 # hosts (which contain devices...)
 sub TABLE_host {
     "CREATE TABLE host (
-   hostid     MEDIUMINT UNSIGNED NOT NULL,
-   PRIMARY KEY (hostid),
+   hostid     MEDIUMINT UNSIGNED NOT NULL PRIMARY KEY,
 
    status     ENUM('alive','dead','down'),
    http_port  MEDIUMINT UNSIGNED DEFAULT 7500,
    http_get_port MEDIUMINT UNSIGNED,
 
    hostname   VARCHAR(40),
-   UNIQUE     (hostname),
    hostip     VARCHAR(15),
-   UNIQUE     (hostip),
    altip      VARCHAR(15),
-   UNIQUE     (altip),
-   altmask    VARCHAR(18)
+   altmask    VARCHAR(18),
+   UNIQUE     (hostname),
+   UNIQUE     (hostip),
+   UNIQUE     (altip)
 )"
 }
 
@@ -390,16 +400,15 @@ sub TABLE_host {
 sub TABLE_device {
     "CREATE TABLE device (
    devid   MEDIUMINT UNSIGNED NOT NULL,
-   PRIMARY KEY (devid),
-
    hostid     MEDIUMINT UNSIGNED NOT NULL,
 
    status  ENUM('alive','dead','down'),
-   INDEX   (status),
 
    mb_total   MEDIUMINT UNSIGNED,
    mb_used    MEDIUMINT UNSIGNED,
-   mb_asof    INT UNSIGNED
+   mb_asof    INT UNSIGNED,
+   PRIMARY KEY (devid),
+   INDEX   (status)
 )"
 }
 
@@ -429,8 +438,7 @@ sub TABLE_file_to_replicate {
 
 sub TABLE_file_to_delete_later {
     "CREATE TABLE file_to_delete_later (
-   fid  INT UNSIGNED NOT NULL,
-   PRIMARY KEY (fid),
+   fid  INT UNSIGNED NOT NULL PRIMARY KEY,
    delafter INT UNSIGNED NOT NULL,
    INDEX (delafter)
 )"
@@ -867,8 +875,7 @@ sub mass_insert_file_on {
 
 sub set_schema_vesion {
     my ($self, $ver) = @_;
-    $ver = int($ver);
-    $self->dowell("REPLACE INTO server_settings SET field='schema_version', value=$ver");
+    $self->set_server_setting("schema_version", int($ver));
 }
 
 1;

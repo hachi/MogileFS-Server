@@ -1,10 +1,11 @@
-package MogileFS::Store::MySQL;
+package MogileFS::Store::SQLite;
 use strict;
 use warnings;
 use DBI;
-use DBD::mysql;
+use DBD::SQLite;
 use MogileFS::Util qw(throw);
 use base 'MogileFS::Store';
+use File::Temp ();
 
 # --------------------------------------------------------------------------
 # Package methods we override
@@ -12,85 +13,23 @@ use base 'MogileFS::Store';
 
 sub dsn_of_dbhost {
     my ($class, $dbname, $host) = @_;
-    return "DBI:mysql:$dbname;host=$host";
+    return "DBI:SQLite:$dbname";
 }
 
 sub dsn_of_root {
     my ($class, $dbname, $host) = @_;
-    return "DBI:mysql:mysql";
+    return "DBI:SQLite:$dbname";
 }
 
 # --------------------------------------------------------------------------
 # Store-related things we override
 # --------------------------------------------------------------------------
 
-sub init {
-    my $self = shift;
-    $self->SUPER::init;
-    $self->{lock_depth} = 0;
-}
-
-sub post_dbi_connect {
-    my $self = shift;
-    $self->SUPER::post_dbi_connect;
-    $self->{lock_depth} = 0;
-}
-
 sub was_duplicate_error {
     my $self = shift;
     my $dbh = $self->dbh;
     return 0 unless $dbh->err;
-    return 1 if $dbh->err == 1062 || $dbh->errstr =~ /duplicate/i;
-}
-
-sub table_exists {
-    my ($self, $table) = @_;
-    return eval {
-        my $sth = $self->dbh->prepare("DESCRIBE $table");
-        $sth->execute;
-        my $rec = $sth->fetchrow_hashref;
-        return $rec ? 1 : 0;
-    };
-}
-
-# --------------------------------------------------------------------------
-# Functions specific to Store::MySQL subclass.  Not in parent.
-# --------------------------------------------------------------------------
-
-# attempt to grab a lock of lockname, and timeout after timeout seconds.
-# returns 1 on success and 0 on timeout
-sub get_lock {
-    my ($self, $lockname, $timeout) = @_;
-    die "Lock recursion detected (grabbing $lockname, had $self->{last_lock}).  Bailing out." if $self->{lock_depth};
-
-    my $lock = $self->dbh->selectrow_array("SELECT GET_LOCK(?, ?)", undef, $lockname, $timeout);
-    if ($lock) {
-        $self->{lock_depth} = 1;
-        $self->{last_lock}  = $lockname;
-    }
-    return $lock;
-}
-
-# attempt to release a lock of lockname.
-# returns 1 on success and 0 if no lock we have has that name.
-sub release_lock {
-    my ($self, $lockname) = @_;
-    my $rv = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
-    $self->{lock_depth} = 0;
-    return $rv;
-}
-
-sub column_type {
-    my ($self, $table, $col) = @_;
-    my $sth = $self->dbh->prepare("DESCRIBE $table");
-    $sth->execute;
-    while (my $rec = $sth->fetchrow_hashref) {
-        if ($rec->{Field} eq $col) {
-            $sth->finish;
-            return $rec->{Type};
-        }
-    }
-    return undef;
+    die "IMPLEMENT";
 }
 
 # --------------------------------------------------------------------------
@@ -98,34 +37,111 @@ sub column_type {
 # --------------------------------------------------------------------------
 
 sub new_temp {
-    my $dbname = "tmp_mogiletest";
-    _create_mysql_db($dbname);
+    my ($fh, $filename) = File::Temp::tempfile();
 
-    system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname")
+    system("$FindBin::Bin/../mogdbsetup", "--type=SQLite", "-v", "--yes", "--dbname=$filename")
         and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
 
-    return MogileFS::Store->new_from_dsn_user_pass("DBI:mysql:$dbname",
-                                                   "root",
-                                                   "");
+    return MogileFS::Store->new_from_dsn_user_pass("DBI:SQLite:$filename",
+                                                   "", "");
 }
 
-my $rootdbh;
-sub _root_dbh {
-    return $rootdbh ||= DBI->connect("DBI:mysql:mysql", "root", "", { RaiseError => 1 })
-        or die "Couldn't connect to local MySQL database a root";
+sub table_exists {
+    my ($self, $table) = @_;
+    return eval {
+        my $sth = $self->dbh->prepare("EXPLAIN SELECT * FROM $table");
+        $sth->execute;
+        my $rec = $sth->fetchrow_hashref;
+        return $rec ? 1 : 0;
+    };
 }
 
-sub _create_mysql_db {
-    my $dbname = shift;
-    _drop_mysql_db($dbname);
-    _root_dbh()->do("CREATE DATABASE $dbname");
+# --------------------------------------------------------------------------
+# Schema
+# --------------------------------------------------------------------------
+
+sub TABLE_class {
+    "CREATE TABLE class (
+      dmid          SMALLINT UNSIGNED NOT NULL,
+      classid       TINYINT UNSIGNED NOT NULL,
+      classname     VARCHAR(50),
+      mindevcount   TINYINT UNSIGNED NOT NULL,
+      UNIQUE (dmid,classid),
+      UNIQUE      (dmid,classname)
+)"
 }
 
-sub _drop_mysql_db {
-    my $dbname = shift;
-    _root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
+sub TABLE_file {
+    "CREATE TABLE file (
+   fid          INT UNSIGNED NOT NULL PRIMARY KEY,
+   dmid          SMALLINT UNSIGNED NOT NULL,
+   dkey           VARCHAR(255),
+   length        INT UNSIGNED,
+   classid       TINYINT UNSIGNED NOT NULL,
+   devcount      TINYINT UNSIGNED NOT NULL,
+   UNIQUE (dmid, dkey)
+)"
 }
 
+sub TABLE_tempfile {
+    "CREATE TABLE tempfile (
+   fid          INTEGER PRIMARY KEY AUTOINCREMENT,
+   createtime   INT UNSIGNED NOT NULL,
+   classid      TINYINT UNSIGNED NOT NULL,
+   dmid          SMALLINT UNSIGNED NOT NULL,
+   dkey           VARCHAR(255),
+   devids       VARCHAR(60)
+)"
+}
+
+sub TABLE_unreachable_fids {
+    "CREATE TABLE unreachable_fids (
+   fid        INT UNSIGNED NOT NULL,
+   lastupdate INT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid)
+)"
+}
+
+sub INDEXES_unreachable_fids {
+    ("CREATE INDEX lastupdate ON unreachable_fids (lastupdate)");
+}
+
+sub TABLE_file_on {
+    "CREATE TABLE file_on (
+   fid          INT UNSIGNED NOT NULL,
+   devid        MEDIUMINT UNSIGNED NOT NULL,
+   PRIMARY KEY (fid, devid)
+)"
+}
+
+sub INDEXES_file_on {
+    ("CREATE INDEX devid ON file_on (devid)");
+}
+
+sub INDEXES_device {
+    ("CREATE INDEX status ON device (status)");
+}
+
+sub INDEXES_file_to_replicate {
+    ("CREATE INDEX nexttry ON file_to_replicate (nexttry)");
+}
+
+sub INDEXES_file_to_delete_later {
+    ("CREATE INDEX delafter ON file_to_delete_later (delafter)");
+}
+
+sub filter_create_sql {
+    my ($self, $sql) = @_;
+    $sql =~ s/\bENUM\(.+?\)/TEXT/g;
+
+    my ($table) = $sql =~ /create\s+table\s+(\S+)/i;
+    die "didn't find table" unless $table;
+    if ($self->can("INDEXES_$table")) {
+        $sql =~ s!,\s+INDEX\s+\(.+?\)!!mg;
+    }
+
+    return $sql;
+}
 
 # --------------------------------------------------------------------------
 # Data-access things we override
@@ -324,52 +340,13 @@ sub note_done_replicating {
     $self->release_lock($lockname);
 }
 
-sub upgrade_add_host_getport {
-    my $self = shift;
-    # see if they have the get port, else update it
-    unless ($self->column_type("host", "http_get_port")) {
-        $self->dowell("ALTER TABLE host ADD COLUMN http_get_port MEDIUMINT UNSIGNED AFTER http_port");
-    }
-
-}
-sub upgrade_add_host_altip {
-    my $self = shift;
-    unless ($self->column_type("host", "altip")) {
-        $self->dowell("ALTER TABLE host ADD COLUMN altip VARCHAR(15) AFTER hostip");
-        $self->dowell("ALTER TABLE host ADD COLUMN altmask VARCHAR(18) AFTER altip");
-        $self->dowell("ALTER TABLE host ADD UNIQUE altip (altip)");
-    }
-}
-
-sub upgrade_add_device_asof {
-    my $self = shift;
-    unless ($self->column_type("device", "mb_asof")) {
-        $self->dowell("ALTER TABLE device ADD COLUMN mb_asof INT(10) UNSIGNED AFTER mb_used");
-    }
-}
-
-sub upgrade_add_device_weight {
-    my $self = shift;
-    unless ($self->column_type("device", "weight")) {
-        $self->dowell("ALTER TABLE device ADD COLUMN weight MEDIUMINT DEFAULT 100 AFTER status");
-    }
-
-}
-
-sub upgrade_add_device_readonly {
-    my $self = shift;
-    unless ($self->column_type("device", "status") =~ /readonly/) {
-        $self->dowell("ALTER TABLE device MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly')");
-    }
-}
-
 1;
 
 __END__
 
 =head1 NAME
 
-MogileFS::Store::MySQL - MySQL data storage for MogileFS
+MogileFS::Store::SQLite - For-testing-only not-for-production SQLite storage for MogileFS
 
 =head1 SEE ALSO
 
