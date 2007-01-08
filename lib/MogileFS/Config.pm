@@ -197,6 +197,8 @@ Please verify that you have correctly setup a configuration file or are
 providing the correct information in order to reach the database and try
 running the MogileFS server again.  If you haven\'t setup your database yet,
 run 'mogdbsetup'.
+
+Details: [sto=$sto, err=$@]
 }
     }
 

@@ -34,6 +34,9 @@ sub new_from_dsn_user_pass {
         pass   => $pass,
         raise_errors => $class->want_raise_errors,
     }, $subclass;
+    unless (eval "use $subclass; 1") {
+        die "Error loading $subclass: $@\n";
+    }
     $self->init;
     return $self;
 }
