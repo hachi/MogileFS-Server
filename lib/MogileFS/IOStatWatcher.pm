@@ -4,10 +4,31 @@ use Sys::Syscall 0.22; # We use it indirectly, and trigger bugs in earlier versi
 use Danga::Socket;
 use IO::Socket::INET;
 
+=head1 Methods
+
+=head2 $iow = MogileFS::IOStatWatcher->new()
+
+Returns a new IOStatWatcher object.
+
+=cut
+
 sub new {
     my ($class) = @_;
-    return bless {}, $class;
+    my $self = bless {}, $class;
+    $self->on_stats; # set an empty handler.
+    return $self;
 }
+
+=head2 $iow->set_hosts( host1 [, host2 [, ...] ] )
+
+Sets the list of hosts to connect to for collecting IOStat information. This call can block if you
+pass it hostnames instead of ip addresses.
+
+Upon successfull connection, the on_stats callback will be called each time the statistics are
+collected. Error states (failed connections, etc.) will trigger retries on 60 second intervals, and
+disconnects will trigger an immediate reconnect.
+
+=cut
 
 sub set_hosts {
     my ($self, @ips) = @_;
@@ -20,6 +41,33 @@ sub set_hosts {
     }
     $self->{hosts} = $new_hosts;
 }
+
+=head2 $iow->on_stats( coderef )
+
+Sets the coderef called for the C<on_stats> callback.
+
+=cut
+
+sub on_stats {
+    my ($self, $cb) = @_;
+
+    unless (ref $cb eq 'CODE') {
+        $cb = sub {};
+    }
+
+    $self->{on_stats} = $cb;
+}
+
+=head1 Callbacks
+
+=head2 on_stats->( host, stats )
+
+Called each time device use statistics are collected. The C<host> argument is the value passed in to the
+C<set_hosts> method. The C<stats> object is a hashref of mogile device names and utilization percentages.
+
+=cut
+
+# Everything beyond here is internal.
 
 sub got_stats {
     my ($self, $host, $stats) = @_;
@@ -38,11 +86,7 @@ sub got_disconnect {
     $self->{hosts}->{$host} = MogileFS::IOStatWatch::Client->new($host, $self);
 }
 
-sub on_stats {
-    my ($self, $cb) = @_;
-    $self->{on_stats} = $cb;
-}
-
+# Support class that does the communication with individual hosts.
 package MogileFS::IOStatWatch::Client;
 
 use strict;
