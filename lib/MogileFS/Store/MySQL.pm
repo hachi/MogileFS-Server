@@ -55,6 +55,7 @@ sub table_exists {
 
 sub can_replace      { 1 }
 sub can_insertignore { 1 }
+sub unix_timestamp { "UNIX_TIMESTAMP()" }
 
 # --------------------------------------------------------------------------
 # Functions specific to Store::MySQL subclass.  Not in parent.

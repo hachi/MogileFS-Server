@@ -103,6 +103,8 @@ sub grant_privileges {
 sub can_replace      { 0 }
 sub can_insertignore { 0 }
 
+sub unix_timestamp { die "No function in $_[0] to return DB's unixtime." }
+
 sub ignore_replace {
     my $self = shift;
     return "INSERT IGNORE " if $self->can_insertignore;
@@ -608,7 +610,7 @@ sub tempfile_row_from_fid {
 sub create_device {
     my ($self, $devid, $hostid, $status) = @_;
     my $rv = $self->conddup(sub {
-        $self->dbh->do("INSERT INTO device SET devid=?, hostid=?, status=?", undef,
+        $self->dbh->do("INSERT INTO device (devid, hostid, status) VALUES (?,?,?)", undef,
                        $devid, $hostid, $status);
     });
     $self->condthrow;
@@ -619,14 +621,14 @@ sub create_device {
 sub update_device_usage {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
-    $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = UNIX_TIMESTAMP() " .
-                   "WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{devid});
+    $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = " . $self->unix_timestamp .
+                   " WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{devid});
     $self->condthrow;
 }
 
 sub mark_fidid_unreachable {
     my ($self, $fidid) = @_;
-    $self->dbh->do("REPLACE INTO unreachable_fids VALUES (?, UNIX_TIMESTAMP())",
+    $self->dbh->do("REPLACE INTO unreachable_fids VALUES (?, " . $self->unix_timestamp . ")",
                    undef, $fidid);
 }
 
@@ -816,10 +818,11 @@ sub create_host {
 # failcount, flags, nexttry)
 sub files_to_replicate {
     my ($self, $limit) = @_;
+    my $ut = $self->unix_timestamp;
     my $to_repl_map = $self->dbh->selectall_hashref(qq{
         SELECT fid, fromdevid, failcount, flags, nexttry
         FROM file_to_replicate
-        WHERE nexttry <= UNIX_TIMESTAMP()
+        WHERE nexttry <= $ut
         ORDER BY nexttry
         LIMIT $limit
     }, "fid") or return ();
@@ -881,7 +884,7 @@ sub get_keys_like {
 sub old_tempfiles {
     my ($self, $secs_old) = @_;
     return $self->dbh->selectall_arrayref("SELECT fid, devids FROM tempfile " .
-                                          "WHERE createtime < UNIX_TIMESTAMP() - $secs_old LIMIT 50");
+                                          "WHERE createtime < " . $self->unix_timestamp . " - $secs_old LIMIT 50");
 }
 
 # given an array of MogileFS::DevFID objects, mass-insert them all
