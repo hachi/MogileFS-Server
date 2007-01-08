@@ -32,7 +32,7 @@ sub new_from_dsn_user_pass {
         dsn    => $dsn,
         user   => $user,
         pass   => $pass,
-        raise_errors => $class->want_raise_errors,
+        raise_errors => $subclass->want_raise_errors,
     }, $subclass;
     unless (eval "use $subclass; 1") {
         die "Error loading $subclass: $@\n";
