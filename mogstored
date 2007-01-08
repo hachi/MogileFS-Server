@@ -427,7 +427,12 @@ sub populate_device_maps {
     my $path = Perlbal->service('mogstored')->{docroot};
     $path =~ s!/$!!;
 
-    my @devnum = disks($path);
+    # find all devices below us
+    my @devnum;
+    {
+        opendir(my $d, $path) or die "Failed to open docroot: $path: $!";
+        @devnum = grep { /^dev\d+$/ } readdir($d);
+    }
 
     %devnum_to_device = ();
 
@@ -435,6 +440,7 @@ sub populate_device_maps {
         my ($osdevnum) = stat("$path/$devnum");
         $devnum_to_device{$devnum} = $osdevnum_to_device{$osdevnum};
     }
+
     Danga::Socket->AddTimer(60, \&populate_device_maps);
 }
 
