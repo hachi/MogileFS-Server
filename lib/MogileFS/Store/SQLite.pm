@@ -152,54 +152,14 @@ sub filter_create_sql {
     return $sql;
 }
 
-# --------------------------------------------------------------------------
-# Data-access things we override
-# --------------------------------------------------------------------------
-
-# can't do multi-valued inserts in SQLite.
-sub mass_insert_file_on {
-    my ($self, @devfids) = @_;
-    foreach my $df (@devfids) {
-        $self->SUPER::mass_insert_file_on($df);
-    }
-    return 1;
-}
-
-
-################# LEFTOVERS from MYSQL:
-
-
-# update the device count for a given fidid
+# eh.  this is really atomic at all, but a) this is a demo db module,
+# nobody should use SQLite in production, b) this method is going
+# away, c) everything in SQLite is pretty atomic anyway with the
+# db-level locks, d) the devcount field is no longer used.  so i'm not
+# caring much about doing this correctly.
 sub update_devcount_atomic {
     my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid";
-
-    my $lock = eval { $self->get_lock($lockname, 10) };
-
-    # Check to make sure the lock didn't timeout, then we want to bail.
-    return 0 if defined $lock && $lock == 0;
-
-    # Checking $@ is pointless for the time because we just want to plow ahead
-    # even if the get_lock trapped a recursion and threw a fatal error.
-
     $self->update_devcount($fidid);
-
-    # Don't release the lock if we never got it.
-    $self->release_lock($lockname) if $lock;
-    return 1;
-}
-
-sub should_begin_replicating_fidid {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    return 1 if $self->get_lock($lockname, 1);
-    return 0;
-}
-
-sub note_done_replicating {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    $self->release_lock($lockname);
 }
 
 1;

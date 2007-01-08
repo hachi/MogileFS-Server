@@ -28,15 +28,15 @@ sub new_from_dsn_user_pass {
     } else {
         die "Unknown database type: $dsn";
     }
+    unless (eval "use $subclass; 1") {
+        die "Error loading $subclass: $@\n";
+    }
     my $self = bless {
         dsn    => $dsn,
         user   => $user,
         pass   => $pass,
         raise_errors => $subclass->want_raise_errors,
     }, $subclass;
-    unless (eval "use $subclass; 1") {
-        die "Error loading $subclass: $@\n";
-    }
     $self->init;
     return $self;
 }
@@ -102,6 +102,7 @@ sub grant_privileges {
 
 sub can_replace      { 0 }
 sub can_insertignore { 0 }
+sub can_insert_multi { 0 }
 
 sub unix_timestamp { die "No function in $_[0] to return DB's unixtime." }
 
@@ -737,7 +738,7 @@ sub delete_fidid {
     $self->condthrow;
     $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
     $self->condthrow;
-    $self->dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $fidid);
+    $self->dbh->do($self->ignore_replace . " INTO file_to_delete (fid) VALUES (?)", undef, $fidid);
     $self->condthrow;
 }
 
@@ -1011,6 +1012,10 @@ sub old_tempfiles {
 # into file_on (ignoring if they're already present)
 sub mass_insert_file_on {
     my ($self, @devfids) = @_;
+    if (@devfids > 1 && ! $self->can_insert_multi) {
+        $self->mass_insert_file_on($_) foreach @devfids;
+        return 1;
+    }
     my @qmarks = map { "(?,?)" } @devfids;
     my @binds  = map { $_->fidid, $_->devid } @devfids;
 
@@ -1021,6 +1026,30 @@ sub mass_insert_file_on {
 sub set_schema_vesion {
     my ($self, $ver) = @_;
     $self->set_server_setting("schema_version", int($ver));
+}
+
+# returns array of fidids to try and delete again
+sub fids_to_delete_again {
+    my $self = shift;
+    my $ut = $self->unix_timestamp;
+    return @{ $self->dbh->selectcol_arrayref(qq{
+        SELECT fid
+         FROM file_to_delete_later
+        WHERE delafter < $ut
+        LIMIT 500
+    }) || [] };
+}
+
+# return 1 on success.  die otherwise.
+sub enqueue_fids_to_delete {
+    my ($self, @fidids) = @_;
+    if (@fidids > 1 && ! $self->can_insert_multi) {
+        $self->enqueue_fids_to_delete($_) foreach @fidids;
+        return 1;
+    }
+    $self->dbh->do($self->ignore_replace . " INTO file_to_delete (fid) VALUES " .
+                   join(",", map { "(" . int($_) . ")" } @fidids))
+        or die "file_to_delete insert failed";
 }
 
 1;

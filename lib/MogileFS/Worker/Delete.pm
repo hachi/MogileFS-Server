@@ -247,19 +247,13 @@ sub reenqueue_delayed_deletes {
     my $sto = Mgd::get_store();
     my $dbh = $sto->dbh;
 
-    my $fids = $dbh->selectcol_arrayref(qq{
-        SELECT fid
-        FROM file_to_delete_later
-        WHERE delafter < UNIX_TIMESTAMP()
-        LIMIT 500
-    });
-    return unless $fids && @$fids;
+    my @fidids = $sto->fids_to_delete_again
+        or return;
 
-    $dbh->do("INSERT IGNORE INTO file_to_delete (fid) VALUES " .
-             join(",", map { "($_)" } @$fids));
-    $sto->condthrow("reenqueue file_to_delete insert");
+    $sto->enqueue_fids_to_delete(@fidids);
+
     $dbh->do("DELETE FROM file_to_delete_later WHERE fid IN (" .
-             join(",", @$fids) . ")");
+             join(",", @fidids) . ")");
     $sto->condthrow("reenqueue file_to_delete_later delete");
 }
 
