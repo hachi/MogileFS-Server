@@ -105,7 +105,7 @@ sub process_tempfiles {
     }
 
     $sto->mass_insert_file_on(@devfids);
-    $sto->dbh->do("INSERT IGNORE INTO file_to_delete VALUES " . join(',', map { "(?)" } @fidids), undef, @fidids);
+    $sto->enqueue_fids_to_delete(@fidids);
     $sto->dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fidids) . ")");
     return 1;
 }

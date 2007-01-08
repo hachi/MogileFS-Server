@@ -2,7 +2,7 @@ package MogileFS::Store::SQLite;
 use strict;
 use warnings;
 use DBI;
-use DBD::SQLite;
+use DBD::SQLite 1.13;
 use MogileFS::Util qw(throw);
 use base 'MogileFS::Store';
 use File::Temp ();
@@ -10,6 +10,11 @@ use File::Temp ();
 # --------------------------------------------------------------------------
 # Package methods we override
 # --------------------------------------------------------------------------
+
+sub post_dbi_connect {
+    my $self = shift;
+    $self->{dbh}->func(1000, 'busy_timeout');
+}
 
 sub want_raise_errors { 1 }
 
