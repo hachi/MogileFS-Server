@@ -34,7 +34,9 @@ sub was_duplicate_error {
     my $self = shift;
     my $dbh = $self->dbh;
     return 0 unless $dbh->err;
-    die "IMPLEMENT";
+    my $errstr = $dbh->errstr;
+    return 1 if $errstr =~ /(?:is|are) not unique/i;
+    return 0;
 }
 
 # --------------------------------------------------------------------------
