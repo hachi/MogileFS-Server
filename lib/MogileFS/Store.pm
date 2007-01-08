@@ -797,8 +797,22 @@ sub update_devcount {
 
 # enqueue a fidid for replication, from a specific deviceid (can be undef), in a given number of seconds.
 sub enqueue_for_replication {
-    my ($self, $fidid, $fromdevid, $in) = @_;
-    die "UNIMPLEMENTED";
+    my ($self, $fidid, $from_devid, $in) = @_;
+
+    my $nexttry = 0;
+    if ($in) {
+        $nexttry = $self->unix_timestamp . " + " . int($in);
+    }
+
+    $self->dbh->do("INSERT IGNORE INTO file_to_replicate ".
+                   "SET fid=?, fromdevid=?, nexttry=$nexttry", undef, $fidid, $from_devid);
+}
+
+# reschedule all deferred replication, return number rescheduled
+sub replicate_now {
+    my ($self) = @_;
+    return $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp .
+                          " WHERE nexttry > " . $self->unix_timestamp);
 }
 
 # takes two arguments, devid and limit, both required. returns an arrayref of fidids.
@@ -810,12 +824,6 @@ sub get_fidids_by_device {
                                           undef, $devid);
     die "Error selecting jobs to reap: " . $dbh->errstr if $dbh->err;
     return $fidids;
-}
-
-# reschedule all deferred replication, return number rescheduled
-sub replicate_now {
-    my ($self) = @_;
-    die "UNIMPLEMENTED";
 }
 
 # creates a new domain, given a domain namespace string.  return the dmid on success,
@@ -908,7 +916,9 @@ sub reschedule_file_to_replicate_absolute {
 
 sub reschedule_file_to_replicate_relative {
     my ($self, $fid, $in_n_secs) = @_;
-    die "UNIMPLEMENTED.  (see MySQL subclass)";
+    $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp . " + ?, " .
+                   "failcount = failcount + 1 WHERE fid = ?",
+                   undef, $in_n_secs, $fid);
 }
 
 # Given a dmid prefix after and limit, return an arrayref of dkey from the file

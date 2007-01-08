@@ -155,6 +155,7 @@ sub filter_create_sql {
 # Data-access things we override
 # --------------------------------------------------------------------------
 
+# can't do multi-valued inserts in SQLite.
 sub mass_insert_file_on {
     my ($self, @devfids) = @_;
     foreach my $df (@devfids) {
@@ -244,31 +245,6 @@ sub update_devcount_atomic {
     # Don't release the lock if we never got it.
     $self->release_lock($lockname) if $lock;
     return 1;
-}
-
-# enqueue a fidid for replication, from a specific deviceid (can be undef), in a given number of seconds.
-sub enqueue_for_replication {
-    my ($self, $fidid, $from_devid, $in) = @_;
-
-    my $nexttry = 0;
-    if ($in) {
-        $nexttry = "UNIX_TIMESTAMP() + " . int($in);
-    }
-
-    $self->dbh->do("INSERT IGNORE INTO file_to_replicate ".
-                   "SET fid=?, fromdevid=?, nexttry=$nexttry", undef, $fidid, $from_devid);
-}
-
-# reschedule all deferred replication, return number rescheduled
-sub replicate_now {
-    my ($self) = @_;
-    return $self->dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() WHERE nexttry > UNIX_TIMESTAMP()");
-}
-
-sub reschedule_file_to_replicate_relative {
-    my ($self, $fid, $in_n_secs) = @_;
-    $self->dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() + ?, failcount = failcount + 1 WHERE fid = ?",
-                   undef, $in_n_secs, $fid);
 }
 
 sub should_begin_replicating_fidid {
