@@ -580,14 +580,76 @@ sub server_setting {
 # using autoincrement/sequences if the passed in fid is undef.  however,
 # if fid is passed in, that value should be used and returned.
 #
-# return -1 if the fid is already in use.
-# return undef or 0 on any other error.
+# return new/passed in fidid on success.
+# throw 'dup' if fid already in use
+# return 0/undef/die on failure
 #
 sub register_tempfile {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fid dmid key classid devids)], @_);
 
-    die "NOT IMPLEMENTED";
+    my $dbh = $self->dbh;
+    my $fid = $arg{fid};
+
+    my $explicit_fid_used = $fid ? 1 : 0;
+
+    # setup the new mapping.  we store the devices that we picked for
+    # this file in here, knowing that they might not be used.  create_close
+    # is responsible for actually mapping in file_on.  NOTE: fid is being
+    # passed in, it's either some number they gave us, or it's going to be
+    # 0/undef which translates into NULL which means to automatically create
+    # one.  that should be fine.
+    my $ins_tempfile = sub {
+        my $rv = eval {
+            $dbh->do("INSERT INTO tempfile (fid, dmid, dkey, classid, devids, createtime) VALUES ".
+                     "(?,?,?,?,?," . $self->unix_timestamp . ")",
+                     undef, $fid || undef, $arg{dmid}, $arg{key}, $arg{classid}, $arg{devids});
+        };
+        if (!$rv) {
+            return undef if $self->was_duplicate_error;
+            die "Unexpected db error into tempfile: " . $dbh->errstr;
+        }
+
+        unless (defined $fid) {
+            # if they did not give us a fid, then we want to grab the one that was
+            # theoretically automatically generated
+            $fid = $dbh->last_insert_id(undef, undef, undef, undef)
+                or die "No last_insert_id found";
+        }
+        return undef unless defined $fid && $fid > 0;
+        return 1;
+    };
+
+    unless ($ins_tempfile->()) {
+        throw("dup") if $explicit_fid_used;
+        die "tempfile insert failed";
+    }
+
+    my $fid_in_use = sub {
+        my $exists = $dbh->selectrow_array("SELECT COUNT(*) FROM file WHERE fid=?", undef, $fid);
+        return $exists ? 1 : 0;
+    };
+
+    # if the fid is in use, do something
+    while ($fid_in_use->($fid)) {
+        throw("dup") if $explicit_fid_used;
+
+        # be careful of databases which reset their
+        # auto-increment/sequences when the table is empty (InnoDB
+        # did/does this, for instance).  So check if it's in use, and
+        # re-seed the table with the highest known fid from the file
+        # table.
+
+        # get the highest fid from the filetable and insert a dummy row
+        $fid = $dbh->selectrow_array("SELECT MAX(fid) FROM file");
+        $ins_tempfile->();  # don't care about its result
+
+        # then do a normal auto-increment
+        $fid = undef;
+        $ins_tempfile->() or die "register_tempfile failed after seeding";
+    }
+
+    return $fid;
 }
 
 # return hashref of row containing columns "fid, dmid, dkey, length,

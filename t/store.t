@@ -11,7 +11,7 @@ require "$Bin/lib/mogtestlib.pl";
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 10;
+    plan tests => 12;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -48,7 +48,18 @@ is(scalar @on, 2, "FID 101 on 2 devices");
                                         devids  => join(',', 1,2,3),
                                         );
     ok($fidid, "got a fidid");
+
+    my $fidid2 = eval {
+        $sto->register_tempfile(
+                                fid     => $fidid,
+                                dmid    => $dom->id,
+                                key     => "my_tempfile",
+                                classid => $cls->classid,
+                                devids  => join(',', 1,2,3),
+                                );
+    };
+    my $errc = error_code($@);
+    ok(!$fidid2, "didn't get fidid");
+    is($errc, "dup", "got a dup into tempfile")
+        or die "Got error: $@\n";
 }
-
-
-

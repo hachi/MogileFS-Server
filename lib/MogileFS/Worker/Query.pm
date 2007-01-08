@@ -250,16 +250,21 @@ sub cmd_create_open {
     }
     return $self->err_line("no_devices") unless @dests;
 
-    my $fidid = $sto->register_tempfile(
-                                        fid     => $exp_fidid, # may be undef/NULL to mean auto-increment
-                                        dmid    => $dmid,
-                                        key     => $key,
-                                        classid => $classid,
-                                        devids  => join(',', @dests),
-                                        );
-
-    return $self->err_line("db") unless $fidid;
-    return $self->err_line("fid_in_use") if $fidid == -1;
+    my $fidid = eval {
+        $sto->register_tempfile(
+                                fid     => $exp_fidid, # may be undef/NULL to mean auto-increment
+                                dmid    => $dmid,
+                                key     => $key,
+                                classid => $classid,
+                                devids  => join(',', @dests),
+                                );
+    };
+    unless ($fidid) {
+        my $errc = error_code($@);
+        return $self->err_line("fid_in_use") if $errc eq "dup";
+        warn "Error registering tempfile: $@\n";
+        return $self->err_line("db");
+    }
 
     # make sure directories exist for client to be able to PUT into
     foreach my $devid (@dests) {
