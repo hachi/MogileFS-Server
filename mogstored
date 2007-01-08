@@ -431,13 +431,13 @@ sub populate_device_maps {
     my @devnum;
     {
         opendir(my $d, $path) or die "Failed to open docroot: $path: $!";
-        @devnum = grep { /^dev\d+$/ } readdir($d);
+        @devnum = map { /^dev(\d+)$/ ? $1 : () } readdir($d);
     }
 
     %devnum_to_device = ();
 
     foreach my $devnum (@devnum) {
-        my ($osdevnum) = stat("$path/$devnum");
+        my ($osdevnum) = stat("$path/dev$devnum");
         $devnum_to_device{$devnum} = $osdevnum_to_device{$osdevnum};
     }
 
