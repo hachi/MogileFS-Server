@@ -166,31 +166,6 @@ sub mass_insert_file_on {
 
 ################# LEFTOVERS from MYSQL:
 
-# throw 'dup' on duplicate name
-sub create_class {
-    my ($self, $dmid, $classname) = @_;
-    my $dbh = $self->dbh;
-
-    # get the max class id in this domain
-    my $maxid = $dbh->selectrow_array
-        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
-
-    # now insert the new class
-    my $rv = eval {
-        $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                 undef, $dmid, $maxid + 1, $classname, 2);
-    };
-    if ($@ || $dbh->err) {
-        # first is mysql's error code for duplicates
-        if ($self->was_duplicate_error) {
-            throw("dup");
-        }
-    }
-    return $maxid + 1 if $rv;
-    $self->condthrow;
-    die;
-}
-
 sub register_tempfile {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fid dmid key classid devids)], @_);
@@ -251,27 +226,6 @@ sub register_tempfile {
     return $fid;
 }
 
-# returns 1 on success, 0 on duplicate key error, dies on exception
-# TODO: need a test to hit the duplicate name error condition
-sub rename_file {
-    my ($self, $fidid, $to_key) = @_;
-    my $dbh = $self->dbh;
-    eval {
-        $dbh->do('UPDATE file SET dkey = ? WHERE fid=?',
-                 undef, $to_key, $fidid);
-    };
-    if ($@ || $dbh->err) {
-        # first is mysql's error code for duplicates
-        if ($self->was_duplicate_error) {
-            return 0;
-        } else {
-            die $@;
-        }
-    }
-    $self->condthrow;
-    return 1;
-}
-
 # update the device count for a given fidid
 sub update_devcount_atomic {
     my ($self, $fidid) = @_;
@@ -315,25 +269,6 @@ sub reschedule_file_to_replicate_relative {
     my ($self, $fid, $in_n_secs) = @_;
     $self->dbh->do("UPDATE file_to_replicate SET nexttry = UNIX_TIMESTAMP() + ?, failcount = failcount + 1 WHERE fid = ?",
                    undef, $in_n_secs, $fid);
-}
-
-# creates a new domain, given a domain namespace string.  return the dmid on success,
-# throw 'dup' on duplicate name.
-sub create_domain {
-    my ($self, $name) = @_;
-    my $dbh = $self->dbh;
-
-    # get the max domain id
-    my $maxid = $dbh->selectrow_array('SELECT MAX(dmid) FROM domain') || 0;
-    my $rv = eval {
-        $dbh->do('INSERT INTO domain (dmid, namespace) VALUES (?, ?)',
-                 undef, $maxid + 1, $name);
-    };
-    if ($self->was_duplicate_error) {
-        throw("dup");
-    }
-    return $maxid+1 if $rv;
-    die "failed to make domain";  # FIXME: the above is racy.
 }
 
 sub should_begin_replicating_fidid {

@@ -11,11 +11,16 @@ require "$Bin/lib/mogtestlib.pl";
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 7;
+    plan tests => 10;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
+
+my $dom = MogileFS::Domain->create("foo");
+ok($dom, "created a domain");
+my $cls = $dom->create_class("classA");
+ok($cls, "created a class");
 
 my $df = MogileFS::DevFID->new(100, 200);
 ok($df, "made devfid");
@@ -33,6 +38,17 @@ $fid = MogileFS::FID->new(101);
 @on = $fid->devids;
 is(scalar @on, 2, "FID 101 on 2 devices");
 
+# create a tempfile
+{
+    my $fidid = $sto->register_tempfile(
+                                        fid     => undef,
+                                        dmid    => $dom->id,
+                                        key     => "my_tempfile",
+                                        classid => $cls->classid,
+                                        devids  => join(',', 1,2,3),
+                                        );
+    ok($fidid, "got a fidid");
+}
 
 
 
