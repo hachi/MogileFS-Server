@@ -209,6 +209,22 @@ sub conddup {
     return $rv;
 }
 
+# insert row if doesn't already exist
+sub insert_ignore {
+    my ($self, $sql, @params) = @_;
+    my $dbh = $self->dbh;
+    if ($self->can_insertignore) {
+        return $dbh->do("INSERT IGNORE $sql", @params);
+    } else {
+        my $rv = eval { $dbh->do("INSERT $sql", @params); };
+        if ($@ || $dbh->err) {
+            return 1 if $self->was_duplicate_error;
+            die "DB error: " . $dbh->errstr;
+        }
+        return $rv;
+    }
+}
+
 # --------------------------------------------------------------------------
 
 sub setup_database {
@@ -751,10 +767,8 @@ sub delete_tempfile_row {
 sub replace_into_file {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fidid dmid key length classid)], @_);
-    $self->dbh->do("REPLACE INTO file ".
-                   "SET ".
-                   "  fid=?, dmid=?, dkey=?, length=?, ".
-                   "  classid=?, devcount=0", undef,
+    $self->dbh->do("REPLACE INTO file (fid, dmid, dkey, length, classid, devcount) ".
+                   "VALUES (?,?,?,?,?,0) ", undef,
                    @arg{'fidid', 'dmid', 'key', 'length', 'classid'});
     $self->condthrow;
 }
@@ -867,8 +881,8 @@ sub enqueue_for_replication {
         $nexttry = $self->unix_timestamp . " + " . int($in);
     }
 
-    $self->dbh->do("INSERT IGNORE INTO file_to_replicate ".
-                   "SET fid=?, fromdevid=?, nexttry=$nexttry", undef, $fidid, $from_devid);
+    $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
+                         "VALUES (?,?,$nexttry)", undef, $fidid, $from_devid);
 }
 
 # reschedule all deferred replication, return number rescheduled
