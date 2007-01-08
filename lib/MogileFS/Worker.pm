@@ -263,6 +263,14 @@ sub process_generic_command {
         MogileFS::Config->set_config_no_broadcast($1, $2);
         return 1;
     }
+
+    if (my ($devid, $util) = $$lineref =~ /^:set_dev_utilization (\d+) (.+)/) {
+        my $dev = MogileFS::Device->of_devid($devid);
+        local $MogileFS::Device::util_no_broadcast = 1;
+        $dev->set_observed_utilization($util);
+        return 1;
+    }
+
     # TODO: warn on unknown commands?
 
     return 0;

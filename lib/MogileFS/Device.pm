@@ -244,9 +244,17 @@ sub absorb_dbrow {
     $dev->{_loaded} = 1;
 }
 
+our $util_no_broadcast = 0;
+
 sub set_observed_utilization {
     my ($dev, $util) = @_;
     $dev->{utilization} = $util;
+    my $devid = $dev->id;
+
+    return if $util_no_broadcast;
+
+    my $worker = MogileFS::ProcManager->is_child or return;
+    $worker->send_to_parent(":set_dev_utilization $devid $util");
 }
 
 sub observed_utilization {

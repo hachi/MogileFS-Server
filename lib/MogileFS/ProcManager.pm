@@ -609,7 +609,9 @@ sub HandleChildRequest {
         # and this will rebroadcast it to all other children
         # (including the one that just set it to us, but eh)
         MogileFS::Config->set_config($1, $2);
-
+    } elsif (my ($devid, $util) = $cmd =~ /^:set_dev_utilization (\d+) (.+)/) {
+        # rebroadcast dev utilization messages to all children
+        MogileFS::ProcManager->send_to_all_children(":set_dev_utilization $devid $util");
     } else {
         # unknown command
         my $show = $cmd;
