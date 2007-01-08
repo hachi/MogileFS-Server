@@ -40,9 +40,12 @@ sub work {
 
     my $iow = MogileFS::IOStatWatcher->new;
     $iow->on_stats(sub {
-        my ($host, $stats) = @_;
-        # use Data::Dumper;
-        # warn "IOWatcher: [$host] " . Dumper($stats) . "\n";
+        my ($hostname, $stats) = @_;
+
+        while (my ($devid, $util) = each %$stats) {
+            my $dev = MogileFS::Device->of_devid($devid) or die "Can't find that device";
+            $dev->set_observed_utilization($util);
+        }
     });
 
     my $main_monitor;

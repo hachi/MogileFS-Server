@@ -244,6 +244,16 @@ sub absorb_dbrow {
     $dev->{_loaded} = 1;
 }
 
+sub set_observed_utilization {
+    my ($dev, $util) = @_;
+    $dev->{utilization} = $util;
+}
+
+sub observed_utilization {
+    my ($dev) = @_;
+    return $dev->{utilization};
+}
+
 sub set_observed_state {
     my ($dev, $state) = @_;
     croak "set_observed_state() with invalid device state '$state', valid: writeable, readable, unreachable"
