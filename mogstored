@@ -1,4 +1,4 @@
-#!/usr/bin/perl -w
+#!/usr/bin/perl
 
 eval 'exec /usr/bin/perl -w -S $0 ${1+"$@"}'
     if 0; # not running under some shell
@@ -200,19 +200,6 @@ sub load_config_file {
     }
 }
 
-sub populate_osdevnums {
-    %osdevnum_to_device = ();
-    if (open my $mounts, '<', '/etc/mtab') {
-        while (my $line = <$mounts>) {
-            next unless $line;
-            my ($device, $mountpoint) = split /\s+/, $line;
-            next unless $device && $mountpoint;
-            my ($osdevnum) = stat($mountpoint);
-            $osdevnum_to_device{$osdevnum} = $device;
-        }
-    }
-}
-
 sub harvest_dead_children {
     my $dead = waitpid(-1, WNOHANG);
     if ($dead > 0) {
@@ -251,8 +238,6 @@ sub look_at_disk_usage {
     my $path = Perlbal->service('mogstored')->{docroot};
     $path =~ s!/$!!;
 
-    populate_osdevnums();
-
     # find all devices below us
     my @devnum;
     if (opendir(D, $path)) {
@@ -262,11 +247,7 @@ sub look_at_disk_usage {
         return $err->("Failed to open $path: $!");
     }
 
-    %devnum_to_device = ();
-
     foreach my $devnum (@devnum) {
-        my ($osdevnum) = stat("$path/$devnum");
-        $devnum_to_device{$devnum} = $osdevnum_to_device{$osdevnum};
 
         my $rval = `df -k -l -P $path/$devnum`;
         foreach my $l (split /\r?\n/, $rval) {
@@ -345,6 +326,7 @@ sub setup_iostat_pipes {
     pipe ($iostat_pipe_r, $iostat_pipe_w);
     IO::Handle::blocking($iostat_pipe_r, 0);
     IO::Handle::blocking($iostat_pipe_w, 0);
+
     Danga::Socket->AddOtherFds(fileno($iostat_pipe_r),
                                sub {
                                    read_from_iostat_child($iostat_pipe_r,
@@ -354,6 +336,8 @@ sub setup_iostat_pipes {
 }
 
 sub start_iostat_process {
+    populate_device_maps();
+
     my $pid = fork;
 
     unless (defined $pid) {
@@ -427,6 +411,31 @@ sub read_from_iostat_child {
     foreach my $out_sock (values %iostat_listeners) {
         $out_sock->write(".\n");
     }
+}
+
+sub populate_device_maps {
+    %osdevnum_to_device = ();
+    open my $mounts, '<', '/etc/mtab' or die "Couldn't open /etc/mtab: $!\n";
+    while (my $line = <$mounts>) {
+        next unless $line;
+        my ($device, $mountpoint) = split /\s+/, $line;
+        next unless $device && $mountpoint;
+        my ($osdevnum) = stat($mountpoint);
+        $osdevnum_to_device{$osdevnum} = $device;
+    }
+
+    my $path = Perlbal->service('mogstored')->{docroot};
+    $path =~ s!/$!!;
+
+    my @devnum = disks($path);
+
+    %devnum_to_device = ();
+
+    foreach my $devnum (@devnum) {
+        my ($osdevnum) = stat("$path/$devnum");
+        $devnum_to_device{$devnum} = $osdevnum_to_device{$osdevnum};
+    }
+    Danga::Socket->AddTimer(60, \&populate_device_maps);
 }
 
 sub disks {
