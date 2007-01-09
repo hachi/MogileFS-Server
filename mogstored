@@ -63,8 +63,8 @@ BEGIN {
 
 # State:
 my %on_death;             # pid -> subref (to run when pid dies)
-my %devnum_to_device;
-my %osdevnum_to_device;
+my %devnum_to_device;     # mogile device number (eg. 'dev1' would be '1') -> os device path (eg. '/dev/rd0')
+my %osdevnum_to_device;   # os device number (fetched via stat(file)[0]) -> os device path (ec. '/dev/rd0')
 my %iostat_listeners;     # fd => SideChannel client: clients interested in iostat data.
 my $iostat_available = 1; # bool: iostat working.  assume working to start.
 my ($iostat_pipe_r, $iostat_pipe_w);  # pipes for talking to iostat process
