@@ -4,6 +4,7 @@ use DBI;
 
 use FindBin qw($Bin);
 use IO::Socket::INET;
+use MogileFS::Server;
 
 sub temp_store {
     my $type = $ENV{MOGTEST_DBTYPE} || "MySQL";
