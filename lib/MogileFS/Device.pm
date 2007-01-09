@@ -4,6 +4,11 @@ use warnings;
 use Carp qw(croak);
 use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
+BEGIN {
+    my $testing = $ENV{TESTING} ? 1 : 0;
+    eval "sub TESTING () { $testing }";
+}
+
 my %singleton;      # devid -> instance
 my $last_load = 0;  # unixtime we last reloaded devices from database
 my $all_loaded = 0; # bool: have we loaded all the devices?
@@ -296,7 +301,20 @@ sub status {
 
 sub weight {
     my $dev = shift;
+
     $dev->_load;
+
+    if (TESTING) {
+        my $weight_varname = 'T_FAKE_IOW_DEV' . $dev->id;
+        return $ENV{$weight_varname} if defined $ENV{$weight_varname};
+    }
+
+    my $util = $dev->{utilization};
+    if (defined $util) {
+        warn "Utilization defined for " . $dev->id . ": $util\n";
+        return 100 unless $util > 0;
+        return 100 / $dev->{utilization};
+    }
     return $dev->{weight};
 }
 
@@ -447,10 +465,6 @@ sub set_state {
     my $sto = Mgd::get_store();
     $sto->set_device_state($dev->id, $state);
     MogileFS::Device->invalidate_cache;
-
-    # wake a reaper process up from sleep to get started as soon as possible
-    # on re-replication
-    MogileFS::ProcManager->wake_a("reaper") if $state eq "dead";
 }
 
 # --------------------------------------------------------------------------
