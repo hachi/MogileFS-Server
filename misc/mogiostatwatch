@@ -1,0 +1,108 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+use POE qw(Component::Client::TCP Filter::Line);
+use DBI;
+use Data::Dumper qw(Dumper);
+my $get_dbh = sub {
+    return DBI->connect("DBI:mysql:database=mogilefs;host=xxxxxxxxxx', '', '',
+                       { RaiseError => 1 })
+        or die "can't connect to mogile db\n";
+};
+
+
+
+my $dbh = $get_dbh->();
+my $hosts = get_hosts();
+my $devs  = get_devices();
+
+
+my %lastweight;  # $devid -> unix time
+my %avg;         # $devid -> 10 second blended
+
+my $callback = sub {
+  my($devid, $await, $util) = @_;
+  return unless $devid;
+
+  if (defined $avg{$devid}) {
+      $avg{$devid} = $avg{$devid} * 0.9 + 0.1 * $util;
+  } else {
+      $avg{$devid} = $util;
+  }
+
+  my $now = time();
+  if ($now > $lastweight{$devid} + 10) {
+      $lastweight{$devid} = $now;
+      my $new_weight = int(102 - $avg{$devid}) || 1;
+      print STDERR "Set $devid to $new_weight\n";
+      $dbh->do("UPDATE device SET weight=? WHERE devid=?", undef, $new_weight, $devid);
+  }
+
+  print STDERR "Device $devid\tWait $await\tUtil $util\n";
+};
+
+foreach my $host (values %$hosts) {
+  warn "Connection to $host->{hostname}\n";
+  my %devices;
+  my $device_map;
+  POE::Component::Client::TCP->new
+      (
+       RemoteAddress => $host->{hostip},
+       RemotePort    => '20011',
+       Alias         => "$host->{hostname}_watcher",
+       Filter        => 'POE::Filter::Line',
+       ServerInput   => sub {
+	 my $input = $_[ARG0];
+
+	 if($input =~qr[^/dev/(\w+)\d\s+/var/mogdata/dev(\d+)]) {
+	   print "Found dev $1 being mogstore device $2\n";
+	   $devices{$1} = $2;
+	   return;
+	 } 
+	 if($input =~qr[^IOSTAT]) {
+	   my $regex = join "|", keys %devices;
+	   $device_map = qr[^($regex)];
+	   print "Looking for $device_map\n";
+	   return;
+	 }
+	 if($device_map && $input =~$device_map) {
+	   my @values = split /\s+/, $input;
+	   
+	   $callback->($devices{$1}, $values[11], $values[13]);
+	 }
+
+
+       },
+  
+       
+       
+       );
+
+}
+
+
+
+$poe_kernel->run;
+
+
+sub get_hosts {
+    my $h = {};
+    my $sth = $dbh->prepare("SELECT hostid, hostname, hostip FROM host");
+    $sth->execute;
+    while (my $rec = $sth->fetchrow_hashref) {
+        $h->{$rec->{hostid}} = $rec;
+    }
+    return $h;
+}
+
+
+sub get_devices {
+    my $d = {};
+    my $sth = $dbh->prepare("SELECT devid, hostid, status FROM device");
+    $sth->execute;
+    while (my $rec = $sth->fetchrow_hashref) {
+        $d->{$rec->{devid}} = $rec;
+    }
+    return $d;
+}
