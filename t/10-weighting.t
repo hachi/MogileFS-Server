@@ -6,6 +6,8 @@ use Test::More;
 use FindBin qw($Bin);
 use Time::HiRes qw(sleep);
 
+use MogileFS::Server;
+
 use lib "$Bin/../../api/perl/lib";
 BEGIN {
     $ENV{PERL5LIB} = "$Bin/../../api/perl/lib" . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
@@ -27,24 +29,16 @@ require 't/lib/mogtestlib.pl';
 # add file,
 # etc
 
-my $rootdbh = eval { root_dbh(); };
-if ($rootdbh) {
-    plan tests => 53;
+my $sto = eval { temp_store(); };
+if ($sto) {
+    plan tests => 55;
 } else {
-    plan skip_all => "Can't connect to local MySQL as root user.";
+    plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
 
-my $tempdb = create_temp_db();
-isa_ok $tempdb, "DBHandle";
-my $dbh = $tempdb->dbh;
-
+my $dbh = $sto->dbh;
 my $rv;
-$rv = system("$Bin/../mogdbsetup", "--yes", "--dbname=" . $tempdb->name);
-ok(!$rv, "database setup proceeded without problems");
-
-$rv = system("$Bin/../mogdbsetup", "--yes", "--dbname=" . $tempdb->name);
-ok(!$rv, "database setup ran again without problems");
 
 use File::Temp;
 my %mogroot;
@@ -70,7 +64,7 @@ while (! -e "$mogroot{1}/dev1/usage" &&
     sleep(.25);
 }
 
-my $tmptrack = create_temp_tracker($tempdb);
+my $tmptrack = create_temp_tracker($sto);
 ok($tmptrack);
 
 my $mogc = MogileFS::Client->new(
@@ -114,7 +108,7 @@ ok(close($fh), "closed file");
 # wait for it to replicate
 my $tries = 1;
 my @urls;
-while ($tries++ < 100 && (@urls = $mogc->get_paths("file1")) < 4) {
+while ($tries++ < 30 && (@urls = $mogc->get_paths("file1")) < 4) {
     diag("Waiting for replication to complete: try=$tries urls=" . scalar @urls);
     sleep .25;
 }
