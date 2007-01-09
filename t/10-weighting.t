@@ -12,8 +12,8 @@ use lib "$Bin/../../api/perl/lib";
 BEGIN {
     $ENV{PERL5LIB} = "$Bin/../../api/perl/lib" . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
     $ENV{TESTING} = 1;
-    $ENV{T_FAKE_IOW_DEV1} = 5;
-    $ENV{T_FAKE_IOW_DEV2} = 90;
+    $ENV{T_FAKE_IO_DEV1} = 95; # Simulating high device load (should get fewer requests).
+    $ENV{T_FAKE_IO_DEV2} = 5;  # Simulating low device load (shoudld get more requests).
 }
 use MogileFS::Client;
 
@@ -70,13 +70,13 @@ my $be = $mogc->{backend}; # gross, reaching inside of MogileFS::Client
 
 # test some basic commands to backend
 ok($tmptrack->mogadm("domain", "add", "testdom"), "created test domain");
-ok($tmptrack->mogadm("class", "add", "testdom", "2copies", "--mindevcount=2"), "created 4copies class in testdom");
+ok($tmptrack->mogadm("class", "add", "testdom", "2copies", "--mindevcount=2"), "created 2copies class in testdom");
 
 ok($tmptrack->mogadm("host", "add", "hostA", "--ip=127.0.1.1", "--status=alive"), "created hostA");
 ok($tmptrack->mogadm("host", "add", "hostB", "--ip=127.0.1.2", "--status=alive"), "created hostB");
 
 ok($tmptrack->mogadm("device", "add", "hostA", 1), "created dev1 on hostA");
-ok($tmptrack->mogadm("device", "add", "hostB", 2), "created dev4 on hostB");
+ok($tmptrack->mogadm("device", "add", "hostB", 2), "created dev2 on hostB");
 
 # wait for monitor
 {
@@ -115,6 +115,6 @@ for (1..100) {
     $stats{$devno}++;
 }
 
-ok($stats{1} < 10, "Device 1 should get roughly 5% of traffic, got: $stats{1}");
-ok($stats{2} > 80, "Device 2 should get roughly 90% of traffic, got: $stats{2}");
+ok($stats{1} < 15, "Device 1 should get roughly 5% of traffic, got: $stats{1}");
+ok($stats{2} > 80, "Device 2 should get roughly 95% of traffic, got: $stats{2}");
 

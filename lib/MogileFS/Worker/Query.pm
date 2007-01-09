@@ -108,6 +108,7 @@ sub process_line {
                 if ($errc eq "dup") {
                     return $self->err_line("dup");
                 } else {
+                    warn "Error: $@\n";
                     error("Error running command '$cmd': $@");
                     return $self->err_line("failure");
                 }
@@ -823,12 +824,25 @@ sub cmd_get_paths {
         paths => 0,
     };
 
+    my @devices_with_weights;
+
     # is this fid still owned by this key?
-    my @devids = $fid->devids;
+    foreach my $devid ($fid->devids) {
+        my $weight;
+        my $dev = $dmap->{$devid};
+
+        if (defined(my $util = $dev->observed_utilization)) {
+            $weight = 102 - $util;
+            $weight ||= 100;
+        } else {
+            $weight = $dev->weight;
+            $weight ||= 100;
+        }
+        push @devices_with_weights, [$devid, $weight];
+    }
 
     # randomly weight the devices
-    my @list = MogileFS::Util::weighted_list(map { [ $_, defined $dmap->{$_}->weight ?
-                                                     $dmap->{$_}->weight : 100 ] } @devids);
+    my @list = MogileFS::Util::weighted_list(@devices_with_weights);
 
     # keep one partially-bogus path around just in case we have nothing else to send.
     my $backup_path;
