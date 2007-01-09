@@ -264,6 +264,12 @@ sub set_observed_utilization {
 
 sub observed_utilization {
     my ($dev) = @_;
+
+    if (TESTING) {
+        my $weight_varname = 'T_FAKE_IO_DEV' . $dev->id;
+        return $ENV{$weight_varname} if defined $ENV{$weight_varname};
+    }
+
     return $dev->{utilization};
 }
 
@@ -304,17 +310,6 @@ sub weight {
 
     $dev->_load;
 
-    if (TESTING) {
-        my $weight_varname = 'T_FAKE_IOW_DEV' . $dev->id;
-        return $ENV{$weight_varname} if defined $ENV{$weight_varname};
-    }
-
-    my $util = $dev->{utilization};
-    if (defined $util) {
-        warn "Utilization defined for " . $dev->id . ": $util\n";
-        return 100 unless $util > 0;
-        return 100 / $dev->{utilization};
-    }
     return $dev->{weight};
 }
 
