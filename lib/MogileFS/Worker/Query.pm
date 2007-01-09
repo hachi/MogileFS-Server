@@ -817,7 +817,6 @@ sub cmd_get_paths {
     my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
         or return $self->err_line("unknown_key");
 
-    my $fidid = $fid->id;
     my $dmap = MogileFS::Device->map;
 
     my $ret = {
