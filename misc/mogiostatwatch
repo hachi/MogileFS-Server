@@ -6,7 +6,7 @@ use POE qw(Component::Client::TCP Filter::Line);
 use DBI;
 use Data::Dumper qw(Dumper);
 my $get_dbh = sub {
-    return DBI->connect("DBI:mysql:database=mogilefs;host=xxxxxxxxxx', '', '',
+    return DBI->connect('DBI:mysql:database=mogilefs;host=xxxxxxxxxx', '', '',
                        { RaiseError => 1 })
         or die "can't connect to mogile db\n";
 };
