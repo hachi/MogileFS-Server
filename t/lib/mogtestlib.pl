@@ -7,7 +7,17 @@ use IO::Socket::INET;
 use MogileFS::Server;
 
 sub temp_store {
-    my $type = $ENV{MOGTEST_DBTYPE} || "MySQL";
+    my $type = $ENV{MOGTEST_DBTYPE};
+
+	# default to mysql, but make sure DBD::MySQL is installed
+	if ( !$ENV{MOGTEST_DBTYPE} ) { 
+		$type = "MySQL";
+		eval "use DBD::MySQL";
+		if ( $@ ) { 
+			die "DBD::MySQL isn't installed.  Please install it or define MOGTEST_DBTYPE env. variable";
+		}
+	}
+
     die "Bogus type" unless $type =~ /^\w+$/;
     my $store = "MogileFS::Store::$type";
     eval "use $store; 1;";
