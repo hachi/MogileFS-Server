@@ -141,9 +141,10 @@ sub event_read {
     }
 
     # If we can yank off lines till there is one by itself with a . on it, we've gotten a full set of stats.
-    while ($self->{buffer} =~ s/^(.*?\n)\.\n//s) {
+    while ($self->{buffer} =~ s/^(.*?\n)?\.\n//s) {
         my %stats;
         foreach my $line (split /\n+/, $1) {
+            next unless $line;
             my ($devnum, $device, $util) = split /\s+/, $line;
             $stats{$devnum} = $util;
         }
