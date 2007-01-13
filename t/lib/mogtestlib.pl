@@ -9,14 +9,12 @@ use MogileFS::Server;
 sub temp_store {
     my $type = $ENV{MOGTEST_DBTYPE};
 
-	# default to mysql, but make sure DBD::mysql is installed
-	if ( !$ENV{MOGTEST_DBTYPE} ) { 
-		$type = "MySQL";
-		eval "use DBD::mysql";
-		if ( $@ ) { 
-			die "DBD::mysql isn't installed.  Please install it or define MOGTEST_DBTYPE env. variable";
-		}
-	}
+    # default to mysql, but make sure DBD::MySQL is installed
+    unless ($type) {
+        $type = "MySQL";
+        eval "use DBD::mysql; 1" or
+            die "DBD::mysql isn't installed.  Please install it or define MOGTEST_DBTYPE env. variable";
+    }
 
     die "Bogus type" unless $type =~ /^\w+$/;
     my $store = "MogileFS::Store::$type";
