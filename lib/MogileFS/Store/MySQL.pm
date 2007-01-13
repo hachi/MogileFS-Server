@@ -1,7 +1,7 @@
 package MogileFS::Store::MySQL;
 use strict;
 use warnings;
-use DBI;
+use DBI 1.44;
 use DBD::mysql;
 use MogileFS::Util qw(throw);
 use base 'MogileFS::Store';
@@ -206,6 +206,41 @@ sub upgrade_add_device_readonly {
     unless ($self->column_type("device", "status") =~ /readonly/) {
         $self->dowell("ALTER TABLE device MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly')");
     }
+}
+
+sub pre_daemonize_checks {
+    my $self = shift;
+    # Jay Buffington, from the mailing lists, writes:
+
+    # > > Is your DBI version at least 1.43? The Makefile.PL of DBD::mysql shows
+    # > > that code for last_insert_it is compiled in only if DBD::mysql is built
+    # > > with DBI 1.43 or newer.
+    #> Yes, I have 1.53.
+    #> jay@webdev:~$ perl -MDBI -le 'print $DBI::VERSION'
+    #> 1.53
+    #>
+    #> BUT I just re-installed 2.9006 while researching this and my test
+    #> script started working.  I just reran the mogile server test suite and
+    #> all test passed!
+    #>
+    #> Problem solved!
+    #>
+    #> The original DBD::mysql 2.9006 was installed from a RPM.  I bet that
+    #> it was built against a DBI older than 1.43, so it didn't support
+    #> LAST_INSERT_ID.
+
+    # So...
+    #   since we don't know what version of DBI their DBD::mysql was built against,
+    #   let's just test that last_insert_id works.
+
+    my $id = eval {
+        $self->register_tempfile(dmid => 99,
+                                 key  => "_server_startup_test");
+    };
+    unless ($id) {
+        die "MySQL self-tests failed.  Your DBD::mysql might've been built against an old DBI version.\n";
+    }
+
 }
 
 1;

@@ -620,7 +620,7 @@ sub register_tempfile {
         my $rv = eval {
             $dbh->do("INSERT INTO tempfile (fid, dmid, dkey, classid, devids, createtime) VALUES ".
                      "(?,?,?,?,?," . $self->unix_timestamp . ")",
-                     undef, $fid || undef, $arg{dmid}, $arg{key}, $arg{classid}, $arg{devids});
+                     undef, $fid || undef, $arg{dmid}, $arg{key}, $arg{classid} || 0, $arg{devids});
         };
         if (!$rv) {
             return undef if $self->was_duplicate_error;
@@ -1064,6 +1064,11 @@ sub enqueue_fids_to_delete {
     $self->dbh->do($self->ignore_replace . " INTO file_to_delete (fid) VALUES " .
                    join(",", map { "(" . int($_) . ")" } @fidids))
         or die "file_to_delete insert failed";
+}
+
+# run before daemonizing.  you can die from here if you see something's amiss.  or emit
+# warnings.
+sub pre_daemonize_checks {
 }
 
 1;

@@ -208,6 +208,8 @@ Details: [sto=$sto, err=$@]
         die "Server's database schema version of $sversion doesn't match expected value of $expect_ver.  Halting.\n\n".
             "Please run mogdbsetup to upgrade your schema.\n";
     }
+
+    $sto->pre_daemonize_checks;
 }
 
 # set_server_setting( key, value )
