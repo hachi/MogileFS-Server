@@ -565,12 +565,16 @@ This is the MogileFS storage daemon, which is just an HTTP server that
 supports PUT, DELETE, etc.  It's actually a wrapper around L<Perlbal>,
 doing all the proper Perlbal config for you.
 
-In addition, it monitors disk usage, I/O activity, etc, for reporting
-to the L<MogileFS tracker|mogilefsd>.
+In addition, it monitors disk usage, I/O activity, etc, which are
+checked from the L<MogileFS tracker|mogilefsd>.
 
 =head1 AUTHORS
 
 Brad Fitzpatrick E<lt>brad@danga.comE<gt>
+
+Mark Smith E<lt>junior@danga.comE<gt>
+
+Jonathan Steinert E<lt>jsteinert@sixapart.comE<gt>
 
 =head1 COPYRIGHT
 
@@ -583,6 +587,8 @@ Same terms as Perl itself.  Artistic/GPLv2, at your choosing.
 
 =head1 SEE ALSO
 
-L<mogilefsd>
+L<MogileFS::Overview> -- high level overview of MogileFS
+
+L<mogilefsd> -- MogileFS daemon
 
 L<http://danga.com/mogilefs/>
