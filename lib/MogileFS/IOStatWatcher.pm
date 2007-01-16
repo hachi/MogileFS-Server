@@ -63,8 +63,10 @@ sub on_stats {
 
 =head2 on_stats->( host, stats )
 
-Called each time device use statistics are collected. The C<host> argument is the value passed in to the
-C<set_hosts> method. The C<stats> object is a hashref of mogile device names and utilization percentages.
+Called each time device use statistics are collected. The C<host>
+argument is the value passed in to the C<set_hosts> method. The
+C<stats> object is a hashref of mogile device numbers (without leading
+"dev") to their corresponding utilization percentages.
 
 =cut
 
