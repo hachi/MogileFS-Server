@@ -248,11 +248,8 @@ sub look_at_disk_usage {
     }
 
     foreach my $devnum (@devnum) {
-
-        # FIXME: this doesn't work on FreeBSD(?) where df -P implies 512 byte blocks.
-        # parse that out of header and divide by two?  intermin work-around is putting
-        # the -k AFTER the -P which seems to work on at least later FreeBSDs.
         my $rval = `df -P -l -k $path/$devnum`;
+        my $uperK = ($rval =~ /512-blocks/i) ? 2 : 1; # units per kB
         foreach my $l (split /\r?\n/, $rval) {
             next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
             my ($dev, $total, $used, $avail, $useper, $disk) = ($1, $2, $3, $4, $5, $6);
@@ -266,9 +263,9 @@ sub look_at_disk_usage {
             my $output = {
                 time      => time(),
                 device    => $dev,    # /dev/sdh1
-                total     => $total,  # integer: total KiB blocks
-                used      => $used,   # integer: used KiB blocks
-                available => $avail,  # integer: available KiB blocks
+                total     => int($total / $uperK), # integer: total KiB blocks
+                used      => int($used  / $uperK), # integer: used KiB blocks
+                available => int($avail / $uperK),  # integer: available KiB blocks
                 'use'     => $useper, # "45%"
                 disk      => $disk,   # mount point of disk (/var/mogdata/dev8), or path if not a mount
             };
