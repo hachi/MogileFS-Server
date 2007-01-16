@@ -1026,6 +1026,8 @@ sub old_tempfiles {
 # into file_on (ignoring if they're already present)
 sub mass_insert_file_on {
     my ($self, @devfids) = @_;
+    return 1 unless @devfids;
+
     if (@devfids > 1 && ! $self->can_insert_multi) {
         $self->mass_insert_file_on($_) foreach @devfids;
         return 1;
