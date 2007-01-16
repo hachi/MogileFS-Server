@@ -9,6 +9,7 @@ use fields (
             'skip_host',       # hostid -> 1 if already noted dead (reset every loop)
             'seen_hosts',      # IP -> 1 (reset every loop)
             'ua',              # LWP::UserAgent for checking usage files
+            'iow',             # MogileFS::IOStatWatcher object
             );
 
 use Danga::Socket 1.56;
@@ -24,6 +25,7 @@ sub new {
 
     $self->{last_db_update}  = {};
     $self->{last_test_write} = {};
+    $self->{iow}             = MogileFS::IOStatWatcher->new;
     return $self;
 }
 
@@ -38,7 +40,7 @@ sub work {
     # so we need to lose all that state and start afresh.
     Danga::Socket->Reset;
 
-    my $iow = MogileFS::IOStatWatcher->new;
+    my $iow = $self->{iow};
     $iow->on_stats(sub {
         my ($hostname, $stats) = @_;
 
@@ -125,6 +127,7 @@ sub check_device {
 
     # at this point we can reach the host
     $self->broadcast_host_reachable($dev->hostid);
+    $self->{iow}->restart_monitoring_if_needed($hostip);
 
     my %stats;
     my $data = $response->content;

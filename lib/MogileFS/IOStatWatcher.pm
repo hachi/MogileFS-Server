@@ -77,10 +77,16 @@ sub got_stats {
     $self->{on_stats}->($host, $stats);
 }
 
+sub restart_monitoring_if_needed {
+    my ($self, $host) = @_;
+    return unless $self->{hosts}->{$host} && $self->{hosts}->{$host}->{closed};
+    $self->{hosts}->{$host} = MogileFS::IOStatWatch::Client->new($host, $self);
+}
+
 sub got_error {
     my ($self, $host) = @_;
     Danga::Socket->AddTimer(60, sub {
-        $self->{hosts}->{$host} = MogileFS::IOStatWatch::Client->new($host, $self);
+        $self->restart_monitoring_if_needed($host);
     });
 }
 
