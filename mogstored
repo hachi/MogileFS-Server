@@ -72,7 +72,7 @@ my ($iostat_pipe_r, $iostat_pipe_w);  # pipes for talking to iostat process
 # Config:
 my $opt_daemonize;
 my $opt_config;
-my $opt_iostat;
+my $opt_iostat = 1;  # default to on now
 my $max_conns = 10000;
 my $http_listen = "0.0.0.0:7500";
 my $mgmt_listen = "0.0.0.0:7501";
@@ -322,26 +322,22 @@ sub setup_sidechannel_listener {
     Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
 }
 
+my $iostat_read_buf = "";
 sub setup_iostat_pipes {
     pipe ($iostat_pipe_r, $iostat_pipe_w);
     IO::Handle::blocking($iostat_pipe_r, 0);
     IO::Handle::blocking($iostat_pipe_w, 0);
 
-    Danga::Socket->AddOtherFds(fileno($iostat_pipe_r),
-                               sub {
-                                   read_from_iostat_child($iostat_pipe_r,
-                                                          \my $stdout_buffer);
-                               });
+    Danga::Socket->AddOtherFds(fileno($iostat_pipe_r), sub {
+        read_from_iostat_child();
+    });
 
 }
 
 sub start_iostat_process {
-    populate_device_maps();
-
     my $pid = fork;
-
     unless (defined $pid) {
-        warn "Fork failed: $!";
+        warn "Fork for iostat failed: $!";
         return;
     }
 
@@ -352,6 +348,9 @@ sub start_iostat_process {
         };
         return;
     }
+
+    # (runs in child process)
+    $0 = "mogstored [iostat]";
 
     close STDIN;
     close STDOUT;
@@ -364,84 +363,92 @@ sub start_iostat_process {
 
     select((select(STDOUT), $|++)[0]);
 
-    no warnings; # Prevent the "Statement may not be reached, do you mean 'system' instead of 'exec'" warning.
-    exec 'iostat', '-dx', '1';
-    print "ERR $!\n";
-    POSIX::_exit(0); # We can't stay running, no matter what.
+    my $get_iostat_fh = sub {
+        while (1) {
+            if (open (my $fh, "iostat -dx 1 30|")) {
+                return $fh;
+            }
+            # TODO: try and find other paths to iostat
+            warn "Failed to open iostat: $!\n"; # this will just go to /dev/null, but will be straceable
+            sleep 10;
+        }
+    };
+
+    while (1) {
+        my $iofh = $get_iostat_fh->();
+        my $mog_sysid = mog_sysid_map();  # 5 (mogdevid) -> 2340 (os devid)
+        my $dev_sysid = {};  # hashref, populated lazily:  { /dev/sdg => system dev_t }
+        my %devt_util;  # dev_t => 52.55
+        my $init = 0;
+        while (<$iofh>) {
+            if (m/^Device:/) {
+                %devt_util = ();
+                $init = 1;
+                next;
+            }
+            next unless $init;
+            if (m/^ (\S+) .*? ([\d.]+) \n/x) {
+                my ($devnode, $util) = ("/dev/$1", $2);
+                unless (exists $dev_sysid->{$devnode}) {
+                    $dev_sysid->{$devnode} = (stat($devnode))[6]; # rdev
+                }
+                my $devt = $dev_sysid->{$devnode};
+                $devt_util{$devt} = $util;
+                next;
+            }
+            # blank line is the end.
+            if (m!^\s*\n!) {
+                $init = 0;
+                my $ret = "";
+                foreach my $mogdevid (sort { $a <=> $b } keys %$mog_sysid) {
+                    my $devt = $mog_sysid->{$mogdevid};
+                    my $ut = defined $devt_util{$devt} ? $devt_util{$devt} : "-";
+                    $ret .= "$mogdevid\t$ut\n";
+                }
+                $ret .= ".\n";
+                print $ret;
+                next;
+            }
+        }
+    }
 }
 
-sub read_from_iostat_child {
-    my $sock = shift;
-    my $bufref = shift;
-
-    my $rv = sysread($sock, my $new_buffer, 10240);
-    return unless $rv && $rv > 0;
-
-    $$bufref .= $new_buffer;
-
-    my %utilization;
-
-    while ($$bufref =~ m/.+\n/) {
-        if ($$bufref =~ s/.*?Device: [^\n]+? \%util \n//sx) {
-            next;
-        }
-
-        if ($$bufref =~ s/^ (\S+) .*? ([\d.]+) \n//x) {
-            my ($osdevice, $util) = ("/dev/$1", $2);
-            $utilization{$osdevice} = $util;
-            next;
-        }
-
-        if ($$bufref =~ s/^ERR\s+(.*)$//) {
-            $iostat_available = 0;
-            return;
-        }
-        warn "Unable to grok: '$$bufref'";
-    }
-
-    while (my ($devnum, $device) = each %devnum_to_device) {
-        $device ||= '-';
-        my $util = $utilization{$device} || '-';
-
-        foreach my $out_sock (values %iostat_listeners) {
-            $out_sock->write("$devnum\t$device\t$util\n");
-        }
-    }
-
-    foreach my $out_sock (values %iostat_listeners) {
-        $out_sock->write(".\n");
-    }
-}
-
-sub populate_device_maps {
-    %osdevnum_to_device = ();
-    open my $mounts, '<', '/etc/mtab' or die "Couldn't open /etc/mtab: $!\n";
-    while (my $line = <$mounts>) {
-        next unless $line;
-        my ($device, $mountpoint) = split /\s+/, $line;
-        next unless $device && $mountpoint;
-        my ($osdevnum) = stat($mountpoint);
-        $osdevnum_to_device{$osdevnum} = $device;
-    }
-
+# (runs in iostat child process)
+#  returns hashref of { 5 => dev_t device }  # mog_devid -> os_devid
+sub mog_sysid_map {
     my $path = Perlbal->service('mogstored')->{docroot};
     $path =~ s!/$!!;
 
     # find all devices below us
-    my @devnum;
-    {
-        opendir(my $d, $path) or die "Failed to open docroot: $path: $!";
-        @devnum = map { /^dev(\d+)$/ ? $1 : () } readdir($d);
+    my @devnum;  # integer ids
+    opendir(my $d, $path) or die "Failed to open docroot: $path: $!";
+    @devnum = map { /^dev(\d+)$/ ? $1 : () } readdir($d);
+
+    my $map = {};
+    foreach my $mogdevid (@devnum) {
+        my ($osdevid) = (stat("$path/dev$mogdevid"))[0];
+        $map->{$mogdevid} = $osdevid;
     }
+    return $map;
+}
 
-    %devnum_to_device = ();
+# (runs in parent event-loop process)
+sub read_from_iostat_child {
+    my $data;
+    my $rv = sysread($iostat_pipe_r, $data, 10240);
+    return unless $rv && $rv > 0;
 
-    foreach my $devnum (@devnum) {
-        my ($osdevnum) = stat("$path/dev$devnum");
-        $devnum_to_device{$devnum} = $osdevnum_to_device{$osdevnum};
+    $iostat_read_buf .= $data;
+
+    # only write complete lines to sockets (in case for some reason we get
+    # a partial read and child process dies...)
+    while ($iostat_read_buf =~ s/(.+)\r?\n//) {
+        my $line = $1;
+        foreach my $out_sock (values %iostat_listeners) {
+            # where $line will be like "dev53\t53.23" or a "." to signal end of a group of devices.
+            $out_sock->write("$line\n");
+        }
     }
-
-    Danga::Socket->AddTimer(60, \&populate_device_maps);
 }
 
 sub disks {
