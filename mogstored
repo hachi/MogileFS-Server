@@ -249,7 +249,10 @@ sub look_at_disk_usage {
 
     foreach my $devnum (@devnum) {
 
-        my $rval = `df -k -l -P $path/$devnum`;
+        # FIXME: this doesn't work on FreeBSD(?) where df -P implies 512 byte blocks.
+        # parse that out of header and divide by two?  intermin work-around is putting
+        # the -k AFTER the -P which seems to work on at least later FreeBSDs.
+        my $rval = `df -P -l -k $path/$devnum`;
         foreach my $l (split /\r?\n/, $rval) {
             next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
             my ($dev, $total, $used, $avail, $useper, $disk) = ($1, $2, $3, $4, $5, $6);
