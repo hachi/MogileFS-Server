@@ -14,7 +14,9 @@ Returns a new IOStatWatcher object.
 
 sub new {
     my ($class) = @_;
-    my $self = bless {}, $class;
+    my $self = bless {
+        hosts => {},
+    }, $class;
     $self->on_stats; # set an empty handler.
     return $self;
 }
@@ -32,13 +34,12 @@ disconnects will trigger an immediate reconnect.
 
 sub set_hosts {
     my ($self, @ips) = @_;
-    # TODO: start/remove new Danga::Socket-based client sockets to
-    # new/old @ips.
     my $old_hosts = $self->{hosts};
     my $new_hosts = {};
     foreach my $host (@ips) {
-        $new_hosts->{$host} = $old_hosts->{$host} || MogileFS::IOStatWatch::Client->new($host, $self);
+        $new_hosts->{$host} = (delete $old_hosts->{$host}) || MogileFS::IOStatWatch::Client->new($host, $self);
     }
+    # TODO: close hosts that were removed (things in %$old_hosts)
     $self->{hosts} = $new_hosts;
 }
 
