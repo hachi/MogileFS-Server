@@ -1,3 +1,5 @@
+        -- memcache support for get_paths (see doc/memcache-support.txt)
+
 2006-12/2007-01:  (2.00_05)
         -- everything converted to OO API internally.  old internal APIs removed.
 
