@@ -84,9 +84,11 @@ sub new_from_mogdbsetup {
     die "Failed to connect to database as regular user, even after creating it and setting up permissions as the root user.";
 }
 
+# given a root DBI connection, create the named database.  succeed
+# if it it's made, or already exists.  die otherwise.
 sub create_db_if_not_exists {
     my ($pkg, $rdbh, $dbname) = @_;
-    $rdbh->do("CREATE DATABASE $dbname")
+    $rdbh->do("CREATE DATABASE IF NOT EXISTS $dbname")
         or die "Failed to create database '$dbname': " . $rdbh->errstr . "\n";
 }
 
