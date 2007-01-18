@@ -232,6 +232,24 @@ sub server_setting {
 }
 
 
+my $memc;
+my $last_memc_server_fetch = 0;
+my $have_memc_module = eval "use Cache::Memcached; 1;";
+sub memcache_client {
+    return undef unless $have_memc_module;
+    $memc ||= Cache::Memcached->new;
+
+    # only reload the server list every 30 seconds
+    my $now = time();
+    return $memc if $last_memc_server_fetch > $now - 30;
+
+    my @servers = split(/\s*,\s*/, MogileFS::Config->server_setting("memcache_servers") || "");
+    $memc->set_servers(\@servers);
+    $last_memc_server_fetch = $now;
+
+    return $memc;
+}
+
 1;
 
 # Local Variables:

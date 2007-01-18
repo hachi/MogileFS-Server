@@ -795,10 +795,14 @@ sub cmd_get_paths {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    # TODO: overload meaning of 'noverify' to also mean "cachable with memcached", when we add
-    #       memcache support. then cache in memcached:
-    #              (dmid, dkey) -> fidid    (and invalidate this when key is replaced)
-    #              fidid -> [@devids]
+    # memcache mappings are as follows:
+    #  mogfid:<dmid>:<dkey> -> fidid     (and TODO: invalidate this when key is replaced)
+    #  mogdevids:<fidid>    -> \@devids
+
+    # if you specify 'noverify', that means a correct answer isn't needed and memcache can
+    # be used.
+    my $use_memc = $args->{noverify};
+    my $memc     = $use_memc ? MogileFS::Config->memcache_client : undef;
 
     # validate domain for plugins
     $args->{dmid} = $self->check_domain($args)
@@ -814,8 +818,23 @@ sub cmd_get_paths {
     my $key = $args->{key} or return $self->err_line("no_key");
 
     # get DB handle
-    my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
-        or return $self->err_line("unknown_key");
+    my $fid;
+    my $need_fid_in_memcache = 0;
+    my $mogfid_memkey = "mogfid:$args->{dmid}:$key";
+    if ($memc) {
+        if (my $fidid = $memc->get($mogfid_memkey)) {
+            $fid = MogileFS::FID->new($fidid);
+        } else {
+            $need_fid_in_memcache = 1;
+        }
+    }
+    unless ($fid) {
+        $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
+            or return $self->err_line("unknown_key");
+    }
+
+    # add to memcache, if needed.  for an hour.
+    $memc->add($mogfid_memkey, $fid->id, 3600) if $need_fid_in_memcache;
 
     my $dmap = MogileFS::Device->map;
 
@@ -825,8 +844,24 @@ sub cmd_get_paths {
 
     my @devices_with_weights;
 
+    # find devids that FID is on in memcache or db.
+    my @fid_devids;
+    my $need_devids_in_memcache = 0;
+    my $devid_memkey = "mogdevids:" . $fid->id;
+    if ($memc) {
+        if (my $list = $memc->get($devid_memkey)) {
+            @fid_devids = @$list;
+        } else {
+            $need_devids_in_memcache = 1;
+        }
+    }
+    unless (@fid_devids) {
+        @fid_devids = $fid->devids;
+        $memc->add($devid_memkey, \@fid_devids, 3600) if $need_devids_in_memcache;
+    }
+
     # is this fid still owned by this key?
-    foreach my $devid ($fid->devids) {
+    foreach my $devid (@fid_devids) {
         my $weight;
         my $dev = $dmap->{$devid};
 
@@ -1062,11 +1097,19 @@ sub cmd_checker {
     }
 
     if (defined $new_setting) {
-        MogileFS::Checker->set_server_setting('fsck_enable', $new_setting);
+        MogileFS::Config->set_server_setting('fsck_enable', $new_setting);
         return $self->ok_line;
     }
 
     $self->err_line('failure');
+}
+
+sub cmd_set_server_setting {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+    return $self->err_line("bad_params") unless $args->{key};
+    MogileFS::Config->set_server_setting($args->{key}, $args->{value});
+    return $self->ok_line;
 }
 
 sub cmd_do_monitor_round {
