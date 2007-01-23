@@ -225,6 +225,8 @@ sub start_disk_usage_process {
         return $child;
     }
 
+    local $SIG{TERM}; # Default behavior for SIGTERM now (die off)
+
     # else, we're the child..
     $0 = "mogstored [diskusage]";
     while (1) {
@@ -348,6 +350,8 @@ sub start_iostat_process {
         };
         return;
     }
+
+    local $SIG{TERM}; # Default behavior for SIGTERM now (die off)
 
     # (runs in child process)
     $0 = "mogstored [iostat]";
@@ -552,6 +556,12 @@ sub close {
     my SideChannelClient $self = shift;
     main::iostat_unsubscribe($self);
     $self->SUPER::close;
+}
+
+sub die_gracefully {
+    if ($$ == $parent_pid) {
+        kill 'TERM', grep { $_ } keys %on_death;
+    }
 }
 
 # Local Variables:
