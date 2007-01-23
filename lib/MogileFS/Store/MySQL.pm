@@ -58,9 +58,37 @@ sub can_insertignore { 1 }
 sub can_insert_multi { 1 }
 sub unix_timestamp { "UNIX_TIMESTAMP()" }
 
+sub filter_create_sql {
+    my ($self, $sql) = @_;
+    return $sql unless $self->fid_type eq "BIGINT";
+    $sql =~ s!\bfid\s+INT\b!fid BIGINT!i;
+    return $sql;
+}
+
 # --------------------------------------------------------------------------
 # Functions specific to Store::MySQL subclass.  Not in parent.
 # --------------------------------------------------------------------------
+
+sub fid_type {
+    my $self = shift;
+    return $self->{_fid_type} if $self->{_fid_type};
+
+    # let people force bigint mode with environment.
+    if ($ENV{MOG_FIDSIZE} && $ENV{MOG_FIDSIZE} eq "big") {
+        return $self->{_fid_type} = "BIGINT";
+    }
+
+    # else, check a maybe-existing table and see if we're in bigint
+    # mode already.
+    my $dbh = $self->dbh;
+    my $create = eval { $dbh->selectrow_array("SHOW CREATE TABLE file") };
+    if ($create && $create =~ /\bbigint\b/i) {
+        return $self->{_fid_type} = "BIGINT";
+    }
+
+    # else, use 32-bit ints for the fid type
+    return $self->{_fid_type} = "INT";
+}
 
 # attempt to grab a lock of lockname, and timeout after timeout seconds.
 # returns 1 on success and 0 on timeout
