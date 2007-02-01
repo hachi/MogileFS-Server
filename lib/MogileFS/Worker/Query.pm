@@ -829,8 +829,10 @@ sub cmd_get_paths {
         }
     }
     unless ($fid) {
-        $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
-            or return $self->err_line("unknown_key");
+        Mgd::get_store()->slaves_ok(sub {
+            $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key);
+        });
+        $fid or return $self->err_line("unknown_key");
     }
 
     # add to memcache, if needed.  for an hour.
@@ -856,7 +858,9 @@ sub cmd_get_paths {
         }
     }
     unless (@fid_devids) {
-        @fid_devids = $fid->devids;
+        Mgd::get_store()->slaves_ok(sub {
+            @fid_devids = $fid->devids;
+        });
         $memc->add($devid_memkey, \@fid_devids, 3600) if $need_devids_in_memcache;
     }
 

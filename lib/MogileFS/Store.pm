@@ -137,6 +137,36 @@ sub pass { $_[0]{pass} }
 sub init { 1 }
 sub post_dbi_connect { 1 }
 
+sub can_do_slaves { 0 }
+
+sub mark_as_slave {
+    die "Incapable of becoming slave.";
+}
+
+sub read_store {
+    my $self = shift;
+
+    return $self unless $self->can_do_slaves;
+
+    if ($self->{slaves_ok}) {
+        my $slave = $self->{slave};
+        return $slave if $slave;
+    }
+
+    return $self;
+}
+
+sub slaves_ok {
+    my $self = shift;
+    my $coderef = shift;
+
+    return unless ref $coderef eq 'CODE';
+
+    local $self->{slave_ok} = 1;
+
+    return $coderef->(@_);
+}
+
 sub recheck_dbh {
     my $self = shift;
     $self->{needs_ping} = 1;
