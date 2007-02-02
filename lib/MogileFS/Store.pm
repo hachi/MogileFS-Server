@@ -140,7 +140,44 @@ sub post_dbi_connect { 1 }
 sub can_do_slaves { 0 }
 
 sub mark_as_slave {
-    die "Incapable of becoming slave.";
+    my $self = shift;
+    die "Incapable of becoming slave." unless $self->can_do_slaves;
+
+    $self->{slave} = 1;
+}
+
+sub is_slave {
+    my $self = shift;
+    return $self->{slave};
+}
+
+sub slaves_list {
+    my $self = shift;
+    return [$self->{dsn}, $self->{user}, $self->{pass}];
+}
+
+sub get_slave {
+    my $self = shift;
+
+    die "Incapable of having slaves." unless $self->can_do_slaves;
+
+    return $self->{slave} if $self->check_slave;
+
+    my @slaves_list = $self->slaves_list;
+
+    # If we have no slaves, then return silently.
+    return unless @slaves_list;
+
+    foreach my $slave_fulldsn ($self->slaves_list) {
+        my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
+        $self->{slave_next_check} = 0;
+        $newslave->mark_as_slave;
+        return $newslave
+            if $self->check_slave;
+    }
+
+    warn "Slave list exhausted, failing back to master.";
+    return;
 }
 
 sub read_store {
@@ -148,8 +185,8 @@ sub read_store {
 
     return $self unless $self->can_do_slaves;
 
-    if ($self->{slaves_ok}) {
-        my $slave = $self->{slave};
+    if ($self->{slave_ok}) {
+        my $slave = $self->get_slave;
         return $slave if $slave;
     }
 

@@ -65,6 +65,27 @@ sub filter_create_sql {
     return $sql;
 }
 
+sub can_do_slaves { 1 }
+
+sub check_slave {
+    my $self = shift;
+
+    my $next_check = \$self->{slave_next_check};
+
+    if ($$next_check > time()) {
+        return 1;
+    }
+
+    # get master status on self
+    # get slave status on self->slave
+    # compare contrast, return 1 if okay.
+
+    # call time() again here because SQL blocks.
+    $$next_check = time() + 5;
+
+    return 1;
+}
+
 # --------------------------------------------------------------------------
 # Functions specific to Store::MySQL subclass.  Not in parent.
 # --------------------------------------------------------------------------

@@ -19,7 +19,7 @@ sub new {
 # quick port of old API.  perhaps not ideal.
 sub new_from_dmid_and_key {
     my ($class, $dmid, $key) = @_;
-    my $row = Mgd::get_store()->file_row_from_dmid_key($dmid, $key)
+    my $row = Mgd::get_store()->read_store->file_row_from_dmid_key($dmid, $key)
         or return undef;
     $row->{fidid}   = delete $row->{fid};
     $row->{_loaded} = 1;
@@ -123,7 +123,7 @@ sub rename {
 # returns array of devids that this fid is on
 sub devids {
     my $self = shift;
-    return Mgd::get_store()->fid_devids($self->id);
+    return Mgd::get_store()->read_store->fid_devids($self->id);
 }
 
 # return FID's class
