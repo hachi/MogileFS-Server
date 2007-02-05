@@ -28,6 +28,7 @@ sub init {
     my $self = shift;
     $self->SUPER::init;
     $self->{lock_depth} = 0;
+    $self->{slave_next_check} = 0;
 }
 
 sub post_dbi_connect {
@@ -69,6 +70,8 @@ sub can_do_slaves { 1 }
 
 sub check_slave {
     my $self = shift;
+
+    return 0 unless $self->{slave};
 
     my $next_check = \$self->{slave_next_check};
 

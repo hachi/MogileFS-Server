@@ -1116,6 +1116,15 @@ sub cmd_set_server_setting {
     return $self->ok_line;
 }
 
+sub cmd_server_setting {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+    my $key = $args->{key};
+    return $self->err_line("bad_params") unless $key;
+    my $value = MogileFS::Config->server_setting($key);
+    return $self->ok_line({key => $key, value => $value});
+}
+
 sub cmd_do_monitor_round {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;

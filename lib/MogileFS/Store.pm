@@ -151,9 +151,19 @@ sub is_slave {
     return $self->{slave};
 }
 
-sub slaves_list {
-    my $self = shift;
-    return [$self->{dsn}, $self->{user}, $self->{pass}];
+# Returns a list of arrayrefs, each being [$dsn, $username, $password] for connecting to a slave DB.
+sub _slaves_list {
+    my @slave_keys = split /,/, MogileFS::Config->server_setting('slave_keys');
+
+    my @return;
+
+    foreach my $key (@slave_keys) {
+        my $slave = MogileFS::Config->server_setting("slave_$key");
+        my ($dsn, $user, $pass) = split /\|/, $slave;
+        push @return, [$dsn, $user, $pass];
+    }
+
+    return @return;
 }
 
 sub get_slave {
@@ -163,12 +173,12 @@ sub get_slave {
 
     return $self->{slave} if $self->check_slave;
 
-    my @slaves_list = $self->slaves_list;
+    my @slaves_list = _slaves_list();
 
     # If we have no slaves, then return silently.
     return unless @slaves_list;
 
-    foreach my $slave_fulldsn ($self->slaves_list) {
+    foreach my $slave_fulldsn (@slaves_list) {
         my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
         $self->{slave_next_check} = 0;
         $newslave->mark_as_slave;
