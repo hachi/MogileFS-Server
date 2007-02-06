@@ -79,9 +79,15 @@ sub check_slave {
         return 1;
     }
 
-    # get master status on self
-    # get slave status on self->slave
-    # compare contrast, return 1 if okay.
+    my $master_status = eval { $self->dbh->selectrow_hashref("SHOW MASTER STATUS") };
+    warn "Error thrown: '$@' while trying to get master status." if $@;
+
+    my $slave_status = eval { $self->slave->dbh->selectrow_hashref("SHOW SLAVE STATUS") };
+    warn "Error thrown: '$@' while trying to get slave status." if $@;
+
+    # compare contrast, return 0 if not okay.
+    # Master: File Position
+    # Slave: 
 
     # call time() again here because SQL blocks.
     $$next_check = time() + 5;
@@ -183,6 +189,31 @@ sub _drop_mysql_db {
     _root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
 }
 
+# --------------------------------------------------------------------------
+# Database creation time things we override
+# --------------------------------------------------------------------------
+
+sub create_table {
+    my $self = shift;
+    my ($table) = @_;
+
+    my $dbh = $self->dbh;
+
+    unless ($ENV{USE_UNSAFE_MYSQL}) {
+        my $engines = $dbh->selectall_hashref("SHOW ENGINES", "Engine");
+        die "InnoDB backend is unavailable for use, force creation of tables " .
+            "by setting USE_UNSAFE_MYSQL=1 in your environment and run this " .
+            "command again." unless $engines->{InnoDB};
+    }
+
+    $self->SUPER::create_table(@_);
+
+    return if $ENV{USE_UNSAFE_MYSQL};
+
+    $dbh->do("ALTER TABLE $table TYPE=InnoDB");
+    warn "DBI reported an error of: '" . $dbh->errstr . "' when trying to " .
+         "alter table type of $table to InnoDB\n" if $dbh->err;
+}
 
 # --------------------------------------------------------------------------
 # Data-access things we override
