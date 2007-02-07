@@ -203,7 +203,8 @@ sub create_table {
         my $engines = $dbh->selectall_hashref("SHOW ENGINES", "Engine");
         die "InnoDB backend is unavailable for use, force creation of tables " .
             "by setting USE_UNSAFE_MYSQL=1 in your environment and run this " .
-            "command again." unless $engines->{InnoDB};
+            "command again."
+            unless ($engines->{InnoDB} and $engines->{InnoDB}->{Support} eq 'YES');
     }
 
     $self->SUPER::create_table(@_);
