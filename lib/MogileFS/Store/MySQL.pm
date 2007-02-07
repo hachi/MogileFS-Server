@@ -214,6 +214,11 @@ sub create_table {
     $dbh->do("ALTER TABLE $table TYPE=InnoDB");
     warn "DBI reported an error of: '" . $dbh->errstr . "' when trying to " .
          "alter table type of $table to InnoDB\n" if $dbh->err;
+
+    my $table_status = $dbh->selectrow_hashref("SHOW TABLE STATUS LIKE '$table'");
+
+    die "MySQL didn't change table type to InnoDB as requested.\n"
+        unless $table_status->{Engine} eq 'InnoDB';
 }
 
 # --------------------------------------------------------------------------
