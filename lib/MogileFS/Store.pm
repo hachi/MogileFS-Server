@@ -36,6 +36,8 @@ sub new_from_dsn_user_pass {
         user   => $user,
         pass   => $pass,
         raise_errors => $subclass->want_raise_errors,
+        slave_list_cachetime => 0,
+        slave_list_cache     => [],
     }, $subclass;
     $self->init;
     return $self;
@@ -153,6 +155,14 @@ sub is_slave {
 
 # Returns a list of arrayrefs, each being [$dsn, $username, $password] for connecting to a slave DB.
 sub _slaves_list {
+    my $self = shift;
+    my $now = time();
+
+    # only reload every 15 seconds.
+    if ($self->{slave_list_cachetime} > $now - 15) {
+        return @{$self->{slaves_list_cache}};
+    }
+
     my $sk = MogileFS::Config->server_setting('slave_keys')
         or return ();
 
@@ -163,6 +173,8 @@ sub _slaves_list {
         push @ret, [$dsn, $user, $pass];
     }
 
+    $self->{slave_list_cachetime} = $now;
+    $self->{slave_list_cache}     = \@ret;
     return @ret;
 }
 
@@ -173,7 +185,7 @@ sub get_slave {
 
     return $self->{slave} if $self->check_slave;
 
-    my @slaves_list = _slaves_list();
+    my @slaves_list = $self->_slaves_list;
 
     # If we have no slaves, then return silently.
     return unless @slaves_list;
