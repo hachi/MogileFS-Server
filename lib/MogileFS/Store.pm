@@ -153,17 +153,17 @@ sub is_slave {
 
 # Returns a list of arrayrefs, each being [$dsn, $username, $password] for connecting to a slave DB.
 sub _slaves_list {
-    my @slave_keys = split /,/, MogileFS::Config->server_setting('slave_keys');
+    my $sk = MogileFS::Config->server_setting('slave_keys')
+        or return ();
 
-    my @return;
-
-    foreach my $key (@slave_keys) {
+    my @ret;
+    foreach my $key (split /\s*,\s*/, $sk) {
         my $slave = MogileFS::Config->server_setting("slave_$key");
         my ($dsn, $user, $pass) = split /\|/, $slave;
-        push @return, [$dsn, $user, $pass];
+        push @ret, [$dsn, $user, $pass];
     }
 
-    return @return;
+    return @ret;
 }
 
 sub get_slave {
