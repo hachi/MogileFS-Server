@@ -1,3 +1,6 @@
+        -- command line/config file support for listening on specific IPs, also
+           support for listening on multiple IPs/ports
+
         -- memcache support for get_paths (see doc/memcache-support.txt)
 
 2006-12/2007-01:  (2.00_05)

@@ -107,25 +107,29 @@ sub run {
     };
     $SIG{PIPE} = 'IGNORE';  # catch them by hand
 
-    # setup server socket to listen for client connections
-    my $server = IO::Socket::INET->new(LocalPort => MogileFS->config('conf_port'),
-                                       Type      => SOCK_STREAM,
-                                       Proto     => 'tcp',
-                                       Blocking  => 0,
-                                       Reuse     => 1,
-                                       Listen    => 10 )
-        or die "Error creating socket: $@\n";
+    # setup server sockets to listen for client connections
+    my @servers;
+    foreach my $listen (@{ MogileFS->config('listen') }) {
+        my $server = IO::Socket::INET->new(LocalAddr => $listen,
+                                           Type      => SOCK_STREAM,
+                                           Proto     => 'tcp',
+                                           Blocking  => 0,
+                                           Reuse     => 1,
+                                           Listen    => 10 )
+            or die "Error creating socket: $@\n";
 
-    # setup Danga::Socket to start handling connections
-    Danga::Socket->OtherFds(fileno($server) => sub {
-        my $csock = $server->accept
-            or return;
-        MogileFS::Connection::Client->new($csock);
-    });
+        # save sub to accept a client
+        push @servers, $server;
+        Danga::Socket->AddOtherFds( fileno($server) => sub {
+                my $csock = $server->accept
+                    or return;
+                MogileFS::Connection::Client->new($csock);
+            } );
+    }
 
     MogileFS::ProcManager->push_pre_fork_cleanup(sub {
         # so children don't hold server connection open
-        close($server);
+        close($_) foreach @servers;
     });
 
     # setup the post event loop callback to spawn jobs, and the timeout
