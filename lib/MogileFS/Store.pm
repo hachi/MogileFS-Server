@@ -160,8 +160,10 @@ sub _slaves_list {
 
     # only reload every 15 seconds.
     if ($self->{slave_list_cachetime} > $now - 15) {
-        return @{$self->{slaves_list_cache}};
+        return @{$self->{slave_list_cache}};
     }
+    $self->{slave_list_cachetime} = $now;
+    $self->{slave_list_cache}     = [];
 
     my $sk = MogileFS::Config->server_setting('slave_keys')
         or return ();
@@ -173,7 +175,6 @@ sub _slaves_list {
         push @ret, [$dsn, $user, $pass];
     }
 
-    $self->{slave_list_cachetime} = $now;
     $self->{slave_list_cache}     = \@ret;
     return @ret;
 }
