@@ -141,6 +141,7 @@ sub PostEventLoopChecker {
             my $extra = $todie{$pid} ? "expected" : "UNEXPECTED";
             error("Child $pid ($job) died: $? ($extra)");
             MogileFS::ProcManager->NoteDeadChild($pid);
+            $jobconn->close;
 
             if (my $jobstat = $jobs{$job}) {
                 # if the pid is in %todie, then we have asked it to shut down
