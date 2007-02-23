@@ -319,6 +319,13 @@ sub insert_ignore {
 
 # --------------------------------------------------------------------------
 
+my @extra_tables;
+
+sub add_extra_tables {
+    my $class = shift;
+    push @extra_tables, @_;
+}
+
 sub setup_database {
     my $sto = shift;
 
@@ -345,7 +352,7 @@ sub setup_database {
                       unreachable_fids file_on file_on_corrupt host
                       device server_settings file_to_replicate
                       file_to_delete_later
-                      )) {
+                      ) @extra_tables) {
         $sto->create_table($t);
     }
 
