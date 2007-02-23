@@ -47,7 +47,8 @@ sub load {
         # ensure we got a valid seeming path and filename
         my ($path, $filename) =
             ($args->{logical_path} =~ m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!) ? ($1, $2) : (undef, undef);
-        return 0 unless $path && $filename;
+
+        return 0 unless defined($path) && length($path) && defined($filename) && length($filename);
 
         # great, let's vivify that path and get the node to it
         my $parentnodeid = MogileFS::Plugin::FilePaths::vivify_path( $args->{dmid}, $path );
