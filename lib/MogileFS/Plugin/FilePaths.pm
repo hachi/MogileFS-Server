@@ -107,28 +107,6 @@ sub load {
         return $self->ok_line( \%res );
     });
 
-    # now we want to ensure that the database is setup for us
-    # TODO: is there a better way to do this? a sort of mogpluginsetup command that
-    # maybe should be written?
-    my $dbh = Mgd::get_dbh()
-        or return 0;
-    my $ct = $dbh->selectrow_array('SELECT fid FROM plugin_filepaths_paths LIMIT 1');
-    if ($dbh->err) {
-        # okay, doesn't exist
-        $dbh->do(qq{
-                CREATE TABLE plugin_filepaths_paths (
-                    nodeid BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-                    dmid SMALLINT UNSIGNED NOT NULL,
-                    parentnodeid BIGINT UNSIGNED NOT NULL,
-                    nodename VARCHAR(255) BINARY NOT NULL,
-                    fid BIGINT UNSIGNED,
-                    PRIMARY KEY (nodeid),
-                    UNIQUE KEY (dmid, parentnodeid, nodename)
-                )
-            });
-        return 0 if $dbh->err;
-    }
-
     return 1;
 }
 
@@ -265,5 +243,25 @@ sub _path_to_key {
     $args->{key} = "fid:$fid";
     return 1;
 }
+
+
+package MogileFS::Store;
+
+use strict;
+use warnings;
+
+sub TABLE_plugin_filepaths_paths {
+    "CREATE TABLE plugin_filepaths_paths (
+        nodeid BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+        dmid SMALLINT UNSIGNED NOT NULL,
+        parentnodeid BIGINT UNSIGNED NOT NULL,
+        nodename VARCHAR(255) BINARY NOT NULL,
+        fid BIGINT UNSIGNED,
+        PRIMARY KEY (nodeid),
+        UNIQUE KEY (dmid, parentnodeid, nodename)
+)"
+}
+
+__PACKAGE__->add_extra_tables("plugin_filepaths_paths");
 
 1;
