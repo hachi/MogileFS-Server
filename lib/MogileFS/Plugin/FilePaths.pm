@@ -10,6 +10,8 @@ package MogileFS::Plugin::FilePaths;
 use strict;
 use warnings;
 
+use MogileFS::Worker::Query;
+
 # FIXME: need to add in the configuration options for domain only
 
 # called when this plugin is loaded, this sub must return a true value in order for
@@ -99,11 +101,18 @@ sub load {
         # get files in path, return as an array
         my %res;
         my $ct = 0;
-        my @files = MogileFS::Plugin::FilePaths::list_directory( $nodeid );
+        my @nodes = MogileFS::Plugin::FilePaths::list_directory( $dmid, $nodeid );
 
-        # FIXME: finish implementing :-)
+        foreach my $node (@nodes) {
+            my ($nodename, $fid) = @$node;
+            if ($fid) { # thjs object is a file
+                my $length = $self->dbh->selectrow_array("SELECT length FROM file WHERE fid=?", undef, $fid);
+                $res{$nodename} = "F:$length";
+            } else { # This is a directory
+                $res{$nodename} = "D";
+            }
+        }
 
-        # blah blah blah
         return $self->ok_line( \%res );
     });
 
@@ -219,6 +228,26 @@ sub get_file_mapping {
     return undef if $dbh->err;
     return undef unless $fid > 0;
     return $fid;
+}
+
+sub list_directory {
+    my ($dmid, $nodeid) = @_;
+
+    my $dbh = Mgd::get_dbh();
+    return undef unless $dbh;
+
+    my $sth = $dbh->prepare('SELECT nodename, fid FROM plugin_filepaths_paths ' .
+                            'WHERE dmid = ? AND parentnodeid = ?');
+
+    $sth->execute($dmid, $nodeid);
+
+    my @return;
+
+    while (my ($nodename, $fid) = $sth->fetchrow_array) {
+        push @return, [$nodename, $fid];
+    }
+
+    return @return;
 }
 
 # generic sub that converts a file path to a key name that
