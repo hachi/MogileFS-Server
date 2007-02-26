@@ -352,7 +352,7 @@ sub setup_database {
                       unreachable_fids file_on file_on_corrupt host
                       device server_settings file_to_replicate
                       file_to_delete_later
-                      ) @extra_tables) {
+                      ), @extra_tables) {
         $sto->create_table($t);
     }
 
