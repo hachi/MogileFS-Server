@@ -194,7 +194,7 @@ sub _find_node {
         $nodeid = $dbh->{mysql_insertid}+0;
     }
 
-    return undef unless $nodeid > 0;
+    return undef unless $nodeid && $nodeid > 0;
     return $nodeid;
 }
 
@@ -226,7 +226,7 @@ sub get_file_mapping {
                                     'WHERE dmid = ? AND parentnodeid = ? AND nodename = ?',
                                     undef, $dmid, $parentnodeid, $filename);
     return undef if $dbh->err;
-    return undef unless $fid > 0;
+    return undef unless $fid && $fid > 0;
     return $fid;
 }
 
