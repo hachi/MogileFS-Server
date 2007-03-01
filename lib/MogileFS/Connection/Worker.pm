@@ -60,6 +60,12 @@ sub event_read {
     }
 }
 
+sub event_write {
+    my $self = shift;
+    my $done = $self->write(undef);
+    $self->watch_write(0) if $done;
+}
+
 sub job {
     my MogileFS::Connection::Worker $self = shift;
     return $self->{job} unless @_;
