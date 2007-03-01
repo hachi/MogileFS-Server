@@ -164,6 +164,9 @@ sub new_temp {
     my $dbname = "tmp_mogiletest";
     _create_mysql_db($dbname);
 
+    # allow MyISAM in the test suite.
+    $ENV{USE_UNSAFE_MYSQL} = 1 unless defined $ENV{USE_UNSAFE_MYSQL};
+
     system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname")
         and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
 
@@ -198,13 +201,21 @@ sub create_table {
     my ($table) = @_;
 
     my $dbh = $self->dbh;
+    my $errmsg =
+        "InnoDB backend is unavailable for use, force creation of tables " .
+        "by setting USE_UNSAFE_MYSQL=1 in your environment and run this " .
+        "command again.";
 
     unless ($ENV{USE_UNSAFE_MYSQL}) {
-        my $engines = $dbh->selectall_hashref("SHOW ENGINES", "Engine");
-        die "InnoDB backend is unavailable for use, force creation of tables " .
-            "by setting USE_UNSAFE_MYSQL=1 in your environment and run this " .
-            "command again."
-            unless ($engines->{InnoDB} and $engines->{InnoDB}->{Support} eq 'YES');
+        my $engines = eval { $dbh->selectall_hashref("SHOW ENGINES", "Engine"); };
+        warn "error = [$@]\n";
+        if ($@ && $dbh->err == 1064) {
+            # syntax error?  for MySQL 4.0.x.
+            # who cares.  we'll catch it below on the double-check.
+        } else {
+            die $errmsg
+                unless ($engines->{InnoDB} and $engines->{InnoDB}->{Support} eq 'YES');
+        }
     }
 
     $self->SUPER::create_table(@_);
@@ -217,7 +228,7 @@ sub create_table {
 
     my $table_status = $dbh->selectrow_hashref("SHOW TABLE STATUS LIKE '$table'");
 
-    die "MySQL didn't change table type to InnoDB as requested.\n"
+    die "MySQL didn't change table type to InnoDB as requested.\n\n$errmsg"
         unless $table_status->{Engine} eq 'InnoDB';
 }
 
