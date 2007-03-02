@@ -659,8 +659,11 @@ sub NoteDeadWorkerConn {
     my MogileFS::Connection::Worker $worker = $_[1];
     return unless $worker;
 
+    my $fd = $worker->{fd};
+    return unless defined($fd);
+
     # if there's a mapping for this worker's fd, they had a job that didn't get done
-    if ($Mappings{$worker->{fd}}) {
+    if ($Mappings{$fd}) {
         # unshift, since this one already went through the queue once
         unshift @PendingQueries, $Mappings{$worker->{fd}};
         delete $Mappings{$worker->{fd}};
