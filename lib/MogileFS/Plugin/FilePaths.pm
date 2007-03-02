@@ -1,4 +1,5 @@
 # FilePaths plugin for MogileFS, by xb95
+
 #
 # This plugin enables full pathing support within MogileFS, for creating files,
 # listing files in a directory, deleting files, etc.
@@ -24,6 +25,7 @@ sub load {
     # only a path, and we want to ignore that for now
     MogileFS::register_global_hook( 'cmd_create_open', sub {
         my $args = shift;
+        return 1 unless _check_dmid($args->{dmid});
         delete $args->{key};
     });
 
@@ -31,6 +33,7 @@ sub load {
     # request a bit in order to do the right footwork to support paths.
     MogileFS::register_global_hook( 'cmd_create_close', sub {
         my $args = shift;
+        return 1 unless _check_dmid($args->{dmid});
 
         # the key is the path, so we need to move that into the logical_path argument
         # and then set the key to be something more reasonable
@@ -42,6 +45,7 @@ sub load {
     # a done deal, we don't have to worry about anything else
     MogileFS::register_global_hook( 'file_stored', sub {
         my $args = shift;
+        return 1 unless _check_dmid($args->{dmid});
 
         # we need a path or this plugin is moot
         return 0 unless $args->{logical_path};
@@ -75,7 +79,30 @@ sub load {
     # and now magic conversions that make the rest of the MogileFS commands work
     # without having to understand how the path system works
     MogileFS::register_global_hook( 'cmd_get_paths', \&_path_to_key );
-    MogileFS::register_global_hook( 'cmd_delete', \&_path_to_key );
+    MogileFS::register_global_hook( 'cmd_delete', sub {
+        my $args = shift;
+        return 1 unless _check_dmid($args->{dmid});
+
+        # ensure we got a valid seeming path and filename
+        my ($path, $filename) =
+            ($args->{key} =~ m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!) ? ($1, $2) : (undef, undef);
+        return 0 unless $path && $filename;
+
+        # now try to get the end of the path
+        my $parentnodeid = MogileFS::Plugin::FilePaths::load_path( $args->{dmid}, $path );
+        return 0 unless defined $parentnodeid;
+
+        # get the fid of the file, bail out if it doesn't have one (directory nodes)
+        my $fid = MogileFS::Plugin::FilePaths::get_file_mapping( $args->{dmid}, $parentnodeid, $filename );
+        return 0 unless $fid;
+
+        # great, delete this file
+        delete_file_mapping( $args->{dmid}, $parentnodeid, $filename );
+        # FIXME What should happen if this delete fails?
+
+        # now pretend they asked for it and continue
+        $args->{key} = "fid:$fid";
+    });
 
     # now let's define the extra plugin commands that we allow people to interact with us
     # just like with a regular MogileFS command
@@ -88,6 +115,9 @@ sub load {
         my $dmid = $self->check_domain($args)
             or return $self->err_line('domain_not_found');
 
+        return $self->err_line("plugin_not_active_for_domain")
+            unless _check_dmid($dmid);
+
         # verify arguments - only one expected, make sure it starts with a /
         my $path = $args->{arg1};
         return $self->err_line('bad_params')
@@ -96,17 +126,18 @@ sub load {
         # now find the id of the path
         my $nodeid = MogileFS::Plugin::FilePaths::load_path( $dmid, $path );
         return $self->err_line('path_not_found', 'Path provided was not found in database')
-            unless $nodeid;
+            unless defined $nodeid;
 
         # get files in path, return as an array
         my %res;
         my $ct = 0;
         my @nodes = MogileFS::Plugin::FilePaths::list_directory( $dmid, $nodeid );
+        my $dbh = Mgd::get_dbh();
 
         foreach my $node (@nodes) {
             my ($nodename, $fid) = @$node;
             if ($fid) { # thjs object is a file
-                my $length = $self->dbh->selectrow_array("SELECT length FROM file WHERE fid=?", undef, $fid);
+                my $length = $dbh->selectrow_array("SELECT length FROM file WHERE fid=?", undef, $fid);
                 $res{$nodename} = "F:$length";
             } else { # This is a directory
                 $res{$nodename} = "D";
@@ -230,6 +261,20 @@ sub get_file_mapping {
     return $fid;
 }
 
+sub delete_file_mapping {
+    my ($dmid, $parentnodeid, $filename,) = @_;
+    return undef unless $dmid && defined $parentnodeid && $filename;
+
+    my $dbh = Mgd::get_dbh();
+    return undef unless $dbh;
+
+    $dbh->do('DELETE FROM plugin_filepaths_paths WHERE dmid = ? AND parentnodeid = ? AND nodename = ?',
+             undef, $dmid, $parentnodeid, $filename);
+
+    return undef if $dbh->err;
+    return 1;
+}
+
 sub list_directory {
     my ($dmid, $nodeid) = @_;
 
@@ -273,6 +318,42 @@ sub _path_to_key {
     return 1;
 }
 
+my %active_dmids;
+my $last_dmid_check = 0;
+
+sub _check_dmid {
+    my $dmid = shift;
+
+    return unless defined $dmid;
+
+    my $time = time();
+    if ($time >= $last_dmid_check + 15) {
+        $last_dmid_check = $time;
+
+        unless (_load_dmids()) {
+            warn "Unable to load active domains list for filepaths plugin, using old list";
+        }
+    }
+
+    return $active_dmids{$dmid};
+}
+
+sub _load_dmids {
+    my $dbh = Mgd::get_dbh();
+    return undef unless $dbh;
+
+    my $sth = $dbh->prepare('SELECT dmid FROM plugin_filepaths_domains');
+    $sth->execute();
+
+    return undef if $sth->err;
+
+    %active_dmids = ();
+
+    while (my $dmid = $sth->fetchrow_array) {
+        $active_dmids{$dmid} = 1;
+    }
+    return 1;
+}
 
 package MogileFS::Store;
 
@@ -291,6 +372,13 @@ sub TABLE_plugin_filepaths_paths {
 )"
 }
 
-__PACKAGE__->add_extra_tables("plugin_filepaths_paths");
+sub TABLE_plugin_filepaths_domains {
+    "CREATE TABLE plugin_filepaths_domains (
+        dmid SMALLINT UNSIGNED NOT NULL,
+        PRIMARY KEY (dmid)
+)"
+}
+
+__PACKAGE__->add_extra_tables("plugin_filepaths_paths", "plugin_filepaths_domains");
 
 1;
