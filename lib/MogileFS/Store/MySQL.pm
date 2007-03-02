@@ -82,7 +82,7 @@ sub check_slave {
     my $master_status = eval { $self->dbh->selectrow_hashref("SHOW MASTER STATUS") };
     warn "Error thrown: '$@' while trying to get master status." if $@;
 
-    my $slave_status = eval { $self->slave->dbh->selectrow_hashref("SHOW SLAVE STATUS") };
+    my $slave_status = eval { $self->{slave}->dbh->selectrow_hashref("SHOW SLAVE STATUS") };
     warn "Error thrown: '$@' while trying to get slave status." if $@;
 
     # compare contrast, return 0 if not okay.
