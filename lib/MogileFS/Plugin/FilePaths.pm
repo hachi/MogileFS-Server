@@ -104,6 +104,46 @@ sub load {
         $args->{key} = "fid:$fid";
     });
 
+    MogileFS::register_worker_command( 'filepaths_enable', sub {
+        # get parameters
+        my MogileFS::Worker::Query $self = shift;
+        my $args = shift;
+
+        # verify domain firstly
+        my $dmid = $self->check_domain($args)
+            or return $self->err_line('domain_not_found');
+
+        my $dbh = Mgd::get_dbh();
+        return undef unless $dbh;
+
+        $dbh->do("REPLACE INTO plugin_filepaths_domains (dmid) VALUES (?)", undef, $dmid);
+
+        return $self->err_line('unable_to_enable', "Unable to enable the filepaths plugin: " . $dbh->errstr)
+            if $dbh->err;
+
+        return $self->ok_line;
+    });
+
+    MogileFS::register_worker_command( 'filepaths_disable', sub {
+        # get parameters
+        my MogileFS::Worker::Query $self = shift;
+        my $args = shift;
+
+        # verify domain firstly
+        my $dmid = $self->check_domain($args)
+            or return $self->err_line('domain_not_found');
+
+        my $dbh = Mgd::get_dbh();
+        return undef unless $dbh;
+
+        $dbh->do("DELETE FROM plugin_filepaths_domains WHERE dmid = ?", undef, $dmid);
+
+        return $self->err_line('unable_to_disable', "Unable to enable the filepaths plugin: " . $dbh->errstr)
+            if $dbh->err;
+
+        return $self->ok_line;
+    });
+
     # now let's define the extra plugin commands that we allow people to interact with us
     # just like with a regular MogileFS command
     MogileFS::register_worker_command( 'list_directory', sub {
