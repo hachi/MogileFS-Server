@@ -435,14 +435,15 @@ sub mog_sysid_map {
     }
 
     if (lc($^O) eq 'linux') {
-        my %name_to_number;
-        my %number_to_name;
+        # name_to_number and number_to_name are the data derived from /proc/partitions
+        my %name_to_number; # ( hda1 => 769,  ... )
+        my %number_to_name; # ( 769  => hda1, ... )
 
         if (open my $partitions, '<', '/proc/partitions') {
             <$partitions>; <$partitions>; # First two lines are for humans
             while (my $line = <$partitions>) {
-                my ($major, $minor, $devname) = $line =~
-                    m/^ \s* (\d+) \s+ (\d+) \s+ \d+ \s+ (\S+) \s* $/x;
+                next unless $line =~ m/^ \s* (\d+) \s+ (\d+) \s+ \d+ \s+ (\S+) \s* $/x;
+                my ($major, $minor, $devname) = ($1, $2, $3);
                 my $devno = ($major << 8) + $minor;
                 $name_to_number{$devname} = $devno;
                 $number_to_name{$devno} = $devname;
@@ -451,12 +452,19 @@ sub mog_sysid_map {
             warn "Unable to open /proc/partitions: $!";
         }
 
+        # Iterate over the hash { 1 => 768 } meaning (mogile device dev1 points to os device 768)
         foreach my $mogdevid (keys %$map) {
+            # Look up the original device number
             my $original = $map->{$mogdevid};
+
+            # See if there is a mapping to turn it into a device name (eg. hda1)
             my $devname = $number_to_name{$original} or next;
-            if (my ($new) = $devname =~ m/^([hs]d\w)\d+$/) {
-                next unless $name_to_number{$new};
-                $map->{$mogdevid} = $name_to_number{$new};
+
+            # Pull off the new device name with a regex
+            if (my ($newname) = $devname =~ m/^([hs]d\w)\d+$/) {
+                # Skip if we can't map it back to a device number
+                my $newnum = $name_to_number{$newname} or next;
+                $map->{$mogdevid} = $newnum;
             }
         }
     }
