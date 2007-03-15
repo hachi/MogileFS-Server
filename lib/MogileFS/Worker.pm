@@ -85,18 +85,22 @@ sub send_to_parent {
     my $write = "$_[0]\r\n";
     my $totallen = length $write;
     my $rv = syswrite($self->{psock}, $write);
-    return 1 if $rv == $totallen;
-    die "Error writing: $!" if $!;
+    return 1 if defined $rv && $rv == $totallen;
+    die "Error writing to parent process: $!" if $! && ! $!{EAGAIN};
 
+    $rv ||= 0;  # could've been undef, if EAGAIN immediately.
     my $remain = $totallen - $rv;
     my $offset = $rv;
-    my $rout = '';
-    vec($rout, fileno($self->{psock}), 1) = 1;
     while ($remain > 0) {
-        select(undef, $rout, undef, undef) or next;
+        MogileFS::Util::wait_for_writeability(fileno($self->{psock}), 30)
+            or die "Parent not writable in 30 seconds";
+
         $rv = syswrite($self->{psock}, $write, $remain, $offset);
-        $remain -= $rv;
-        $offset += $rv;
+        die "Error writing to parent process (in loop): $!" if $! && ! $!{EAGAIN};
+        if ($rv) {
+            $remain -= $rv;
+            $offset += $rv;
+        }
     }
     die "remain is negative:  $remain" if $remain < 0;
     return 1;
