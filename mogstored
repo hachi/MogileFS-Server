@@ -112,6 +112,11 @@ CREATE SERVICE mogstored
    SET min_put_directory = 1
    SET persist_client = 1
 ENABLE mogstored
+
+# don't listen... this is just a stub service.
+CREATE SERVICE mgmt
+   SET role = management
+ENABLE mgmt
 ";
 
 Perlbal::run_manage_commands($pb_conf, sub { print STDERR "$_[0]\n"; });
@@ -299,29 +304,7 @@ sub iostat_unsubscribe {
 }
 
 sub setup_sidechannel_listener {
-    # setup a new socket for handling size requests
-    my $server = IO::Socket::INET->new(LocalAddr => $mgmt_listen,
-                                       Type      => SOCK_STREAM,
-                                       Proto     => 'tcp',
-                                       Blocking  => 0,
-                                       Reuse     => 1,
-                                       Listen    => 10 )
-        or die "Error creating management socket: $@\n";
-
-    # in Perl 5.6, we weren't always seeing this turned off by IO::Socket
-    # so we have to do it manually here just to be sure.
-    IO::Handle::blocking($server, 0);
-
-    # accept handler for new workers
-    my $accept_handler = sub {
-        my $csock = $server->accept or return;
-        IO::Handle::blocking($csock, 0);
-        my $client = SideChannelClient->new($csock);
-        $client->watch_read(1);
-    };
-
-    # add to fd list so this one gets processed
-    Perlbal::Socket->AddOtherFds(fileno($server) => $accept_handler);
+    Mogstored::SideChannelListener->new($mgmt_listen);
 }
 
 my $iostat_read_buf = "";
@@ -505,11 +488,35 @@ sub aio_threads {
 }
 
 #############################################################################
+package Mogstored::SideChannelListener;
+use strict;
+use base 'Perlbal::TCPListener';
+
+sub new {
+    my ($class, $hostport) = @_;
+    # we don't _really_ need this, but TCPListener kinda does, to keep it from
+    # exploding/warning.  so we created this stub service above in our static
+    # config, just for this.
+    my $svc    = Perlbal->service("mgmt") or die "Where is mgmt service?";
+    return $class->SUPER::new($hostport, $svc);
+}
+
+sub event_read {
+    my $self = shift;
+    # accept as many connections as we can
+    while (my ($csock, $peeraddr) = $self->{sock}->accept) {
+        IO::Handle::blocking($csock, 0);
+        my $client = Mogstored::SideChannelClient->new($csock);
+        $client->watch_read(1);
+    }
+}
+
+#############################################################################
 ### simple package for handling the stream request port
-package SideChannelClient;
+package Mogstored::SideChannelClient;
 
 use strict;
-use base qw{Danga::Socket};
+use base qw{Perlbal::Socket};
 use fields (
             'count',      # how many requests we've serviced
             'read_buf',   # unprocessed read buffer
@@ -520,7 +527,7 @@ use fields (
 sub max_idle_time { return 0; }
 
 sub new {
-    my SideChannelClient $self = shift;
+    my Mogstored::SideChannelClient $self = shift;
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new(@_);
     $self->{count} = 0;
@@ -530,7 +537,7 @@ sub new {
 }
 
 sub event_read {
-    my SideChannelClient $self = shift;
+    my Mogstored::SideChannelClient $self = shift;
 
     my $bref = $self->read(1024);
     return $self->close unless defined $bref;
@@ -579,7 +586,7 @@ sub event_hup { $_[0]->close; }
 
 # as_string handler
 sub as_string {
-    my SideChannelClient $self = shift;
+    my Mogstored::SideChannelClient $self = shift;
 
     my $ret = $self->SUPER::as_string;
     $ret .= "; size_requests=$self->{count}";
@@ -588,7 +595,7 @@ sub as_string {
 }
 
 sub close {
-    my SideChannelClient $self = shift;
+    my Mogstored::SideChannelClient $self = shift;
     main::iostat_unsubscribe($self);
     $self->SUPER::close;
 }
