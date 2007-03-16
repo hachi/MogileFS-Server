@@ -40,6 +40,8 @@ mogautomount
 mogdbsetup
 mogilefsd
 mogstored
+mogstored-diskusage
+mogstored-iostat
 t/00-startup.t
 t/10-weighting.t
 t/domains-classes.t

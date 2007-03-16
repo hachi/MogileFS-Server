@@ -16,6 +16,7 @@ use IO::Socket::INET;
 use POSIX qw(ENOENT EACCES EBADF WNOHANG);
 use Fcntl qw(SEEK_CUR SEEK_SET SEEK_END O_RDWR O_CREAT O_TRUNC);
 use Perlbal 1.52;
+use FindBin qw($Bin $RealScript);
 
 # verify their Linux::AIO or IO::AIO works.  Perlbal 1.51 does this,
 # but just copying it here so people don't need to upgrade for this
@@ -58,8 +59,9 @@ BEGIN {
                 "       unless you set the environment variable MOGSTORED_RUN_WITHOUT_AIO=1\n");
         }
     }
-
 }
+
+my $selfexe = "$Bin/$RealScript";
 
 # State:
 my %on_death;             # pid -> subref (to run when pid dies)
@@ -141,11 +143,11 @@ if ($opt_daemonize) {
 
 # kill our children processes on exit:
 my $parent_pid = $$;
-$SIG{TERM} = sub {
-    if ($$ == $parent_pid) {
-        kill 9, grep { $_ } keys %on_death;
-        exit(0);
-    }
+
+$SIG{TERM} = $SIG{INT} = sub {
+    return unless $$ == $parent_pid; # don't let this be inherited
+    kill 'TERM', grep { $_ } keys %on_death;
+    exit(0);
 };
 
 setup_iostat_pipes();
@@ -230,65 +232,13 @@ sub start_disk_usage_process {
         return $child;
     }
 
-    local $SIG{TERM}; # Default behavior for SIGTERM now (die off)
+    $SIG{TERM} = 'DEFAULT'; # override custom one from earlier
 
-    # else, we're the child..
-    $0 = "mogstored [diskusage]";
-    while (1) {
-        look_at_disk_usage();
-        sleep 30;
-    }
-}
+    $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
 
-sub look_at_disk_usage {
-    my $err = sub { Perlbal::log('crit', $_[0]); 1; };
-    my $path = Perlbal->service('mogstored')->{docroot};
-    $path =~ s!/$!!;
-
-    # find all devices below us
-    my @devnum;
-    if (opendir(D, $path)) {
-        @devnum = grep { /^dev\d+$/ } readdir(D);
-        closedir(D);
-    } else {
-        return $err->("Failed to open $path: $!");
-    }
-
-    foreach my $devnum (@devnum) {
-        my $rval = `df -P -l -k $path/$devnum`;
-        my $uperK = ($rval =~ /512-blocks/i) ? 2 : 1; # units per kB
-        foreach my $l (split /\r?\n/, $rval) {
-            next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
-            my ($dev, $total, $used, $avail, $useper, $disk) = ($1, $2, $3, $4, $5, $6);
-
-            unless ($disk =~ m!$devnum/?$!) {
-                $disk = "$path/$devnum";
-            }
-
-            # create string to print
-            my $now = time;
-            my $output = {
-                time      => time(),
-                device    => $dev,    # /dev/sdh1
-                total     => int($total / $uperK), # integer: total KiB blocks
-                used      => int($used  / $uperK), # integer: used KiB blocks
-                available => int($avail / $uperK),  # integer: available KiB blocks
-                'use'     => $useper, # "45%"
-                disk      => $disk,   # mount point of disk (/var/mogdata/dev8), or path if not a mount
-            };
-
-            # open a file on that disk location called 'usage'
-            my $rv = open(FILE, ">$disk/usage");
-            unless ($rv) {
-                return $err->("Unable to open '$disk/usage' for writing: $!");
-                next;
-            }
-            foreach (sort keys %$output) {
-                print FILE "$_: $output->{$_}\n";
-            }
-            close FILE;
-        }
-    }
+    my $exe = $selfexe;
+    $exe =~ s/mogstored$/mogstored-diskusage/ or die "$0 not what we were expecting!";
+    exec $exe;
 }
 
 sub iostat_subscribe {
@@ -316,7 +266,6 @@ sub setup_iostat_pipes {
     Danga::Socket->AddOtherFds(fileno($iostat_pipe_r), sub {
         read_from_iostat_child();
     });
-
 }
 
 sub start_iostat_process {
@@ -334,11 +283,6 @@ sub start_iostat_process {
         return;
     }
 
-    local $SIG{TERM}; # Default behavior for SIGTERM now (die off)
-
-    # (runs in child process)
-    $0 = "mogstored [iostat]";
-
     close STDIN;
     close STDOUT;
     close STDERR;
@@ -348,110 +292,10 @@ sub start_iostat_process {
     open STDOUT, '>&', $iostat_pipe_w  or die "Couldn't dup pipe for use as STDOUT";
     open STDERR, '>', '/dev/null'      or die "Couldn't open STDOUT for writing to /dev/null";
 
-    select((select(STDOUT), $|++)[0]);
-
-    my $get_iostat_fh = sub {
-        while (1) {
-            if (open (my $fh, "iostat -dx 1 30|")) {
-                return $fh;
-            }
-            # TODO: try and find other paths to iostat
-            warn "Failed to open iostat: $!\n"; # this will just go to /dev/null, but will be straceable
-            sleep 10;
-        }
-    };
-
-    while (1) {
-        my $iofh = $get_iostat_fh->();
-        my $mog_sysid = mog_sysid_map();  # 5 (mogdevid) -> 2340 (os devid)
-        my $dev_sysid = {};  # hashref, populated lazily:  { /dev/sdg => system dev_t }
-        my %devt_util;  # dev_t => 52.55
-        my $init = 0;
-        while (<$iofh>) {
-            if (m/^Device:/) {
-                %devt_util = ();
-                $init = 1;
-                next;
-            }
-            next unless $init;
-            if (m/^ (\S+) .*? ([\d.]+) \n/x) {
-                my ($devnode, $util) = ("/dev/$1", $2);
-                unless (exists $dev_sysid->{$devnode}) {
-                    $dev_sysid->{$devnode} = (stat($devnode))[6]; # rdev
-                }
-                my $devt = $dev_sysid->{$devnode};
-                $devt_util{$devt} = $util;
-                next;
-            }
-            # blank line is the end.
-            if (m!^\s*\n!) {
-                $init = 0;
-                my $ret = "";
-                foreach my $mogdevid (sort { $a <=> $b } keys %$mog_sysid) {
-                    my $devt = $mog_sysid->{$mogdevid};
-                    my $ut = defined $devt_util{$devt} ? $devt_util{$devt} : "-";
-                    $ret .= "$mogdevid\t$ut\n";
-                }
-                $ret .= ".\n";
-                print $ret;
-                next;
-            }
-        }
-    }
-}
-
-# (runs in iostat child process)
-#  returns hashref of { 5 => dev_t device }  # mog_devid -> os_devid
-sub mog_sysid_map {
-    my $path = Perlbal->service('mogstored')->{docroot};
-    $path =~ s!/$!!;
-
-    # find all devices below us
-    my @devnum;  # integer ids
-    opendir(my $d, $path) or die "Failed to open docroot: $path: $!";
-    @devnum = map { /^dev(\d+)$/ ? $1 : () } readdir($d);
-
-    my $map = {};
-    foreach my $mogdevid (@devnum) {
-        my ($osdevid) = (stat("$path/dev$mogdevid"))[0];
-        $map->{$mogdevid} = $osdevid;
-    }
-
-    if (lc($^O) eq 'linux') {
-        # name_to_number and number_to_name are the data derived from /proc/partitions
-        my %name_to_number; # ( hda1 => 769,  ... )
-        my %number_to_name; # ( 769  => hda1, ... )
-
-        if (open my $partitions, '<', '/proc/partitions') {
-            <$partitions>; <$partitions>; # First two lines are for humans
-            while (my $line = <$partitions>) {
-                next unless $line =~ m/^ \s* (\d+) \s+ (\d+) \s+ \d+ \s+ (\S+) \s* $/x;
-                my ($major, $minor, $devname) = ($1, $2, $3);
-                my $devno = ($major << 8) + $minor;
-                $name_to_number{$devname} = $devno;
-                $number_to_name{$devno} = $devname;
-            }
-        } else {
-            warn "Unable to open /proc/partitions: $!";
-        }
-
-        # Iterate over the hash { 1 => 768 } meaning (mogile device dev1 points to os device 768)
-        foreach my $mogdevid (keys %$map) {
-            # Look up the original device number
-            my $original = $map->{$mogdevid};
-
-            # See if there is a mapping to turn it into a device name (eg. hda1)
-            my $devname = $number_to_name{$original} or next;
-
-            # Pull off the new device name with a regex
-            if (my ($newname) = $devname =~ m/^([hs]d\w)\d+$/) {
-                # Skip if we can't map it back to a device number
-                my $newnum = $name_to_number{$newname} or next;
-                $map->{$mogdevid} = $newnum;
-            }
-        }
-    }
-    return $map;
+    $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
+    my $exe = $selfexe;
+    $exe =~ s/mogstored$/mogstored-iostat/ or die "$0 not what we were expecting!";
+    exec $exe;
 }
 
 # (runs in parent event-loop process)

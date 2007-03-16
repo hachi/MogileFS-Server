@@ -1,3 +1,10 @@
+2007-03-16:
+        * make child processes be exec'ed (as as their own scripts, not inhertting
+          Perlbal, Linux::AIO/IO::AIO, etc baggage).  so they don't own listening
+          sockets, pipes to child workers, signal handlers, etc.  just a lot
+          cleaner now, and SIGTERM, SIGINT properly shut everything down now,
+          both in foreground and as daemon
+
 2007-03-15:
         * this changelog is totally neglected.  :/  see svn log.
 
