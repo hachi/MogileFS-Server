@@ -138,7 +138,10 @@ sub check_device {
 
     my ($used, $total) = ($stats{used}, $stats{total});
     unless ($used && $total) {
-        error("dev$devid reports used = $used, total = $total, error?");
+        $used  = "<undef>" unless defined $used;
+        $total = "<undef>" unless defined $total;
+        my $clen = length($data || "");
+        error("dev$devid reports used = $used, total = $total, content-length: $clen, error?");
         return;
     }
 
