@@ -147,7 +147,7 @@ my $parent_pid = $$;
 $SIG{TERM} = $SIG{INT} = sub {
     return unless $$ == $parent_pid; # don't let this be inherited
     kill 'TERM', grep { $_ } keys %on_death;
-    exit(0);
+    POSIX::_exit(0);
 };
 
 setup_iostat_pipes();
