@@ -447,8 +447,12 @@ sub HandleQueryWorkerResponse {
     }
 
     # now, if it doesn't match
-    unless ($id eq "$worker->{pid}-$worker->{reqid}") {
-        Mgd::error("Worker responded with id $id, expected $worker->{pid}-$worker->{reqid}, killing");
+    unless ($id && $id eq "$worker->{pid}-$worker->{reqid}") {
+        $id   = "<undef>" unless defined $id;
+        $line = "<undef>" unless defined $line;
+        $line =~ s/\n/\\n/g;
+        $line =~ s/\r/\\r/g;
+        Mgd::error("Worker responded with id $id (line: [$line]), but expected id $worker->{pid}-$worker->{reqid}, killing");
         $client->close('worker_mismatch');
         return MogileFS::ProcManager->AskWorkerToDie($worker);
     }
