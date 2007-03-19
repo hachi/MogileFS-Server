@@ -1,3 +1,6 @@
+2007-03-19:
+        * use XS HTTPHeaders by default, unless disabled with environment variable
+
 2007-03-16:
         * make child processes be exec'ed (as as their own scripts, not inhertting
           Perlbal, Linux::AIO/IO::AIO, etc baggage).  so they don't own listening

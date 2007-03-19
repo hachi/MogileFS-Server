@@ -101,8 +101,14 @@ Perlbal::AIO::set_file_to_chan_hook(sub {
     return "dev$1";
 });
 
+my $xs_conf = "";
+if (eval "use Perlbal::XS::HTTPHeaders (); 1") {
+    $xs_conf .= "xs enable headers\n" unless defined $ENV{PERLBAL_XS_HEADERS} && ! $ENV{PERLBAL_XS_HEADERS};
+}
+
 # this is the perlbal configuration only.  not the mogstored configuration.
 my $pb_conf = "
+$xs_conf
 SERVER max_connections = $max_conns
 CREATE SERVICE mogstored
    SET role = web_server
@@ -478,6 +484,18 @@ Brad Fitzpatrick E<lt>brad@danga.comE<gt>
 Mark Smith E<lt>junior@danga.comE<gt>
 
 Jonathan Steinert E<lt>jsteinert@sixapart.comE<gt>
+
+=head1 ENVIRONMENT
+
+=over 4
+
+=item PERLBAL_XS_HEADERS
+
+If defined and 0, Perlbal::XS::HTTPHeaders will not be used, if
+present.  Otherwise, it will be enabled by default, if installed and
+loadable.
+
+=back
 
 =head1 COPYRIGHT
 
