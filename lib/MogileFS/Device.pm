@@ -440,7 +440,7 @@ sub overview_hashref {
     $dev->_load;
 
     my $ret = {};
-    foreach my $k (qw(devid hostid status weight
+    foreach my $k (qw(devid hostid status weight observed_state
                       mb_total mb_used mb_asof mb_free utilization)) {
         $ret->{$k} = $dev->{$k};
     }
