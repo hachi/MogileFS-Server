@@ -89,13 +89,14 @@ sub process_line {
     # set global variables for zone determination
     local $MogileFS::REQ_client_ip = $client_ip;
 
+    $self->{querystarttime} = Time::HiRes::gettimeofday();
+
     # fallback to normal command handling
     if ($line =~ /^(\w+)\s*(.*)/) {
         my ($cmd, $args) = ($1, $2);
         $cmd = lc($cmd);
 
         no strict 'refs';
-        $self->{querystarttime} = Time::HiRes::gettimeofday();
         my $cmd_handler = *{"cmd_$cmd"}{CODE};
         if ($cmd_handler) {
             my $args = decode_url_args(\$args);
