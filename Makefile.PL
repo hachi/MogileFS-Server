@@ -11,8 +11,8 @@
 
 use ExtUtils::MakeMaker;
 
-my $exefiles = ["mogstored", "mogilefsd", "mogdbsetup", "mogautomount"];
-$exefiles = ["mogstored"] if exists $ENV{DANGABUILD_MOGSTOREDONLY};
+my $exefiles = ["mogstored", "mogstored-iostat", "mogstored-diskusage", "mogilefsd", "mogdbsetup", "mogautomount"];
+$exefiles = ["mogstored", "mogstored-iostat", "mogstored-diskusage"] if exists $ENV{DANGABUILD_MOGSTOREDONLY};
 $exefiles = ["mogilefsd"] if exists $ENV{DANGABUILD_MOGILEFSDONLY};
 
 WriteMakefile(
