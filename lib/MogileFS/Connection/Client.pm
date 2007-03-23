@@ -140,6 +140,10 @@ sub handle_admin_command {
         # show the most recent N queries
         push @out, MogileFS::ProcManager->RecentQueries;
 
+    } elsif ($cmd =~ /^version/) {
+        # show the most recent N queries
+        push @out, $MogileFS::Server::VERSION;
+
     } else {
         MogileFS::ProcManager->SendHelp($self, $args);
     }

@@ -513,6 +513,7 @@ sub SendHelp {
     $client->write(<<HELP);
 Mogilefsd admin commands:
 
+    !version    Server version
     !recent     Recently executed queries and how long they took.
     !queue      Queries that are pending execution.
     !stats      General stats on what we\'re up to.
@@ -521,6 +522,7 @@ Mogilefsd admin commands:
     !shutdown   Immediately kill all of mogilefsd.
 
     !replication
+                (Deprecated/old)
                 See the replication status for unreplicated files.
                 Output format:
                 <domain> <class> <devcount> <files>
