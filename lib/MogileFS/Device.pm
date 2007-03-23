@@ -385,7 +385,7 @@ sub create_directory {
         return 1;
     }
 
-    return 0 unless $ans =~ m!^HTTP/1.[01] 2\d\d!;
+    return 0 unless $ans && $ans =~ m!^HTTP/1.[01] 2\d\d!;
 
     my $now = time();
     $dir_made{$uri} = $now;
