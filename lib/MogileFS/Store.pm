@@ -335,7 +335,7 @@ sub setup_database {
 
     my $latestver = SCHEMA_VERSION;
     if ($curver == $latestver) {
-        status("Schema already up-to-date at version $curver.");
+        $sto->status("Schema already up-to-date at version $curver.");
         return 1;
     }
 
@@ -344,7 +344,7 @@ sub setup_database {
     }
 
     if ($curver) {
-        confirm("Install/upgrade your schema from version $curver to version $latestver?");
+        $sto->confirm("Install/upgrade your schema from version $curver to version $latestver?");
     }
 
     foreach my $t (qw(
