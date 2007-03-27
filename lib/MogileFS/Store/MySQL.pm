@@ -208,13 +208,13 @@ sub create_table {
 
     unless ($ENV{USE_UNSAFE_MYSQL}) {
         my $engines = eval { $dbh->selectall_hashref("SHOW ENGINES", "Engine"); };
-        warn "error = [$@]\n";
         if ($@ && $dbh->err == 1064) {
             # syntax error?  for MySQL 4.0.x.
             # who cares.  we'll catch it below on the double-check.
         } else {
             die $errmsg
-                unless ($engines->{InnoDB} and $engines->{InnoDB}->{Support} eq 'YES');
+                unless ($engines->{InnoDB} and
+                        $engines->{InnoDB}->{Support} =~ m/^(YES|DEFAULT)$/i);
         }
     }
 
