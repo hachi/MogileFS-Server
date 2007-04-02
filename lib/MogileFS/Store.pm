@@ -331,6 +331,7 @@ sub setup_database {
 
     # schema history:
     #   7: adds file_to_delete_later table
+    #   6: adds file_to_replicate table
     my $curver = $sto->schema_version;
 
     my $latestver = SCHEMA_VERSION;
