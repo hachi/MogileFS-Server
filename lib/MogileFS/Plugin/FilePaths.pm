@@ -340,17 +340,20 @@ sub list_directory {
 sub _path_to_key {
     my $args = shift;
 
+    my $dmid = $args->{dmid};
+    return 1 unless _check_dmid($dmid);
+
     # ensure we got a valid seeming path and filename
     my ($path, $filename) =
         ($args->{key} =~ m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!) ? ($1, $2) : (undef, undef);
     return 0 unless $path && $filename;
 
     # now try to get the end of the path
-    my $parentnodeid = MogileFS::Plugin::FilePaths::load_path( $args->{dmid}, $path );
+    my $parentnodeid = MogileFS::Plugin::FilePaths::load_path( $dmid, $path );
     return 0 unless defined $parentnodeid;
 
     # great, find this file
-    my $fid = MogileFS::Plugin::FilePaths::get_file_mapping( $args->{dmid}, $parentnodeid, $filename );
+    my $fid = MogileFS::Plugin::FilePaths::get_file_mapping( $dmid, $parentnodeid, $filename );
     return 0 unless defined $fid && $fid > 0;
 
     # now pretend they asked for it and continue
