@@ -18,6 +18,7 @@ my $opt_verbose = 0;
 my $opt_yes = 0;
 my $opt_noschemabump;
 my $dbtype = "MySQL";
+my $plugins;
 
 usage()
     unless GetOptions(
@@ -32,6 +33,7 @@ usage()
                       "yes"              => \$opt_yes,
                       "noschemabump"     => \$opt_noschemabump,
                       "type=s"           => \$dbtype,
+                      "plugins=s"        => \$plugins,
                       );
 
 usage() if $opt_help;
@@ -73,6 +75,10 @@ USAGE
 
 my $sclass = "MogileFS::Store::$dbtype";
 eval "use $sclass; 1;" or die "Failed to load $sclass: $@";
+
+foreach my $plugin (split /\s*,\s*/, $plugins) {
+    eval "use MogileFS::Plugin::$plugin; 1;" or die "Failed to load plugin $plugin: $@";
+}
 
 confirm("This will attempt to setup or upgrade your MogileFS database.\nIt won't destroy existing data.\nRun with --help for more information.  Run with --yes to shut up these prompts.\n\nContinue?", 0);
 

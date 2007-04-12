@@ -197,7 +197,10 @@ sub cmd_create_open {
         or return $self->err_line('domain_not_found');
 
     # first, pass this to a hook to do any manipulations needed
-    MogileFS::run_global_hook('cmd_create_open', $args);
+    eval {MogileFS::run_global_hook('cmd_create_open', $args)};
+
+    return $self->err_line("plugin_aborted", "$@")
+        if $@;
 
     # validate parameters
     my $dmid = $args->{dmid};

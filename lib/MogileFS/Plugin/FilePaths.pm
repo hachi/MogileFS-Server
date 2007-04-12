@@ -12,13 +12,21 @@ use strict;
 use warnings;
 
 use MogileFS::Worker::Query;
-
-# FIXME: need to add in the configuration options for domain only
+use MogileFS::Plugin::MetaData;
 
 # called when this plugin is loaded, this sub must return a true value in order for
 # MogileFS to consider the plugin to have loaded successfully.  if you return a
 # non-true value, you MUST NOT install any handlers or other changes to the system.
 # if you install something here, you MUST uninstall it in the unload sub.
+
+sub _parse_path {
+    my $fullpath = shift;
+    return unless defined($fullpath) and length($fullpath);
+    my ($path, $file) = $fullpath =~
+        m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!;
+    return ($path, $file);
+}
+
 sub load {
 
     # we want to remove the key being passed to create_open, as it is going to contain
@@ -26,7 +34,11 @@ sub load {
     MogileFS::register_global_hook( 'cmd_create_open', sub {
         my $args = shift;
         return 1 unless _check_dmid($args->{dmid});
-        delete $args->{key};
+
+        my $fullpath = delete $args->{key};
+        my ($path, $filename) = _parse_path($fullpath);
+        return 0 unless defined($path) && length($path) && defined($filename) && length($filename);
+        return 1;
     });
 
     # when people try to create new files, we need to intercept it and rewrite the
@@ -51,9 +63,7 @@ sub load {
         return 0 unless $args->{logical_path};
 
         # ensure we got a valid seeming path and filename
-        my ($path, $filename) =
-            ($args->{logical_path} =~ m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!) ? ($1, $2) : (undef, undef);
-
+        my ($path, $filename) = _parse_path($args->{logical_path});
         return 0 unless defined($path) && length($path) && defined($filename) && length($filename);
 
         # great, let's vivify that path and get the node to it
@@ -68,9 +78,22 @@ sub load {
             $dbh->do("REPLACE INTO file_to_delete SET fid=?", undef, $oldfid);
         }
 
+        my $fid = $args->{fid};
+
         # and now, setup the mapping
-        my $nodeid = MogileFS::Plugin::FilePaths::set_file_mapping( $args->{dmid}, $parentnodeid, $filename, $args->{fid} );
+        my $nodeid = MogileFS::Plugin::FilePaths::set_file_mapping( $args->{dmid}, $parentnodeid, $filename, $fid );
         return 0 unless $nodeid;
+
+        if (my $keys = $args->{"plugin.meta.keys"}) {
+            my %metadata;
+            for (my $i = 0; $i < $keys; $i++) {
+                my $key = $args->{"plugin.meta.key$i"};
+                my $value = $args->{"plugin.meta.value$i"};
+                $metadata{$key} = $value;
+            }
+
+            MogileFS::Plugin::MetaData::set_metadata($fid, \%metadata);
+        }
 
         # we're successful, let's keep the file
         return 1;
@@ -84,9 +107,8 @@ sub load {
         return 1 unless _check_dmid($args->{dmid});
 
         # ensure we got a valid seeming path and filename
-        my ($path, $filename) =
-            ($args->{key} =~ m!^(/(?:[\w\-\.]+/)*)([\w\-\.]+)$!) ? ($1, $2) : (undef, undef);
-        return 0 unless $path && $filename;
+        my ($path, $filename) = _parse_path($args->{key});
+        return 0 unless defined($path) && length($path) && defined($filename) && length($filename);
 
         # now try to get the end of the path
         my $parentnodeid = MogileFS::Plugin::FilePaths::load_path( $args->{dmid}, $path );
@@ -146,7 +168,7 @@ sub load {
 
     # now let's define the extra plugin commands that we allow people to interact with us
     # just like with a regular MogileFS command
-    MogileFS::register_worker_command( 'list_directory', sub {
+    MogileFS::register_worker_command( 'filepaths_list_directory', sub {
         # get parameters
         my MogileFS::Worker::Query $self = shift;
         my $args = shift;
@@ -168,19 +190,33 @@ sub load {
         return $self->err_line('path_not_found', 'Path provided was not found in database')
             unless defined $nodeid;
 
+#       TODO This is wrong, but we should throw an error saying 'not a directory'. Requires refactoring
+#            a bit of code to make the 'fid' value available from the last node we fetched.
+#        if (get_file_mapping($nodeid)) {
+#            return $self->err_line('not_a_directory', 'Path provided is not a directory');
+#        }
+
         # get files in path, return as an array
         my %res;
         my $ct = 0;
         my @nodes = MogileFS::Plugin::FilePaths::list_directory( $dmid, $nodeid );
         my $dbh = Mgd::get_dbh();
 
-        foreach my $node (@nodes) {
-            my ($nodename, $fid) = @$node;
-            if ($fid) { # thjs object is a file
+        my $node_count = $res{'files'} = scalar @nodes;
+
+        for(my $i = 0; $i < $node_count; $i++) {
+            my ($nodename, $fid) = @{$nodes[$i]};
+            my $prefix = "file$i";
+            $res{$prefix} = $nodename;
+
+            if ($fid) { # This file is a regular file
+                $res{"$prefix.type"} = "F";
                 my $length = $dbh->selectrow_array("SELECT length FROM file WHERE fid=?", undef, $fid);
-                $res{$nodename} = "F:$length";
-            } else { # This is a directory
-                $res{$nodename} = "D";
+                $res{"$prefix.size"} = $length if defined($length);
+                my $metadata = MogileFS::Plugin::MetaData::get_metadata($fid);
+                $res{"$prefix.mtime"} = $metadata->{mtime} if $metadata->{mtime};
+            } else {    # This file is a directory
+                $res{"$prefix.type"} = "D";
             }
         }
 
@@ -399,6 +435,8 @@ sub _load_dmids {
 }
 
 package MogileFS::Store;
+
+use MogileFS::Store;
 
 use strict;
 use warnings;

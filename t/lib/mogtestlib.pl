@@ -30,6 +30,7 @@ sub temp_store {
 
 sub create_temp_tracker {
     my $sto = shift;
+    my $opts = shift || [];
 
     my $pid = fork();
     my $whoami = `whoami`;
@@ -50,7 +51,9 @@ sub create_temp_tracker {
              "--workers=2",
              "--dsn=" . $sto->dsn,
              "--dbuser=" . $sto->user,
-             "--dbpass=" . $sto->pass);
+             "--dbpass=" . $sto->pass,
+             @$opts,
+             );
     }
 
     for (1..3) {

@@ -304,6 +304,52 @@ sub start_iostat_process {
     exec $exe;
 }
 
+# (runs in iostat child process)
+#  returns hashref of { 5 => dev_t device }  # mog_devid -> os_devid
+sub mog_sysid_map {
+    my $path = Perlbal->service('mogstored')->{docroot};
+    $path =~ s!/$!!;
+
+    # find all devices below us
+    my @devnum;  # integer ids
+    opendir(my $d, $path) or die "Failed to open docroot: $path: $!";
+    @devnum = map { /^dev(\d+)$/ ? $1 : () } readdir($d);
+
+    my $map = {};
+    foreach my $mogdevid (@devnum) {
+        my ($osdevid) = (stat("$path/dev$mogdevid"))[0];
+        $map->{$mogdevid} = $osdevid;
+    }
+
+    if (lc($^O) eq 'linux') {
+        my %name_to_number;
+        my %number_to_name;
+
+        if (open my $partitions, '<', '/proc/partitions') {
+            <$partitions>; <$partitions>; # First two lines are for humans
+            while (my $line = <$partitions>) {
+                my ($major, $minor, $devname) = $line =~
+                    m/^ \s* (\d+) \s+ (\d+) \s+ \d+ \s+ (\S+) \s* $/x;
+                my $devno = ($major << 8) + $minor;
+                $name_to_number{$devname} = $devno;
+                $number_to_name{$devno} = $devname;
+            }
+        } else {
+            warn "Unable to open /proc/partitions: $!";
+        }
+
+        foreach my $mogdevid (keys %$map) {
+            my $original = $map->{$mogdevid};
+            my $devname = $number_to_name{$original} or next;
+            if (my ($new) = $devname =~ m/^([hs]d\w)\d+$/) {
+                next unless $name_to_number{$new};
+                $map->{$mogdevid} = $name_to_number{$new};
+            }
+        }
+    }
+    return $map;
+}
+
 # (runs in parent event-loop process)
 sub read_from_iostat_child {
     my $data;
