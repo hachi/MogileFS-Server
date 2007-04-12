@@ -37,7 +37,8 @@ sub load {
 
         my $fullpath = delete $args->{key};
         my ($path, $filename) = _parse_path($fullpath);
-        return 0 unless defined($path) && length($path) && defined($filename) && length($filename);
+        die "Filename is not a valid absolute path."
+            unless defined($path) && length($path) && defined($filename) && length($filename);
         return 1;
     });
 
