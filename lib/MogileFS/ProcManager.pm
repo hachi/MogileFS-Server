@@ -85,7 +85,7 @@ sub set_min_workers {
 sub job_to_class_suffix {
     my ($class, $job) = @_;
     return {
-        checker     => "Checker",
+        fsck        => "Fsck",
         queryworker => "Query",
         delete      => "Delete",
         replicate   => "Replicate",

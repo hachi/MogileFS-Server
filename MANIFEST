@@ -29,7 +29,6 @@ lib/MogileFS/Store/SQLite.pm
 lib/MogileFS/Sys.pm
 lib/MogileFS/Util.pm
 lib/MogileFS/Worker.pm
-lib/MogileFS/Worker/Checker.pm
 lib/MogileFS/Worker/Delete.pm
 lib/MogileFS/Worker/Fsck.pm
 lib/MogileFS/Worker/Monitor.pm
