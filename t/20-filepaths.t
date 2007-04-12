@@ -25,6 +25,9 @@ require 't/lib/mogtestlib.pl';
 # add file,
 # etc
 
+plan skip_all => "Filepaths plugin has been seperated from the server, a bit of work is needed to make the tests run again.";
+exit 0;
+
 my $sto = eval { temp_store(); };
 if ($sto) {
     plan tests => 19;

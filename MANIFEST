@@ -20,7 +20,6 @@ lib/MogileFS/HTTPFile.pm
 lib/MogileFS/Host.pm
 lib/MogileFS/IOStatWatcher.pm
 lib/MogileFS/Overview.pm
-lib/MogileFS/Plugin/FilePaths.pm
 lib/MogileFS/ProcManager.pm
 lib/MogileFS/ReplicationPolicy/MultipleHosts.pm
 lib/MogileFS/Server.pm

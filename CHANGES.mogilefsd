@@ -1,3 +1,8 @@
+        -- Split Plugin::MetaData and Plugin::FilePaths into their own distrobutions.
+
+        -- Fix mogdbsetup to not ask empty questions.
+
+?: (?)
         -- command line/config file support for listening on specific IPs, also
            support for listening on multiple IPs/ports
 
