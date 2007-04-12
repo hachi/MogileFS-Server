@@ -725,7 +725,7 @@ sub send_to_all_children {
 
 sub send_monitor_has_run {
     my $child = shift;
-    for my $type (qw(replicate checker queryworker delete)) {
+    for my $type (qw(replicate fsck queryworker delete)) {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":monitor_has_run", $child);
     }
 }

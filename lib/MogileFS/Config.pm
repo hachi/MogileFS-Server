@@ -4,6 +4,7 @@ require Exporter;
 use MogileFS::ProcManager;
 use Getopt::Long;
 use MogileFS::Store;
+use Sys::Hostname ();
 
 our @ISA = qw(Exporter);
 our @EXPORT = qw($DEBUG config set_config);
@@ -57,7 +58,6 @@ our (
     $replicate_jobs,
     $reaper_jobs,
     $monitor_jobs,
-    $checker_jobs,
     $mog_root,
     $min_free_space,
     $max_disk_age,
@@ -148,7 +148,6 @@ sub load_config {
     $replicate_jobs = choose_value( 'replicate_jobs', 1 );
     $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
     $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
-    $checker_jobs   = choose_value( 'checker_jobs', 1 );
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
     $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0 );
@@ -265,6 +264,10 @@ sub memcache_client {
     $last_memc_server_fetch = $now;
 
     return $memc;
+}
+
+sub hostname {
+    return Sys::Hostname::hostname();
 }
 
 1;

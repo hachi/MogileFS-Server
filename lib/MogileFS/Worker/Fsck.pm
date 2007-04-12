@@ -21,121 +21,48 @@ sub work {
     my %retvals;
     my ($run_count, $total_time, $total_done) = (0, 0, 0);
 
-    every(15.0, sub {
+    my $my_host = MogileFS::Config->hostname;
+
+    every(5.0, sub {
         my $sleep_set = shift;
 
         $self->parent_ping;
 
-        # see if we're even enabled
-        my $setting = MogileFS::Config->server_setting('fsck_enable');
-        return unless defined $setting && $setting ne 'off' && is_valid_level($setting);
+        # see if we're even enabled for this host.
+        my $fhost = MogileFS::Config->server_setting('fsck_host') || "";
+        warn "fhost = [$fhost], we are: [$my_host]\n";
+        return unless $fhost eq $my_host;
 
         # checking doesn't go well if the monitor job hasn't actively started
         # marking things as being available
         unless ($self->monitor_has_run) {
             # only warn on runs after the first.  gives the monitor job some time to work
             # before we throw a message.
-            if ($run_count++ > 0) {
-                error("waiting for monitor job to complete a cycle before beginning checking");
-            }
+            error("waiting for monitor job to complete a cycle before beginning checking")
+                if $run_count++ > 0;
             return;
         }
 
-        # get dbh and create table if not exist
-        $self->validate_dbh;
-        my $dbh = $self->get_dbh or return;
-        $dbh->do(qq{
-            CREATE TABLE IF NOT EXISTS fsck (
-                fid         INT UNSIGNED NOT NULL PRIMARY KEY,
-                nextcheck   INT UNSIGNED NOT NULL,
-                INDEX (nextcheck)
-            )
-        });
+        my $sto = Mgd::get_store();
 
-        # main processing loop
-        while (1) {
-            # select a group of fids to work on from the fsck table
-            my $fids = $dbh->selectcol_arrayref("SELECT fid FROM fsck WHERE nextcheck < UNIX_TIMESTAMP() " .
-                                                "ORDER BY nextcheck LIMIT 1000");
-            return error("database error: " . $dbh->errstr) if $dbh->err;
-            $self->still_alive;
-
-            # if nothing to do, we're done
-            last unless $fids && @$fids;
-
-            # iterate randomly
-            foreach my $fid (List::Util::shuffle(@$fids)) {
-                # try to check this fid
-                my $t1 = Time::HiRes::time();
-                my $rv = check_fid($dbh, $fid, $setting) || 0;
-                my $elapsed = Time::HiRes::time() - $t1;
-                $self->still_alive;
-
-                # process the return value to do something
-                if ($rv == SUCCESS) {
-                    $dbh->do("DELETE FROM fsck WHERE fid = ?", undef, $fid);
-
-                } elsif ($rv == TEMPORARY) {
-                    # temporary means - try again in 5-10 minutes
-                    $dbh->do("UPDATE fsck SET nextcheck = UNIX_TIMESTAMP() + ? WHERE fid = ?",
-                             undef, int((rand()*300)+300), $fid);
-
-                } elsif ($rv == PERMANENT) {
-                    # FIXME: should probably do something more than this here?
-                    $dbh->do("DELETE FROM fsck WHERE fid = ?", undef, $fid);
-
-                } elsif ($rv == REPLICATE) {
-                    # FIXME: use nexttry = 1?  fromdevid should be specified as a known good, too.  flags
-                    # should probably be set for something?  not sure yet.
-                    $dbh->do("INSERT INTO file_to_replicate (fid, nexttry, fromdevid, failcount, flags) " .
-                             "VALUES (?, 1, NULL, 0, 0)", undef, $fid);
-                    $dbh->do("DELETE FROM fsck WHERE fid = ?", undef, $fid);
-                }
-
-                # store the stats now
-                $total_time += $elapsed;
-                $total_done++;
-                $retvals{$rv}++;
-
-                # dump some stats every 20 fids
-                if ($total_done % 20 == 0) {
-                    my $avg_time = $total_time / $total_done;
-                    my $fids_sec = 1 / $avg_time;
-                    error(sprintf('status: done=%d, seconds/fid=%0.2f, fids/second=%0.2f, retvals: %s',
-                                  $total_done, $avg_time, $fids_sec, join(', ', map { "$_=$retvals{$_}" } sort keys %retvals)));
-                }
-            }
-        }
-
-        # if we fell out, there are no more fids, so let's grab a chunk and throw them
-        # into the database to work on next
         my $highest_fid = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-        my $total_already = $dbh->selectrow_array('SELECT COUNT(*) FROM fsck WHERE nextcheck < UNIX_TIMESTAMP()') || 0;
-        my $limit = 10_000 - $total_already;  # but only up to $limit items
-
-        # now extract some files and re-insert them, but only if we need more
-        print "limit=$limit, highest=$highest_fid, total=$total_already\n";
-        if ($limit > 0) {
-            my $rv = $dbh->do(qq{
-                INSERT IGNORE INTO fsck (fid, nextcheck)
-                    SELECT fid, 0 FROM file WHERE fid > ? ORDER BY fid LIMIT $limit
-            }, undef, $highest_fid);
-            return error("database error fetching new rows: " . $dbh->errstr) if $dbh->err;
-
-            # this value will usually be correct, but it could be zero/undef already
-            # if another process races us to it and deletes them all.  which is why
-            # in the next step, we take the max of this and our old window position
-            # plus the number of rows we inserted (which makes the window always make
-            # some progress in the case of a race, never resetting forever to zero)
-            my $max_fsck_fid = $dbh->selectrow_array('SELECT MAX(fid) FROM fsck');
-            my $min_progress = $highest_fid + $rv;
-
-            # the race buster:  (keeps window moving in race described above)
-            my $new_max      = $max_fsck_fid > $min_progress ? $max_fsck_fid : $min_progress;
-
-            MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $new_max || 0);
-            $sleep_set->(0); # don't sleep in next round.
+        my @fids_to_check = $sto->get_fidids_above($highest_fid, 1000);
+        unless (@fids_to_check) {
+            warn "[fsck] no fids to check...\n";
+            return;
         }
+
+        warn "[fsck] fids=$fids_to_check[0] ~ $fids_to_check[-1]\n";
+        my $new_max;
+        foreach my $fidid (@fids_to_check) {
+            $self->still_alive;
+            $new_max = $fidid;
+        }
+
+        warn "[fsck] new_max = $new_max\n";
+        MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $new_max) if $new_max;
+
+        $sleep_set->(0); # don't sleep in next round.
     });
 }
 
