@@ -19,7 +19,7 @@ WriteMakefile(
     NAME                    => 'mogilefs-server',
     VERSION_FROM            => 'lib/MogileFS/Server.pm',
     AUTHOR                  => 'Brad Fitzpatrick <brad@danga.com>',
-    ABSTRACT                => 'MogileFS server components',
+    ABSTRACT_FROM           => 'lib/MogileFS/Server.pm',
     EXE_FILES               => $exefiles,
     PREREQ_PM               => {
         'Danga::Socket'    => '1.56',
