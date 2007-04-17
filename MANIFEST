@@ -43,6 +43,7 @@ mogstored-diskusage
 mogstored-iostat
 t/00-startup.t
 t/10-weighting.t
+t/20-filepaths.t
 t/domains-classes.t
 t/hosts-devices.t
 t/lib/mogtestlib.pl
