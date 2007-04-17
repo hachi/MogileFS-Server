@@ -1,3 +1,4 @@
+.shipit
 makedocs.pl
 \bCVS\b
 ^MANIFEST\.

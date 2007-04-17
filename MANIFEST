@@ -1,6 +1,4 @@
 CHANGES
-CHANGES.mogilefsd
-CHANGES.mogstored
 MANIFEST
 META.yml			Module meta-data (added by MakeMaker)
 Makefile.PL
