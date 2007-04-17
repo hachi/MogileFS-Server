@@ -25,13 +25,13 @@ sub work {
 
     every(5.0, sub {
         my $sleep_set = shift;
-
         $self->parent_ping;
 
         # see if we're even enabled for this host.
         my $fhost = MogileFS::Config->server_setting('fsck_host') || "";
-        warn "fhost = [$fhost], we are: [$my_host]\n";
         return unless $fhost eq $my_host;
+
+        warn "[fsck] Running...\n";
 
         # checking doesn't go well if the monitor job hasn't actively started
         # marking things as being available

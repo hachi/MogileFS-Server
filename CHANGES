@@ -1,3 +1,19 @@
+2007-04-17: Release version 2.08
+
+        * (no runtime-visible changes from 2.07)
+
+        * mogilefsd: remove incomplete "Checker" worker, replace with
+          incomplete "Fsck" worker.
+
+        * test cleanup/robustness improvements.  properly skips testing when
+          testin deps not found.  but searches harder for them now, too.
+          tests run under "make disttest".
+
+        * packaging cleanups, released using ShipIt.
+
+
+2007-03/04:
+
         * mogilefsd: Split Plugin::MetaData and Plugin::FilePaths into their own distributions.
 
         * mogilefsd: Fix mogdbsetup to not ask empty questions.
