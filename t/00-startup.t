@@ -8,13 +8,8 @@ use FindBin qw($Bin);
 use MogileFS::Server;
 use MogileFS::Util qw(error_code);
 
-use lib "$Bin/../../api/perl/lib";
-BEGIN {
-    $ENV{PERL5LIB} = "$Bin/../../api/perl/lib" . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
-}
-use MogileFS::Client;
-
 require 't/lib/mogtestlib.pl';
+find_mogclient_or_skip();
 
 # use mogadm to init it,
 # mogstored on temp dir,

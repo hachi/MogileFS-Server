@@ -6,6 +6,35 @@ use FindBin qw($Bin);
 use IO::Socket::INET;
 use MogileFS::Server;
 
+sub find_mogclient_or_skip {
+
+    # needed for running "make test" from project root directory, with
+    # full svn 'mogilefs' repo checked out, without installing
+    # MogileFS::Client to normal system locations...
+    #
+    # then, second path is when running "make disttest", which is another
+    # directory below.
+    foreach my $dir ("$Bin/../../api/perl/MogileFS-Client/lib",
+                     "$Bin/../../../api/perl/MogileFS-Client/lib",
+                     ) {
+        next unless -d $dir;
+        unshift @INC, $dir;
+        $ENV{PERL5LIB} = $dir . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
+    }
+
+    unless (eval "use MogileFS::Client; 1") {
+        warn "Can't find MogileFS::Client: $@\n";
+        Test::More::plan('skip_all' => "Can't find MogileFS::Client library, necessary for testing.");
+    }
+
+    unless (eval { TrackerHandle::_mogadm_exe() }) {
+        warn "Can't find mogadm utility.\n";
+        Test::More::plan('skip_all' => "Can't find mogadm executable, necessary for testing.");
+    }
+
+    return 1;
+}
+
 sub temp_store {
     my $type = $ENV{MOGTEST_DBTYPE};
 
@@ -121,13 +150,22 @@ sub ipport {
     return "127.0.0.1:7001";
 }
 
+my $_mogadm_exe_cache;
+sub _mogadm_exe {
+    return $_mogadm_exe_cache if $_mogadm_exe_cache;
+    foreach my $exe ("$FindBin::Bin/../../utils/mogadm",
+                     "$FindBin::Bin/../../../utils/mogadm",
+                     "/usr/bin/mogadm",
+                     "/usr/sbin/mogadm",
+                     ) {
+        return $_mogadm_exe_cache = $exe if -x $exe;
+    }
+    die "mogadm executable not found.\n";
+}
+
 sub mogadm {
     my $self = shift;
-    my @args = @_;
-    unshift @args, "$FindBin::Bin/../../utils/mogadm", "--trackers=" . $self->ipport;
-#    use Data::Dumper;
-#    print Dumper(\@args);
-    my $rv = system(@args);
+    my $rv = system(_mogadm_exe(), "--trackers=" . $self->ipport, @_);
     return !$rv;
 }
 

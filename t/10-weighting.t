@@ -8,16 +8,14 @@ use Time::HiRes qw(sleep);
 
 use MogileFS::Server;
 
-use lib "$Bin/../../api/perl/lib";
 BEGIN {
-    $ENV{PERL5LIB} = "$Bin/../../api/perl/lib" . ($ENV{PERL5LIB} ? ":$ENV{PERL5LIB}" : "");
     $ENV{TESTING} = 1;
     $ENV{T_FAKE_IO_DEV1} = 95; # Simulating high device load (should get fewer requests).
     $ENV{T_FAKE_IO_DEV2} = 5;  # Simulating low device load (shoudld get more requests).
 }
-use MogileFS::Client;
 
 require 't/lib/mogtestlib.pl';
+find_mogclient_or_skip();
 
 # create temp mysql db,
 # use mogadm to init it,
