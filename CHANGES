@@ -1,3 +1,6 @@
+        * work on filesystem check worker (Fsck).  off by default, unless
+          it's enabled via protocol. (WORK IN PROGRESS)
+
 2007-04-17: Release version 2.08
 
         * (no runtime-visible changes from 2.07)

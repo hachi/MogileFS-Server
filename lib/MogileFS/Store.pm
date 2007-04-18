@@ -7,7 +7,9 @@ use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
-use constant SCHEMA_VERSION => 7;
+#
+# 8: adds fsck_log table
+use constant SCHEMA_VERSION => 8;
 
 sub new {
     my ($class) = @_;
@@ -352,7 +354,7 @@ sub setup_database {
                       domain class file tempfile file_to_delete
                       unreachable_fids file_on file_on_corrupt host
                       device server_settings file_to_replicate
-                      file_to_delete_later
+                      file_to_delete_later fsck_log
                       ), @extra_tables) {
         $sto->create_table($t);
     }
@@ -582,6 +584,16 @@ sub TABLE_file_to_delete_later {
 )"
 }
 
+sub TABLE_fsck_log {
+    "CREATE TABLE fsck_log (
+utime  INT UNSIGNED NOT NULL,
+fid    INT UNSIGNED NULL,
+err    CHAR(4),
+devid  MEDIUMINT UNSIGNED,
+INDEX(utime)
+)"
+}
+
 # these five only necessary for MySQL, since no other database existed
 # before, so they can just create the tables correctly to begin with.
 # in the future, there might be new alters that non-MySQL databases
@@ -794,6 +806,19 @@ sub fid_devids {
     my ($self, $fidid) = @_;
     return @{ $self->dbh->selectcol_arrayref("SELECT devid FROM file_on WHERE fid=?",
                                              undef, $fidid) || [] };
+}
+
+# return hashref of { $fidid => [ $devid, $devid... ] } for a bunch of given @fidids
+sub fid_devids_multiple {
+    my ($self, @fidids) = @_;
+    my $in = join(",", map { $_+0 } @fidids);
+    my $ret = {};
+    my $sth = $self->dbh->prepare("SELECT fid, devid FROM file_on WHERE fid IN ($in)");
+    $sth->execute;
+    while (my ($fidid, $devid) = $sth->fetchrow_array) {
+        push @{$ret->{$fidid} ||= []}, $devid;
+    }
+    return $ret;
 }
 
 # return hashref of columns classid, dmid, dkey, given a $fidid, or return undef
@@ -1180,10 +1205,18 @@ sub enqueue_fids_to_delete {
         or die "file_to_delete insert failed";
 }
 
+# clears everything from the fsck_log table
+# return 1 on success.  die otherwise.
+sub clear_fsck_log {
+    my $self = shift;
+    $self->dbh->do("DELETE FROM fsck_log");
+    return 1;
+}
+
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
-sub pre_daemonize_checks {
-}
+sub pre_daemonize_checks { }
+
 
 1;
 

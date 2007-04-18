@@ -3,6 +3,7 @@ package MogileFS::Worker::Fsck;
 use strict;
 use base 'MogileFS::Worker';
 use fields (
+            'last_stop_check',  # unixtime 'should_stop_running' last called
             );
 use MogileFS::Util qw(every error);
 use List::Util ();
@@ -18,18 +19,14 @@ sub watchdog_timeout { 30 }
 sub work {
     my $self = shift;
 
-    my %retvals;
-    my ($run_count, $total_time, $total_done) = (0, 0, 0);
-
-    my $my_host = MogileFS::Config->hostname;
+    my $run_count = 0;
 
     every(5.0, sub {
         my $sleep_set = shift;
         $self->parent_ping;
 
         # see if we're even enabled for this host.
-        my $fhost = MogileFS::Config->server_setting('fsck_host') || "";
-        return unless $fhost eq $my_host;
+        return unless $self->should_be_running;
 
         warn "[fsck] Running...\n";
 
@@ -43,20 +40,23 @@ sub work {
             return;
         }
 
-        my $sto = Mgd::get_store();
+        my $sto       = Mgd::get_store();
+        my $max_check = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
+        my @fidids    = $sto->get_fidids_above($max_check, 100);
 
-        my $highest_fid = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-        my @fids_to_check = $sto->get_fidids_above($highest_fid, 1000);
-        unless (@fids_to_check) {
+        unless (@fidids) {
             warn "[fsck] no fids to check...\n";
             return;
         }
 
-        warn "[fsck] fids=$fids_to_check[0] ~ $fids_to_check[-1]\n";
+        warn "[fsck] fids=$fidids[0] ~ $fidids[-1]\n";
+
         my $new_max;
-        foreach my $fidid (@fids_to_check) {
+        foreach my $fid (MogileFS::FID->mass_load_with_devids(@fidids)) {
             $self->still_alive;
-            $new_max = $fidid;
+            last if $self->should_stop_running;
+            last unless $self->check_fid($fid);
+            $new_max = $fid->id;
         }
 
         warn "[fsck] new_max = $new_max\n";
@@ -66,38 +66,43 @@ sub work {
     });
 }
 
-# this sub actually does the checking of a fid.  we put it in its own sub so we can
-# return from it using the unlock coderef.  always returns a number:
-#
-#   0 - file is just fine, drop it from the list
-#   1 - temporary failure, check again later
-#   2 - permanent failure, this file shouldn't get tried again
-#   3 - needs replication, we found something not quite right
-#
+# this version is accurate,
+sub should_be_running {
+    my $self = shift;
+    my $fhost = MogileFS::Config->server_setting('fsck_host')
+        or return;
+    return $fhost eq MogileFS::Config->hostname;
+}
+
+# this version is sloppy, optimized for speed.  only checks db every 5 seconds.
+sub should_stop_running {
+    my $self = shift;
+    my $now  = time();
+    return 0 if $now < ($self->{last_stop_check} || 0) + 5;
+    $self->{last_stop_check} = $now;
+    return ! $self->should_be_running;
+}
+
+# given a $fid (MogileFS::FID, with pre-populated ->devids data)
+# return 0 if reachability problems.
+# return 1 if fid was checked (regardless of there being problems or not)
+#   if no problems, no action.
+#   if problems, log & enqueue fixes
 sub check_fid {
-    my ($dbh, $fid, $level) = @_;
+    my ($self, $fid) = @_;
+    # FIXME: we need fast access to $fid->class too, not just id and devids...
+    # so need that in the query too from store?  but no join.  so we need
+    # the query that finds fids to check to return that back too, not just
+    # the id...
+    printf("FID %d is on: %s\n", $fid->id, join(",", $fid->devids));
+    return 1;
+}
 
-    # unlocker sub to be used
-    my $lockname = "mgfs:fid:$fid:check";
-    my $retunlock = sub {
-        my $rv = shift()+0;
+1;
 
-        # 0 means success, else some sort of failure
-        if ($rv) {
-            my $msg = shift() || "no error text";
-            my $rvtype = {
-                1 => 'temporary failure',
-                2 => 'permanent failure',
-                3 => 'needs replication',
-            }->{$rv} || 'unknown error';
-            error("check_fid($fid, $level) = $rvtype: $msg");
-        }
+__END__
+Old stuff...
 
-        $dbh->do("SELECT RELEASE_LOCK(?)", undef, $lockname);
-        return $rv;
-    };
-
-    # try to get the lock
     my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 1)", undef, $lockname);
     return $retunlock->(TEMPORARY, "failed getting lock $lockname") unless $lock;
 

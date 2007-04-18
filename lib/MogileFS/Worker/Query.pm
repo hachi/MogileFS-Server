@@ -1137,6 +1137,50 @@ sub cmd_do_monitor_round {
     return $self->ok_line;
 }
 
+sub cmd_fsck_start {
+    my MogileFS::Worker::Query $self = shift;
+    my $sto = Mgd::get_store();
+    $sto->set_server_setting("fsck_host", MogileFS::Config->hostname);
+    # TODO: ping fsck process to wake up sooner?  otherwise will be ~5 second latency
+    return $self->ok_line;
+}
+
+sub cmd_fsck_stop {
+    my MogileFS::Worker::Query $self = shift;
+    my $sto = Mgd::get_store();
+    $sto->set_server_setting("fsck_host", undef);
+    # TODO: ping fsck process to stop sooner?  otherwise will be ~5 second latency
+    return $self->ok_line;
+}
+
+sub cmd_fsck_reset {
+    my MogileFS::Worker::Query $self = shift;
+    my $sto = Mgd::get_store();
+    $sto->set_server_setting("fsck_highest_fid_checked", "0");
+    return $self->ok_line;
+}
+
+sub cmd_fsck_clearlog {
+    my MogileFS::Worker::Query $self = shift;
+    my $sto = Mgd::get_store();
+    $sto->clear_fsck_log;
+    return $self->ok_line;
+}
+
+sub cmd_fsck_getlog {
+    my MogileFS::Worker::Query $self = shift;
+    my $sto = Mgd::get_store();
+    die "FIXME TODO";
+    return $self->ok_line;
+}
+
+sub cmd_fsck_status {
+    my MogileFS::Worker::Query $self = shift;
+    my $sto = Mgd::get_store();
+    die "FIXME TODO";
+    return $self->ok_line;
+}
+
 sub ok_line {
     my MogileFS::Worker::Query $self = shift;
 

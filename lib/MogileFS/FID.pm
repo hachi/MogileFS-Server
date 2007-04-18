@@ -26,6 +26,21 @@ sub new_from_dmid_and_key {
     return bless $row, $class;
 }
 
+# returns a bunch of ::FID objects with the devids pre-populated.
+# (for the fsck worker, which doesn't want to do many database
+# round-trips)
+sub mass_load_with_devids {
+    my ($class, @fidids) = @_;
+    my $sto = Mgd::get_store();
+    my $locs = $sto->fid_devids_multiple(@fidids);
+    my @ret;
+    foreach my $fidid (@fidids) {
+        my $fo = $class->new($fidid);
+        $fo->{_devids} = $locs->{$fidid} || [];
+        push @ret, $fo;
+    }
+    return @ret;
+}
 # --------------------------------------------------------------------------
 
 sub exists {
@@ -123,6 +138,12 @@ sub rename {
 # returns array of devids that this fid is on
 sub devids {
     my $self = shift;
+
+    # if it was mass-loaded and stored in _devids arrayref, use
+    # that instead of going to db...
+    return @{$self->{_devids}} if $self->{_devids};
+
+    # else get it from the database
     return Mgd::get_store()->read_store->fid_devids($self->id);
 }
 

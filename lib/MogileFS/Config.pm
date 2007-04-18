@@ -266,8 +266,9 @@ sub memcache_client {
     return $memc;
 }
 
+my $cache_hostname;
 sub hostname {
-    return Sys::Hostname::hostname();
+    return $cache_hostname ||= Sys::Hostname::hostname();
 }
 
 1;
