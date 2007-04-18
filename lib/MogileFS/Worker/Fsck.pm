@@ -42,17 +42,18 @@ sub work {
 
         my $sto       = Mgd::get_store();
         my $max_check = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-        my @fidids    = $sto->get_fidids_above($max_check, 100);
+        my @fids      = $sto->get_fids_above_id($max_check, 100);
 
-        unless (@fidids) {
+        unless (@fids) {
             warn "[fsck] no fids to check...\n";
             return;
         }
 
-        warn "[fsck] fids=$fidids[0] ~ $fidids[-1]\n";
+        warn("[fsck] fids=" . $fids[0]->id . " ~ " . $fids[-1]->id . "\n");
+        MogileFS::FID->mass_load_devids(@fids);
 
         my $new_max;
-        foreach my $fid (MogileFS::FID->mass_load_with_devids(@fidids)) {
+        foreach my $fid (@fids) {
             $self->still_alive;
             last if $self->should_stop_running;
             last unless $self->check_fid($fid);
@@ -90,11 +91,12 @@ sub should_stop_running {
 #   if problems, log & enqueue fixes
 sub check_fid {
     my ($self, $fid) = @_;
-    # FIXME: we need fast access to $fid->class too, not just id and devids...
-    # so need that in the query too from store?  but no join.  so we need
-    # the query that finds fids to check to return that back too, not just
-    # the id...
-    printf("FID %d is on: %s\n", $fid->id, join(",", $fid->devids));
+    printf("FID %d (len=%d; cldid=%d) is on: %s\n",
+           $fid->id,
+           $fid->length,
+           $fid->classid,
+           join(",", $fid->devids),
+           );
     return 1;
 }
 

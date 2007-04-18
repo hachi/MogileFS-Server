@@ -16,30 +16,34 @@ sub new {
     }, $class;
 }
 
+# mutates/blesses given row.
+sub new_from_db_row {
+    my ($class, $row) = @_;
+    # TODO: sanity check provided row more?
+    $row->{fidid}   = delete $row->{fid} or die "Missing 'fid' column";
+    $row->{_loaded} = 1;
+    return bless $row, $class;
+}
+
 # quick port of old API.  perhaps not ideal.
 sub new_from_dmid_and_key {
     my ($class, $dmid, $key) = @_;
     my $row = Mgd::get_store()->read_store->file_row_from_dmid_key($dmid, $key)
         or return undef;
-    $row->{fidid}   = delete $row->{fid};
-    $row->{_loaded} = 1;
-    return bless $row, $class;
+    return $class->new_from_db_row($row);
 }
 
-# returns a bunch of ::FID objects with the devids pre-populated.
+# given a bunch of ::FID objects, populates their devids en-masse
 # (for the fsck worker, which doesn't want to do many database
 # round-trips)
-sub mass_load_with_devids {
-    my ($class, @fidids) = @_;
+sub mass_load_devids {
+    my ($class, @fids) = @_;
     my $sto = Mgd::get_store();
-    my $locs = $sto->fid_devids_multiple(@fidids);
+    my $locs = $sto->fid_devids_multiple(map { $_->id } @fids);
     my @ret;
-    foreach my $fidid (@fidids) {
-        my $fo = $class->new($fidid);
-        $fo->{_devids} = $locs->{$fidid} || [];
-        push @ret, $fo;
+    foreach my $fid (@fids) {
+        $fid->{_devids} = $locs->{$fid->id} || [];
     }
-    return @ret;
 }
 # --------------------------------------------------------------------------
 

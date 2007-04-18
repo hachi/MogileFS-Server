@@ -1027,17 +1027,25 @@ sub get_fidids_by_device {
     return $fidids;
 }
 
-# takes two arguments, fidid to be above, and optional limit (default 1,000).  returns up to that
-# that many fidids above the provided fidid.  returns array of (sorted) fid ids.
-sub get_fidids_above {
+# takes two arguments, fidid to be above, and optional limit (default
+# 1,000).  returns up to that that many fidids above the provided
+# fidid.  returns array of MogileFS::FID objects, sorted by fid ids.
+sub get_fids_above_id {
     my ($self, $fidid, $limit) = @_;
     $limit ||= 1000;
     $limit = int($limit);
 
+    my @ret;
     my $dbh = $self->dbh;
-    my $fidids = $dbh->selectcol_arrayref("SELECT fid FROM file WHERE fid > ? ORDER BY fid LIMIT $limit",
-                                          undef, $fidid);
-    return @$fidids;
+    my $sth = $dbh->prepare("SELECT fid, dmid, dkey, length, classid ".
+                            "FROM   file ".
+                            "WHERE  fid > ? ".
+                            "ORDER BY fid LIMIT $limit");
+    $sth->execute($fidid);
+    while (my $row = $sth->fetchrow_hashref) {
+        push @ret, MogileFS::FID->new_from_db_row($row);
+    }
+    return @ret;
 }
 
 # creates a new domain, given a domain namespace string.  return the dmid on success,
