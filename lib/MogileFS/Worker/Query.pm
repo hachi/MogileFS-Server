@@ -1155,8 +1155,11 @@ sub cmd_fsck_stop {
 
 sub cmd_fsck_reset {
     my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+
     my $sto = Mgd::get_store();
     $sto->set_server_setting("fsck_highest_fid_checked", "0");
+    $sto->set_server_setting("fsck_opt_skip_stats", ($args->{policy_only} ? "1" : undef));
     return $self->ok_line;
 }
 

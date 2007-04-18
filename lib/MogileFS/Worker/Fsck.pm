@@ -28,8 +28,6 @@ sub work {
         # see if we're even enabled for this host.
         return unless $self->should_be_running;
 
-        warn "[fsck] Running...\n";
-
         # checking doesn't go well if the monitor job hasn't actively started
         # marking things as being available
         unless ($self->monitor_has_run) {
@@ -40,27 +38,26 @@ sub work {
             return;
         }
 
-        my $sto       = Mgd::get_store();
-        my $max_check = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-        my @fids      = $sto->get_fids_above_id($max_check, 100);
+        my $sto        = Mgd::get_store();
+        my $max_check  = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
+        my $opt_nostat = MogileFS::Config->server_setting('fsck_opt_skip_stat')       || 0;
+        my @fids       = $sto->get_fids_above_id($max_check, 100);
 
         unless (@fids) {
             warn "[fsck] no fids to check...\n";
             return;
         }
 
-        warn("[fsck] fids=" . $fids[0]->id . " ~ " . $fids[-1]->id . "\n");
         MogileFS::FID->mass_load_devids(@fids);
 
         my $new_max;
         foreach my $fid (@fids) {
             $self->still_alive;
             last if $self->should_stop_running;
-            last unless $self->check_fid($fid);
+            last unless $self->check_fid($fid, no_stat => $opt_nostat);
             $new_max = $fid->id;
         }
 
-        warn "[fsck] new_max = $new_max\n";
         MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $new_max) if $new_max;
 
         $sleep_set->(0); # don't sleep in next round.
@@ -90,92 +87,85 @@ sub should_stop_running {
 #   if no problems, no action.
 #   if problems, log & enqueue fixes
 sub check_fid {
-    my ($self, $fid) = @_;
-    printf("FID %d (len=%d; cldid=%d) is on: %s\n",
-           $fid->id,
-           $fid->length,
-           $fid->classid,
-           join(",", $fid->devids),
-           );
+    my ($self, $fid, %opts) = @_;
+    my $opt_no_stat = delete $opts{no_stat};
+    die "badopts" if %opts;
+
+    # first, see if the assumed devids meet the replication policy for
+    # the fid's class.
+    unless ($fid->devids_meet_policy) {
+        printf("FID %d (len=%d; cldid=%d) doesn't meet repl policy (on: %s)\n",
+               $fid->id,
+               $fid->length,
+               $fid->classid,
+               join(",", $fid->devids),
+               );
+
+        # TODO: does this do it immediately, or later? should decide
+        # on whether there's 1 copy or more.  or do we check number of
+        # good copies first, in this case?:
+        $fid->enqueue_for_replication;
+
+        # TODO: log to fsck_log
+        # ....
+
+        return 1;
+    }
+
+    # in the fast case, do nothing else (don't check if assumed file
+    # locations are actually there).  in the fast case, all we do is
+    # check the replication policy, which is already done, so finish.
+    return 1 if $opt_no_stat;
+
+
+    # **********************************************************************
+    # FIXME: temporary, until statting is done...
+    # **********************************************************************
+
+    # printf("fid %d is good.\n", $fid->id);
     return 1;
-}
-
-1;
-
-__END__
-Old stuff...
-
-    my $lock = $dbh->selectrow_array("SELECT GET_LOCK(?, 1)", undef, $lockname);
-    return $retunlock->(TEMPORARY, "failed getting lock $lockname") unless $lock;
-
-    # all checks require us to get the file paths
-    my $devids = $dbh->selectcol_arrayref('SELECT devid FROM file_on WHERE fid = ?', undef, $fid);
-    return $retunlock->(PERMANENT, 'no sources found') unless $devids && @$devids;
-
-    # if it's a simple location check, we're done
-    return $retunlock->(SUCCESS) if $level eq 'locations';
-
-    # get the file size from the database, we're going to need it.  note that this could be
-    # a 0 size, so we have to watch for defined.
-    my $db_size = $dbh->selectrow_array('SELECT length FROM file WHERE fid = ?', undef, $fid);
-    return $retunlock->(TEMPORARY, "database does not contain file size") unless defined $db_size;
 
     # iterate and do HEAD requests to determine some basic information about the file
     my %devs;
-    foreach my $devid (@$devids) {
+    foreach my $devid ($fid->devids) {
         # setup and do the request.  these failures are total failures in that we expect
         # them to work again later, as it's probably transient and will persist no matter
         # how many paths we try.
         my $dfid = MogileFS::DevFID->new($devid, $fid);
         my $path = $dfid->get_url
-            or return $retunlock->(TEMPORARY, 'failure to create HTTP path to file');
+            or die "FIXME";
+        # TODO: use side-channel?  eh, why?  LWP + ConnCache good enough for now.
         my $ua = LWP::UserAgent->new(timeout => 3)
-            or return $retunlock->(TEMPORARY, 'failed to create LWP::UserAgent object');
+            or die "FIXME";
         my $resp = $ua->head($path);
 
         # at this point we're going to assume that any error is based on the device alone
         # so we want to store the status and not return
         if ($resp->is_success) {
             # great, check the size against what's in the database
-            if ($resp->header('Content-Length') == $db_size) {
-                $devs{$devid} = SUCCESS;
+            if ($resp->header('Content-Length') == $fid->length) {
+                #yay
             } else {
-                $devs{$devid} = PERMANENT;
+                #shit.
             }
 
         } else {
             # easy one, the request failed for some reason, 500 would tend to imply that the
             # mogstored is having issues so we should try again later, whereas a 404 is a
             # total and permanent failure
-            error("check_fid($fid, $level): " . $resp->code . " on device $devid");
+            #error("check_fid($fid, $level): " . $resp->code . " on device $devid");
+
             if ($resp->code == 404) {
-                $devs{$devid} = PERMANENT;
+                #fucked!
             } else {
-                $devs{$devid} = TEMPORARY;
+                # just unreachable
+                warn "TODO: foo is unreachable\n";
+                return 0;
             }
         }
     }
 
-    # at this point, we need to take actions.  if we discovered some PERMANENT failures in
-    # a device scan, then we need to take care of those now by removing them.  but DO NOT
-    # remove them if that would leave us with no mappings!  ONLY if there is at least one
-    # SUCCESS mapping.
-    # FIXME: implement
-
-    # if they wanted a quick scan, let's stop here and throw a result based on the contents
-    # of the %devs hash.  basically, if any of the devices had issues, then at this point we
-    # want to throw a flag saying "please replicate this".  if not, then we tell them that
-    # we're successful on this fid.
-    if ($level eq 'quick') {
-        foreach my $code (values %devs) {
-            return $retunlock->(REPLICATE, "permanent failure on one or more devices")
-                if $code != SUCCESS;
-        }
-        return $retunlock->(SUCCESS);
-    }
-
-    # full mode not here yet
-    return $retunlock->(TEMPORARY, "sorry, $level mode is not implemented yet");
+    return 1;
 }
 
 1;

@@ -157,6 +157,34 @@ sub class {
     return MogileFS::Class->of_fid($self);
 }
 
+# returns bool:  if fid's presumed-to-be-on devids meet the file class'
+# replication policy rules.
+sub devids_meet_policy {
+    my $self = shift;
+    my $cls  = $self->class;
+
+    my $policy_class = $cls->policy_class
+        or die "No policy class";
+
+    my $alldev = MogileFS::Device->map
+        or die "No global device map";
+
+    eval "use $policy_class; 1;";
+    die "Failed to load policy class: $policy_class: $@" if $@;
+
+    my $ddevid = $policy_class->replicate_to(
+                                             fid       => $self->id,
+                                             on_devs   => [ map { MogileFS::Device->of_devid($_) } $self->devids ],
+                                             all_devs  => $alldev,
+                                             failed    => {},
+                                             min       => $cls->mindevcount,
+                                             );
+
+    # it's good only if the plugin policy returns defined zero.  undef and >0 are bad.
+    return 1 if defined $ddevid && $ddevid == 0;
+    return 0;
+}
+
 1;
 
 __END__
