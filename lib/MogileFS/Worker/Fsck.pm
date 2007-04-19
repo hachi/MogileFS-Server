@@ -20,6 +20,7 @@ use constant EV_FILE_MISSING     => "MISS";
 use constant EV_BAD_LENGTH       => "BLEN";
 use constant EV_CANT_FIX         => "PERM";
 use constant EV_FOUND_FID        => "FIND";
+use constant EV_RE_REPLICATE     => "REPL";
 
 sub watchdog_timeout { 30 }
 
@@ -179,8 +180,8 @@ sub check_fid {
     # check the replication policy, which is already done, so finish.
     return HANDLED if $opt_no_stat;
 
-    # iterate and do HEAD requests to determine some basic information about the file
-    my %devs;
+    # stat each device to see if it's still there.  on first problem,
+    # stop and go into the slow(er) fix function.
     foreach my $devid ($fid->devids) {
         # setup and do the request.  these failures are total failures in that we expect
         # them to work again later, as it's probably transient and will persist no matter
@@ -276,10 +277,11 @@ sub fix_fid {
     unless (@good_devs) {
         # replace @dfids with list of all (alive) devices.  dups will be ignored by
         # check_dfids
-        @dfids =
-            map  { MogileFS::DevFID->new($_, $fid)  }
-            grep { ! $_->is_marked_dead }
-            MogileFS::Device->devices;
+        @dfids = List::Util::shuffle(
+                                     map  { MogileFS::DevFID->new($_, $fid)  }
+                                     grep { ! $_->is_marked_dead }
+                                     MogileFS::Device->devices
+                                     );
         $check_dfids->("desperate");
 
         # still can't fix it?
@@ -303,6 +305,7 @@ sub fix_fid {
     # or 'forget_about_device'
     unless ($fid->devids_meet_policy) {
         $fid->enqueue_for_replication;
+        $fid->fsck_log(EV_RE_REPLICATE);
         return HANDLED;
     }
 
