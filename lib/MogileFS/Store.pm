@@ -586,6 +586,8 @@ sub TABLE_file_to_delete_later {
 
 sub TABLE_fsck_log {
     "CREATE TABLE fsck_log (
+logid  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+PRIMARY KEY (logid),
 utime  INT UNSIGNED NOT NULL,
 fid    INT UNSIGNED NULL,
 evcode CHAR(4),
