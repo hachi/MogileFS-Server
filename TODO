@@ -1,3 +1,10 @@
+-- in MogileFS::Device,
+ +        # FIXME: don't use local machine's time() for this.  time sync
+ +        # issues!  instead, the monitor process should track this,
+ +        # noting the difference in relative time between the server's
+ +        # time (in Date: response header) and time in the usage.txt
+ +        # file.
+
 -- make mogilefsd trackers speak FUSE, so we could mount all of mogilefs using, say:
       http://noedler.de/projekte/wdfs/index.html
    things like paths could be exposed as extended attributes, or as pseudo files:

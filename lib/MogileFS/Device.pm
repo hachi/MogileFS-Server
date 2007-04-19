@@ -93,6 +93,11 @@ sub find_deviceid {
     $opts{min_free_space} ||= MogileFS->config("min_free_space");
     $opts{max_disk_age}   ||= MogileFS->config("max_disk_age");
     if ($opts{max_disk_age}) {
+        # FIXME: don't use local machine's time() for this.  time sync
+        # issues!  instead, the monitor process should track this,
+        # noting the difference in relative time between the server's
+        # time (in Date: response header) and time in the usage.txt
+        # file.
         $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
     }
     $opts{must_be_alive} = 1 unless defined $opts{must_be_alive};
