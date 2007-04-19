@@ -14,6 +14,11 @@ use constant TEMPORARY => 1;
 use constant PERMANENT => 2;
 use constant REPLICATE => 3;
 
+use constant EV_NO_PATHS         => "NOPA";
+use constant EV_POLICY_VIOLATION => "POVI";
+use constant EV_FILE_MISSING     => "MISS";
+use constant EV_BAD_LENGTH       => "BLEN";
+
 sub watchdog_timeout { 30 }
 
 sub work {
@@ -81,18 +86,32 @@ sub work {
         MogileFS::FID->mass_load_devids(@fids);
 
         my $new_max;
+        my $hit_problem = 0;
         foreach my $fid (@fids) {
-            $n_check++;
             $self->still_alive;
             last if $self->should_stop_running;
-            last unless $self->check_fid($fid, no_stat => $opt_nostat);
+            if (!$self->check_fid($fid, no_stat => $opt_nostat)) {
+                # some connectivity problem... abort checking more
+                # for now.
+                $hit_problem = 1;
+                last;
+            }
             $new_max = $fid->id;
+            $n_check++;
             $beat->();
         }
 
-        MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $new_max) if $new_max;
+        if ($new_max) {
+            MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $new_max);
+            # don't sleep in every() loop next time:
+            $sleep_set->(0);
+        }
 
-        $sleep_set->(0); # don't sleep in next round.
+        # if we had connectivity problems, let's sleep a bit
+        if ($hit_problem) {
+            warn "Reachability problems.  Sleeping.\n";
+            sleep 5;
+        }
     });
 }
 
@@ -126,8 +145,9 @@ sub check_fid {
 
     # first obvious fucked-up case:  no devids even presumed to exist.
     unless ($fid->devids) {
-        # first, log this weird condition. (N = NO PAths)
-        Mgd::get_store()->fsck_log(code => "NOPA", fid => $fid->id);
+        # first, log this weird condition.
+        $fid->fsck_log(EV_NO_PATHS);
+
         # weird, schedule a fix (which will do a search over all
         # devices as a last-ditch effort to locate it)
         $self->fix_fid($fid);
@@ -138,7 +158,7 @@ sub check_fid {
     # the fid's class.
     unless ($fid->devids_meet_policy) {
         # log a policy violation
-        Mgd::get_store()->fsck_log(code => "POVI", fid => $fid->id);
+        $fid->fsck_log(EV_POLICY_VIOLATION);
         $self->fix_fid($fid);
         return 1;
     }
@@ -155,26 +175,38 @@ sub check_fid {
         # them to work again later, as it's probably transient and will persist no matter
         # how many paths we try.
         my $dfid = MogileFS::DevFID->new($devid, $fid);
-        my $path = $dfid->get_url
-            or die "FIXME";
+        my $dev  = $dfid->device;
 
         my $disk_size = $dfid->size_on_disk;
 
         if (! defined $disk_size) {
-            warn("Connectivity problem reaching XXXFIXME\n");
+            warn("Connectivity problem reaching device " . $dev->id . " on host " . $dev->host->ip . "\n");
             return CANT_CHECK;
         }
 
         # great, check the size against what's in the database
         if ($disk_size == $fid->length) {
-            #yay
-        } else {
-            printf("FID %d corruption on devid $devid: e=%d, a=%d\n",
-                   $fid->id,
-                   $fid->length,
-                   $disk_size,
-                   );
+            # yay!
+            next;
         }
+
+        printf("FID %d corruption on devid $devid: e=%d, a=%d\n",
+               $fid->id,
+               $fid->length,
+               $disk_size,
+               );
+
+        if (! $disk_size) {
+            $fid->fsck_log(EV_FILE_MISSING, $dev);
+        } else {
+            $fid->fsck_log(EV_BAD_LENGTH, $dev);
+        }
+
+        $self->fix_fid($fid);
+
+        # no point continuing loop now, once we find one problem.  fix_fid already did
+        # full check of everything.
+        return 1;
     }
 
     return 1;
@@ -196,7 +228,7 @@ sub fix_fid {
            );
 
     # make devfid objects from the devids that this fid is on,
-    my @dfids = map { MogileFS::DevID->new($_, $fid) } $fid->devids;
+    my @dfids = map { MogileFS::DevFID->new($_, $fid) } $fid->devids;
 
     # keep track if we found the file (with the right size) at least somewhere.
     # value is 0 if not, or a devid that has the correct length.
@@ -243,7 +275,7 @@ sub fix_fid {
 
     # If we messed with a Dev's devices, make sure our dev object
     # isn't caching the devids.  so let's just wipe it and reload it:
-    $fid->forget_cached_devids;  # TODO
+    $fid->forget_cached_devids;
 
     unless ($fid->devids_meet_policy) {
         $fid->enqueue_for_replication;

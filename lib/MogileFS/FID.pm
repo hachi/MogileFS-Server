@@ -13,6 +13,7 @@ sub new {
         length   => undef,
         classid  => undef,
         _loaded  => 0,
+        _devids  => undef,   # undef, or pre-loaded arrayref devid list
     }, $class;
 }
 
@@ -183,6 +184,21 @@ sub devids_meet_policy {
     # it's good only if the plugin policy returns defined zero.  undef and >0 are bad.
     return 1 if defined $ddevid && $ddevid == 0;
     return 0;
+}
+
+sub fsck_log {
+    my ($self, $code, $dev) = @_;
+    Mgd::get_store()->fsck_log(
+                               code  => $code,
+                               fid   => $self->id,
+                               devid => ($dev ? $dev->id : undef),
+                               );
+
+}
+
+sub forget_cached_devids {
+    my $self = shift;
+    $self->{_devids} = undef;
 }
 
 1;
