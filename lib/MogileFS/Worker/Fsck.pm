@@ -21,6 +21,35 @@ sub work {
 
     my $run_count = 0;
 
+    # <debug crap>
+    my $running = 0; # start time
+    my $n_check = 0; # items checked
+    my $start = sub {
+        return if $running;
+        $running = time();
+        print "START @" . time() . "\n";
+    };
+    my $stats = sub {
+        return unless $running;
+        my $now = time();
+        my $elap = $now - $running;
+        printf("In %d secs, %d fids, %0.02f fids/sec\n", $elap, $n_check, ($n_check / ($elap || 1)));
+    };
+    my $last_beat = 0;
+    my $beat = sub {
+        my $now = time();
+        return unless $now >= $last_beat + 5;
+        $stats->();
+        $last_beat = $now;
+    };
+    my $stop = sub {
+        return unless $running;
+        $stats->();
+        print "DONE.\n";
+        $running = 0;
+    };
+    # </debug crap>
+
     every(5.0, sub {
         my $sleep_set = shift;
         $self->parent_ping;
@@ -44,18 +73,21 @@ sub work {
         my @fids       = $sto->get_fids_above_id($max_check, 100);
 
         unless (@fids) {
-            warn "[fsck] no fids to check...\n";
+            $stop->();
             return;
         }
+        $start->();
 
         MogileFS::FID->mass_load_devids(@fids);
 
         my $new_max;
         foreach my $fid (@fids) {
+            $n_check++;
             $self->still_alive;
             last if $self->should_stop_running;
             last unless $self->check_fid($fid, no_stat => $opt_nostat);
             $new_max = $fid->id;
+            $beat->();
         }
 
         MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $new_max) if $new_max;
@@ -86,15 +118,16 @@ sub should_stop_running {
 # return 1 if fid was checked (regardless of there being problems or not)
 #   if no problems, no action.
 #   if problems, log & enqueue fixes
+use constant CANT_CHECK => 0;
 sub check_fid {
     my ($self, $fid, %opts) = @_;
     my $opt_no_stat = delete $opts{no_stat};
     die "badopts" if %opts;
 
     # first obvious fucked-up case:  no devids even presumed to exist.
-    unless (@{ $fid->devids }) {
+    unless ($fid->devids) {
         # first, log this weird condition. (N = NO PAths)
-        Mgd::get_store->fsck_log(code => "NOPA", fid => $fid->id);
+        Mgd::get_store()->fsck_log(code => "NOPA", fid => $fid->id);
         # weird, schedule a fix (which will do a search over all
         # devices as a last-ditch effort to locate it)
         $self->fix_fid($fid);
@@ -105,7 +138,7 @@ sub check_fid {
     # the fid's class.
     unless ($fid->devids_meet_policy) {
         # log a policy violation
-        Mgd::get_store->fsck_log(code => "POVI", fid => $fid->id);
+        Mgd::get_store()->fsck_log(code => "POVI", fid => $fid->id);
         $self->fix_fid($fid);
         return 1;
     }
@@ -114,13 +147,6 @@ sub check_fid {
     # locations are actually there).  in the fast case, all we do is
     # check the replication policy, which is already done, so finish.
     return 1 if $opt_no_stat;
-
-    # **********************************************************************
-    # FIXME: temporary, until statting is done...
-    # **********************************************************************
-
-    # printf("fid %d is good.\n", $fid->id);
-    return 1;
 
     # iterate and do HEAD requests to determine some basic information about the file
     my %devs;
@@ -131,34 +157,23 @@ sub check_fid {
         my $dfid = MogileFS::DevFID->new($devid, $fid);
         my $path = $dfid->get_url
             or die "FIXME";
-        # TODO: use side-channel?  eh, why?  LWP + ConnCache good enough for now.
-        my $ua = LWP::UserAgent->new(timeout => 3)
-            or die "FIXME";
-        my $resp = $ua->head($path);
 
-        # at this point we're going to assume that any error is based on the device alone
-        # so we want to store the status and not return
-        if ($resp->is_success) {
-            # great, check the size against what's in the database
-            if ($resp->header('Content-Length') == $fid->length) {
-                #yay
-            } else {
-                #shit.
-            }
+        my $disk_size = $dfid->size_on_disk;
 
+        if (! defined $disk_size) {
+            warn("Connectivity problem reaching XXXFIXME\n");
+            return CANT_CHECK;
+        }
+
+        # great, check the size against what's in the database
+        if ($disk_size == $fid->length) {
+            #yay
         } else {
-            # easy one, the request failed for some reason, 500 would tend to imply that the
-            # mogstored is having issues so we should try again later, whereas a 404 is a
-            # total and permanent failure
-            #error("check_fid($fid, $level): " . $resp->code . " on device $devid");
-
-            if ($resp->code == 404) {
-                #fucked!
-            } else {
-                # just unreachable
-                warn "TODO: foo is unreachable\n";
-                return 0;
-            }
+            printf("FID %d corruption on devid $devid: e=%d, a=%d\n",
+                   $fid->id,
+                   $fid->length,
+                   $disk_size,
+                   );
         }
     }
 
@@ -181,7 +196,7 @@ sub fix_fid {
            );
 
     # make devfid objects from the devids that this fid is on,
-    my @dfids = map { MogileFS::DevID->new($_, $fid) } @{ $fid->devids };
+    my @dfids = map { MogileFS::DevID->new($_, $fid) } $fid->devids;
 
     # keep track if we found the file (with the right size) at least somewhere.
     # value is 0 if not, or a devid that has the correct length.

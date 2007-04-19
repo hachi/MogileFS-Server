@@ -588,7 +588,7 @@ sub TABLE_fsck_log {
     "CREATE TABLE fsck_log (
 utime  INT UNSIGNED NOT NULL,
 fid    INT UNSIGNED NULL,
-err    CHAR(4),
+evcode CHAR(4),
 devid  MEDIUMINT UNSIGNED,
 INDEX(utime)
 )"
@@ -1220,6 +1220,19 @@ sub clear_fsck_log {
     $self->dbh->do("DELETE FROM fsck_log");
     return 1;
 }
+
+sub fsck_log {
+    my ($self, %opts) = @_;
+    $self->dbh->do("INSERT INTO fsck_log (utime, fid, evcode, devid) ".
+                   "VALUES (" . $self->unix_timestamp . ",?,?,?)",
+                   undef,
+                   delete $opts{fid},
+                   delete $opts{code},
+                   delete $opts{devid});
+    croak("Unknown opts") if %opts;
+    return 1;
+}
+
 
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
