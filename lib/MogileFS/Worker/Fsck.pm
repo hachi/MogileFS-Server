@@ -5,7 +5,7 @@ use base 'MogileFS::Worker';
 use fields (
             'last_stop_check',  # unixtime 'should_stop_running' last called
             );
-use MogileFS::Util qw(every error);
+use MogileFS::Util qw(every error debug);
 use List::Util ();
 use Time::HiRes ();
 
@@ -18,6 +18,8 @@ use constant EV_NO_PATHS         => "NOPA";
 use constant EV_POLICY_VIOLATION => "POVI";
 use constant EV_FILE_MISSING     => "MISS";
 use constant EV_BAD_LENGTH       => "BLEN";
+use constant EV_CANT_FIX         => "PERM";
+use constant EV_FOUND_FID        => "FIND";
 
 sub watchdog_timeout { 30 }
 
@@ -137,11 +139,22 @@ sub should_stop_running {
 # return 1 if fid was checked (regardless of there being problems or not)
 #   if no problems, no action.
 #   if problems, log & enqueue fixes
-use constant CANT_CHECK => 0;
+use constant STALLED => 0;
+use constant HANDLED => 1;
 sub check_fid {
     my ($self, $fid, %opts) = @_;
     my $opt_no_stat = delete $opts{no_stat};
     die "badopts" if %opts;
+
+    my $fix = sub {
+        my $fixed = eval { $self->fix_fid($fid) };
+        if (! defined $fixed) {
+            error("Fsck stalled: $@");
+            return STALLED;
+        }
+        $fid->fsck_log(EV_CANT_FIX) if ! $fixed;
+        return HANDLED;
+    };
 
     # first obvious fucked-up case:  no devids even presumed to exist.
     unless ($fid->devids) {
@@ -150,8 +163,7 @@ sub check_fid {
 
         # weird, schedule a fix (which will do a search over all
         # devices as a last-ditch effort to locate it)
-        $self->fix_fid($fid);
-        return 1;
+        return $fix->();
     }
 
     # first, see if the assumed devids meet the replication policy for
@@ -159,14 +171,13 @@ sub check_fid {
     unless ($fid->devids_meet_policy) {
         # log a policy violation
         $fid->fsck_log(EV_POLICY_VIOLATION);
-        $self->fix_fid($fid);
-        return 1;
+        return $fix->();
     }
 
     # in the fast case, do nothing else (don't check if assumed file
     # locations are actually there).  in the fast case, all we do is
     # check the replication policy, which is already done, so finish.
-    return 1 if $opt_no_stat;
+    return HANDLED if $opt_no_stat;
 
     # iterate and do HEAD requests to determine some basic information about the file
     my %devs;
@@ -181,7 +192,7 @@ sub check_fid {
 
         if (! defined $disk_size) {
             warn("Connectivity problem reaching device " . $dev->id . " on host " . $dev->host->ip . "\n");
-            return CANT_CHECK;
+            return STALLED;
         }
 
         # great, check the size against what's in the database
@@ -190,33 +201,23 @@ sub check_fid {
             next;
         }
 
-        printf("FID %d corruption on devid $devid: e=%d, a=%d\n",
-               $fid->id,
-               $fid->length,
-               $disk_size,
-               );
+        # Note: not doing fsck_log, as fix_fid will log status for each device.
 
-        if (! $disk_size) {
-            $fid->fsck_log(EV_FILE_MISSING, $dev);
-        } else {
-            $fid->fsck_log(EV_BAD_LENGTH, $dev);
-        }
-
-        $self->fix_fid($fid);
-
-        # no point continuing loop now, once we find one problem.  fix_fid already did
-        # full check of everything.
-        return 1;
+        # no point continuing loop now, once we find one problem.
+        # fix_fid will fully check all devices...
+        return $fix->();
     }
 
-    return 1;
+    return HANDLED;
 }
 
 # this is the slow path.  if something above in check_fid finds
 # something amiss in any way, we went the slow path on a fid and try
 # really hard to fix the situation.
 #
-# die on errors.  return (anything) on success.
+# return true if situation handled, 0 if nothing could be done.
+# die on errors (like connectivity problems).
+use constant CANT_FIX => 0;
 sub fix_fid {
     my ($self, $fid) = @_;
 
@@ -230,27 +231,41 @@ sub fix_fid {
     # make devfid objects from the devids that this fid is on,
     my @dfids = map { MogileFS::DevFID->new($_, $fid) } $fid->devids;
 
-    # keep track if we found the file (with the right size) at least somewhere.
-    # value is 0 if not, or a devid that has the correct length.
-    my $found_it = 0;
+    # track all known good copies (dev objects), as well as all bad
+    # copies (places it should've been, but isn't)
+    my @good_devs;
+    my @bad_devs;
+    my %already_checked;  # devid -> 1.
 
     my $check_dfids = sub {
-        my $stop_on_found = shift;
+        my $is_desperate_mode = shift;
 
         # stat all devices.
         foreach my $dfid (@dfids) {
-            # good case.
-            if ($dfid->size_matches) {
-                $found_it ||= $dfid->devid;
-                return if $stop_on_found;
+            my $dev = $dfid->device;
+            next if $already_checked{$dev->id}++;
+
+            my $disk_size = $dfid->size_on_disk;
+            die "dev unreachable" unless defined $disk_size;
+
+            if ($disk_size == $fid->length) {
+                push @good_devs, $dfid->device;
+                # if we were doing a desperate search, one is enough, we can stop now!
+                return if $is_desperate_mode;
                 next;
             }
 
-            # bad case:
-            # FIXME: log difference between missing & wrong size.  wrong size might be better
-            # than nothing.
-            # ALSO:  make sure we very well tell difference between host down/timeout vs. up & file gone
-            # TODO: if really, really gone, remove it from devid table...
+            # don't log in desperate mode, as we'd have "file missing!" log entries
+            # for every device in the normal case, which is expected.
+            unless ($is_desperate_mode) {
+                if (! $disk_size) {
+                    $fid->fsck_log(EV_FILE_MISSING, $dev);
+                } else {
+                    $fid->fsck_log(EV_BAD_LENGTH, $dev);
+                }
+            }
+
+            push @bad_devs, $dfid->device;
         }
     };
 
@@ -258,32 +273,40 @@ sub fix_fid {
 
     # if we didn't find it anywhere, let's go do an exhaustive search over
     # all devices, looking for it...
-    unless ($found_it) {
-        # TODO: replace @dfids with list of all (alive) devices which weren't previously
-        # searched,
+    unless (@good_devs) {
+        # replace @dfids with list of all (alive) devices.  dups will be ignored by
+        # check_dfids
+        @dfids =
+            map  { MogileFS::DevFID->new($_, $fid)  }
+            grep { ! $_->is_marked_dead }
+            MogileFS::Device->devices;
+        $check_dfids->("desperate");
 
-        # then check again:
-        $check_dfids->("stop_on_found");
-        if (! $found_it) {
-            # shit, really fucked.  where'd it go?  log it and proceed, sadly.
-            return 1;
-        }
+        # still can't fix it?
+        return CANT_FIX unless @good_devs;
 
-        # TODO: log that crazy search found it.  yay!
-        # then fall through to below to check policy on if it's replicated enough....
+        # wow, we actually found it!
+        $fid->fsck_log(EV_FOUND_FID);
+        $fid->note_on_device($good_devs[0]); # at least one good one.
+
+        # fall through to check policy (which will most likely be
+        # wrong, with only one file_on record...) and re-replicate
     }
 
-    # If we messed with a Dev's devices, make sure our dev object
-    # isn't caching the devids.  so let's just wipe it and reload it:
-    $fid->forget_cached_devids;
+    # remove the file_on mappings for devices that were bogus/missing.
+    foreach my $bdev (@bad_devs) {
+        debug("[fsck] removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
+        $fid->forget_about_device($bdev);
+    }
 
+    # Note: this will reload devids, if they called 'note_on_device'
+    # or 'forget_about_device'
     unless ($fid->devids_meet_policy) {
         $fid->enqueue_for_replication;
-        # TODO: log that we enqueud it for replication
-        return 1;
+        return HANDLED;
     }
 
-    return 1;
+    return HANDLED;
 }
 
 1;

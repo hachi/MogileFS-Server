@@ -201,6 +201,23 @@ sub forget_cached_devids {
     $self->{_devids} = undef;
 }
 
+# returns MogileFS::DevFID object, after noting in the db that this fid is on this DB.
+# it trusts you that it is, and that you've verified it.
+sub note_on_device {
+    my ($fid, $dev) = @_;
+    my $dfid = MogileFS::DevFID->new($dev, $fid);
+    $dfid->add_to_db;
+    $fid->forget_cached_devids;
+    return $dfid;
+}
+
+sub forget_about_device {
+    my ($fid, $dev) = @_;
+    $dev->forget_about($fid);
+    $fid->forget_cached_devids;
+    return 1;
+}
+
 1;
 
 __END__
