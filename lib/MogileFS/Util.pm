@@ -7,7 +7,7 @@ use MogileFS::Exception;
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(
-                    error debug fatal daemonize weighted_list every
+                    error undeferr debug fatal daemonize weighted_list every
                     wait_for_readability wait_for_writeability throw error_code
                     );
 
@@ -81,6 +81,12 @@ sub error {
         Mgd::log('debug', $errmsg);
     }
     return 0;
+}
+
+# like error(), but returns undef.
+sub undeferr {
+    error(@_);
+    return undef;
 }
 
 sub last_error {
