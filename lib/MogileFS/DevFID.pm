@@ -43,12 +43,24 @@ sub vivify_directories {
     MogileFS::Device->vivify_directories($url);
 }
 
+# returns 0 on missing,
+# undef on connectivity error,
+# else size of file on disk (after HTTP HEAD or mogstored stat)
+sub size_on_disk {
+    my $self = shift;
+    my $url = $self->get_url;
+
+    # check that it has size (>0) and is reachable (not undef)
+    return MogileFS::HTTPFile->at($url)->size;
+}
+
 # returns true if size seen matches fid's length
 sub size_matches {
     my $self = shift;
-    my $url = $self->get_url;
     my $fid = $self->fid;
-    return MogileFS::HTTPFile->at($url)->size == $fid->length;
+    my $disk_size = $self->size_on_disk
+        or return 0;
+    return $disk_size == $fid->length;
 }
 
 # returns just the URI path component without scheme/host
