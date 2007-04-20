@@ -1143,9 +1143,13 @@ sub cmd_fsck_start {
     my MogileFS::Worker::Query $self = shift;
     my $sto = Mgd::get_store();
 
-    # TODO: reset position, if a previous fsck was already
-    # completed.  (set a flag saying "completed successfully!"
-    # in Fsck.pm?)
+    # reset position, if a previous fsck was already completed.
+    my $intss       = sub { MogileFS::Config->server_setting($_[0]) || 0 };
+    my $checked_fid = $intss->("fsck_highest_fid_checked");
+    my $final_fid   = $intss->("fsck_fid_at_end");
+    if ($checked_fid && $final_fid && $checked_fid >= $final_fid) {
+        $self->_do_fsck_reset or return $self->err_line;
+    }
 
     # set params for stats:
     $sto->set_server_setting("fsck_start_time", $sto->get_db_unixtime);
@@ -1175,13 +1179,20 @@ sub cmd_fsck_reset {
     my $args = shift;
 
     my $sto = Mgd::get_store();
-    $sto->set_server_setting("fsck_highest_fid_checked", "0");
     $sto->set_server_setting("fsck_opt_policy_only", ($args->{policy_only} ? "1" : undef));
-    $sto->set_server_setting("fsck_start_time", $sto->get_db_unixtime);
-    $sto->set_server_setting("fsck_stop_time", undef);
-    $sto->set_server_setting("fsck_fids_checked", 0);
 
+    $self->_do_fsck_reset or return $self->err_line;
     return $self->ok_line;
+}
+
+sub _do_fsck_reset {
+    my MogileFS::Worker::Query $self = shift;
+    my $sto = Mgd::get_store();
+    $sto->set_server_setting("fsck_highest_fid_checked", "0");
+    $sto->set_server_setting("fsck_start_time",       $sto->get_db_unixtime);
+    $sto->set_server_setting("fsck_stop_time",        undef);
+    $sto->set_server_setting("fsck_fids_checked",     0);
+    $sto->set_server_setting("fsck_fid_at_end",       $sto->max_fidid);
 }
 
 sub cmd_fsck_clearlog {

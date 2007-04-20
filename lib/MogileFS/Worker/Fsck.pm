@@ -36,13 +36,12 @@ sub work {
     my $start = sub {
         return if $running;
         $running = time();
-        print "START @" . time() . "\n";
     };
     my $stats = sub {
         return unless $running;
         my $now = time();
         my $elap = $now - $running;
-        printf("In %d secs, %d fids, %0.02f fids/sec\n", $elap, $n_check, ($n_check / ($elap || 1)));
+        debug("[fsck] In %d secs, %d fids, %0.02f fids/sec\n", $elap, $n_check, ($n_check / ($elap || 1)));
     };
     my $last_beat = 0;
     my $beat = sub {
@@ -54,7 +53,7 @@ sub work {
     my $stop = sub {
         return unless $running;
         $stats->();
-        print "DONE.\n";
+        debug("[fsck] done.");
         $running = 0;
     };
     # </debug crap>
@@ -71,7 +70,7 @@ sub work {
         unless ($self->monitor_has_run) {
             # only warn on runs after the first.  gives the monitor job some time to work
             # before we throw a message.
-            error("waiting for monitor job to complete a cycle before beginning checking")
+            debug("[fsck] waiting for monitor job to complete a cycle before beginning")
                 if $run_count++ > 0;
             return;
         }
@@ -115,7 +114,7 @@ sub work {
 
         # if we had connectivity problems, let's sleep a bit
         if ($hit_problem) {
-            warn "Reachability problems.  Sleeping.\n";
+            error("[fsck] connectivity problems; stalling 5s");
             sleep 5;
         }
     });
@@ -195,7 +194,7 @@ sub check_fid {
         my $disk_size = $dfid->size_on_disk;
 
         if (! defined $disk_size) {
-            warn("Connectivity problem reaching device " . $dev->id . " on host " . $dev->host->ip . "\n");
+            error("Connectivity problem reaching device " . $dev->id . " on host " . $dev->host->ip . "\n");
             return STALLED;
         }
 
@@ -224,13 +223,7 @@ sub check_fid {
 use constant CANT_FIX => 0;
 sub fix_fid {
     my ($self, $fid) = @_;
-
-    printf("Fixing FID %d (len=%d; cldid=%d; on: %s)\n",
-           $fid->id,
-           $fid->length,
-           $fid->classid,
-           join(",", $fid->devids),
-           );
+    error("Fixing FID %d\n");
 
     # make devfid objects from the devids that this fid is on,
     my @dfids = map { MogileFS::DevFID->new($_, $fid) } $fid->devids;
@@ -301,7 +294,7 @@ sub fix_fid {
 
     # remove the file_on mappings for devices that were bogus/missing.
     foreach my $bdev (@bad_devs) {
-        debug("[fsck] removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
+        error("[fsck] removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
         $fid->forget_about_device($bdev);
     }
 
