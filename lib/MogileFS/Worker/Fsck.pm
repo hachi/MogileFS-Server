@@ -18,8 +18,9 @@ use constant EV_NO_PATHS         => "NOPA";
 use constant EV_POLICY_VIOLATION => "POVI";
 use constant EV_FILE_MISSING     => "MISS";
 use constant EV_BAD_LENGTH       => "BLEN";
-use constant EV_CANT_FIX         => "PERM";
-use constant EV_FOUND_FID        => "FIND";
+use constant EV_CANT_FIX         => "GONE";
+use constant EV_START_SEARCH     => "SRCH";
+use constant EV_FOUND_FID        => "FOND";
 use constant EV_RE_REPLICATE     => "REPL";
 
 sub watchdog_timeout { 30 }
@@ -277,6 +278,7 @@ sub fix_fid {
     unless (@good_devs) {
         # replace @dfids with list of all (alive) devices.  dups will be ignored by
         # check_dfids
+        $fid->fsck_log(EV_START_SEARCH);
         @dfids = List::Util::shuffle(
                                      map  { MogileFS::DevFID->new($_, $fid)  }
                                      grep { ! $_->is_marked_dead }
