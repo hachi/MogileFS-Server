@@ -75,6 +75,7 @@ sub vivify_directories {
 #     max_disk_age => 5,        # minutes of age the last usage report can be before we ignore the disk
 #     not_on_hosts => [ 1, 2 ], # no devices on hosts 1 and 2
 #     must_be_alive => 1,       # if specified, device/host must be writeable (fully available)
+#     not_devs => { $devid => 1 }  # devids to not return.
 # );
 #
 # returns undef if no suitable device was found.  else, if you wanted an
@@ -85,7 +86,10 @@ sub find_deviceid {
     my %opts = ( @_ );
 
     # validate we're getting called with known parameters
-    my %valid_keys = map { $_ => 1 } qw( random min_free_space weight_by_free max_disk_age not_on_hosts must_be_writeable must_be_readable );
+    my %valid_keys = map { $_ => 1 } qw( random min_free_space weight_by_free max_disk_age
+                                         not_on_hosts must_be_writeable must_be_readable
+                                         not_devs
+                                         );
     warn "invalid key $_ in call to find_deviceid\n"
         foreach grep { ! $valid_keys{$_} } keys %opts;
 
@@ -101,10 +105,11 @@ sub find_deviceid {
         $opts{max_disk_age} = time() - ($opts{max_disk_age} * 60);
     }
     $opts{must_be_alive} = 1 unless defined $opts{must_be_alive};
+    $opts{not_devs}    ||= {};
 
     # setup for iterating over devices
     my $devs = MogileFS::Device->map;
-    my @devids = keys %$devs;
+    my @devids = grep { ! $opts{not_devs}{$_} } keys %$devs;
     my $devcount = scalar(@devids);
     my $start = $opts{random} ? int(rand($devcount)) : 0;
     my %not_on_host = ( map { $_ => 1 } @{$opts{not_on_hosts} || []} );

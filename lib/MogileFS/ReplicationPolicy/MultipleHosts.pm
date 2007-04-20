@@ -51,15 +51,17 @@ sub replicate_to {
         $not_on_hosts = [ keys %on_host ];
     }
 
-    my @good_devids = grep { ! $failed->{$_} && ! $on_dev{$_} }
-            MogileFS::Device->find_deviceid(
-                                            random         => 1,
-                                            not_on_hosts   => $not_on_hosts,
-                                            weight_by_free => 1,
-                                            );
+    my $good_devid =
+        MogileFS::Device->find_deviceid(
+                                        weight_by_free => 1, # NOTE: misleading name,
+                                                             # forces only return value!
+                                        random         => 1,
+                                        not_on_hosts   => $not_on_hosts,
+                                        not_devs       => { %on_dev, %$failed },
+                                        );
 
-    return undef unless @good_devids;
-    return $good_devids[0];
+    return undef unless $good_devid;
+    return $good_devid;
 }
 
 sub unique_hosts {
