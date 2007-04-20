@@ -1224,6 +1224,7 @@ sub cmd_fsck_status {
         start_time      => $intss->('fsck_start_time'),
         stop_time       => $intss->('fsck_stop_time'),
         current_time    => $sto->get_db_unixtime,
+        max_logid       => $sto->max_fsck_logid,
     });
 }
 

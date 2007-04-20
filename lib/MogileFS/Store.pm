@@ -1245,6 +1245,11 @@ sub max_fidid {
     return $self->dbh->selectrow_array("SELECT MAX(fid) FROM file");
 }
 
+sub max_fsck_logid {
+    my $self = shift;
+    return $self->dbh->selectrow_array("SELECT MAX(logid) FROM fsck_log");
+}
+
 # returns array of $row hashrefs, from fsck_log table
 sub fsck_log_rows {
     my ($self, $after_logid, $limit) = @_;
