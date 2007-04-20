@@ -1143,7 +1143,10 @@ sub cmd_fsck_start {
     my MogileFS::Worker::Query $self = shift;
     my $sto = Mgd::get_store();
     $sto->set_server_setting("fsck_host", MogileFS::Config->hostname);
-    # TODO: ping fsck process to wake up sooner?  otherwise will be ~5 second latency
+    $sto->set_server_setting("fsck_start_time", $sto->get_db_unixtime);
+    $sto->set_server_setting("fsck_stop_time", undef);
+    $sto->set_server_setting("fsck_fids_checked", 0);
+    MogileFS::ProcManager->wake_a("fsck");
     return $self->ok_line;
 }
 
@@ -1151,7 +1154,7 @@ sub cmd_fsck_stop {
     my MogileFS::Worker::Query $self = shift;
     my $sto = Mgd::get_store();
     $sto->set_server_setting("fsck_host", undef);
-    # TODO: ping fsck process to stop sooner?  otherwise will be ~5 second latency
+    $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
     return $self->ok_line;
 }
 
@@ -1162,6 +1165,10 @@ sub cmd_fsck_reset {
     my $sto = Mgd::get_store();
     $sto->set_server_setting("fsck_highest_fid_checked", "0");
     $sto->set_server_setting("fsck_opt_skip_stats", ($args->{policy_only} ? "1" : undef));
+    $sto->set_server_setting("fsck_start_time", $sto->get_db_unixtime);
+    $sto->set_server_setting("fsck_stop_time", undef);
+    $sto->set_server_setting("fsck_fids_checked", 0);
+
     return $self->ok_line;
 }
 
@@ -1181,9 +1188,17 @@ sub cmd_fsck_getlog {
 
 sub cmd_fsck_status {
     my MogileFS::Worker::Query $self = shift;
-    my $sto = Mgd::get_store();
-    die "FIXME TODO";
-    return $self->ok_line;
+
+    my $fsck_host  = MogileFS::Config->server_setting('fsck_host');
+    my $max_check  = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
+    my $opt_nostat = MogileFS::Config->server_setting('fsck_opt_skip_stat')       || 0;
+    my $ret = {
+        running         => ($fsck_host ? 1 : 0),
+        host            => $fsck_host,
+        max_fid_checked => $max_check,
+        policy_only     => $opt_nostat,
+    };
+    return $self->ok_line($ret);
 }
 
 sub ok_line {

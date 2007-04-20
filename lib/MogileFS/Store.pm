@@ -1235,6 +1235,11 @@ sub fsck_log {
     return 1;
 }
 
+sub get_db_unixtime {
+    my $self = shift;
+    return $self->dbh->selectrow_array("SELECT " . $self->unix_timestamp);
+}
+
 
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
