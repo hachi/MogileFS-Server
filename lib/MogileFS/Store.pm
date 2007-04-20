@@ -1270,6 +1270,24 @@ sub fsck_log_rows {
     return @rows;
 }
 
+sub fsck_evcode_counts {
+    my ($self, %opts) = @_;
+    my $gte = delete $opts{time_gte};
+    die if %opts;
+
+    my $ret = {};
+    my $sth = $self->dbh->prepare(qq{
+        SELECT evcode, COUNT(*) FROM fsck_log
+        WHERE utime >= ?
+        GROUP BY evcode
+    });
+    $sth->execute($gte||0);
+    while (my ($ev, $ct) = $sth->fetchrow_array) {
+        $ret->{$ev} = $ct;
+    }
+    return $ret;
+}
+
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
 sub pre_daemonize_checks { }

@@ -223,7 +223,7 @@ sub check_fid {
 use constant CANT_FIX => 0;
 sub fix_fid {
     my ($self, $fid) = @_;
-    error("Fixing FID %d\n");
+    error(sprintf("Fixing FID %d\n", $fid->id));
 
     # make devfid objects from the devids that this fid is on,
     my @dfids = map { MogileFS::DevFID->new($_, $fid) } $fid->devids;

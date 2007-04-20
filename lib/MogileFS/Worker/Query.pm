@@ -1226,17 +1226,25 @@ sub cmd_fsck_status {
     my $sto        = Mgd::get_store();
     my $fsck_host  = MogileFS::Config->server_setting('fsck_host');
     my $intss      = sub { MogileFS::Config->server_setting($_[0]) || 0 };
-    return $self->ok_line({
+    my $ret = {
         running         => ($fsck_host ? 1 : 0),
         host            => $fsck_host,
         max_fid_checked => $intss->('fsck_highest_fid_checked'),
         policy_only     => $intss->('fsck_opt_policy_only'),
-        max_fid         => $sto->max_fidid,
+        end_fid         => $intss->('fsck_fid_at_end'),
         start_time      => $intss->('fsck_start_time'),
         stop_time       => $intss->('fsck_stop_time'),
         current_time    => $sto->get_db_unixtime,
         max_logid       => $sto->max_fsck_logid,
-    });
+    };
+
+    # throw some stats in.
+    my $ev_cts = $sto->fsck_evcode_counts(time_gte => $ret->{start_time});
+    while (my ($ev, $ct) = each %$ev_cts) {
+        $ret->{"num_$ev"} = $ct;
+    }
+
+    return $self->ok_line($ret);
 }
 
 sub ok_line {
