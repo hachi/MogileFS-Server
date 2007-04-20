@@ -1193,9 +1193,20 @@ sub cmd_fsck_clearlog {
 
 sub cmd_fsck_getlog {
     my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+
     my $sto = Mgd::get_store();
-    die "FIXME TODO";
-    return $self->ok_line;
+    my @rows = $sto->fsck_log_rows($args->{after_logid}, 100);
+    my $ret;
+    my $n = 0;
+    foreach my $row (@rows) {
+        $n++;
+        foreach my $k (keys %$row) {
+            $ret->{"row_${n}_$k"} = $row->{$k} if defined $row->{$k};
+        }
+    }
+    $ret->{row_count} = $n;
+    return $self->ok_line($ret);
 }
 
 sub cmd_fsck_status {

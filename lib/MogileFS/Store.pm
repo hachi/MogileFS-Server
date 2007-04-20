@@ -1245,6 +1245,26 @@ sub max_fidid {
     return $self->dbh->selectrow_array("SELECT MAX(fid) FROM file");
 }
 
+# returns array of $row hashrefs, from fsck_log table
+sub fsck_log_rows {
+    my ($self, $after_logid, $limit) = @_;
+    $limit       = int($limit || 100);
+    $after_logid = int($after_logid || 0);
+
+    my @rows;
+    my $sth = $self->dbh->prepare(qq{
+        SELECT logid, utime, fid, evcode, devid
+        FROM fsck_log
+        WHERE logid > ?
+        ORDER BY logid
+        LIMIT $limit
+    });
+    $sth->execute($after_logid);
+    my $row;
+    push @rows, $row while $row = $sth->fetchrow_hashref;
+    return @rows;
+}
+
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
 sub pre_daemonize_checks { }
