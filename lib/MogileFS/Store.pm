@@ -1240,6 +1240,10 @@ sub get_db_unixtime {
     return $self->dbh->selectrow_array("SELECT " . $self->unix_timestamp);
 }
 
+sub max_fidid {
+    my $self = shift;
+    return $self->dbh->selectrow_array("SELECT MAX(fid) FROM file");
+}
 
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.

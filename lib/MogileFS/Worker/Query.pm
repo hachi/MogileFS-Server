@@ -1142,11 +1142,23 @@ sub cmd_do_monitor_round {
 sub cmd_fsck_start {
     my MogileFS::Worker::Query $self = shift;
     my $sto = Mgd::get_store();
-    $sto->set_server_setting("fsck_host", MogileFS::Config->hostname);
+
+    # TODO: reset position, if a previous fsck was already
+    # completed.  (set a flag saying "completed successfully!"
+    # in Fsck.pm?)
+
+    # set params for stats:
     $sto->set_server_setting("fsck_start_time", $sto->get_db_unixtime);
     $sto->set_server_setting("fsck_stop_time", undef);
     $sto->set_server_setting("fsck_fids_checked", 0);
+    my $start_fid =
+        MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
+    $sto->set_server_setting("fsck_start_fid", $start_fid);
+
+    # and start it:
+    $sto->set_server_setting("fsck_host", MogileFS::Config->hostname);
     MogileFS::ProcManager->wake_a("fsck");
+
     return $self->ok_line;
 }
 
@@ -1164,7 +1176,7 @@ sub cmd_fsck_reset {
 
     my $sto = Mgd::get_store();
     $sto->set_server_setting("fsck_highest_fid_checked", "0");
-    $sto->set_server_setting("fsck_opt_skip_stats", ($args->{policy_only} ? "1" : undef));
+    $sto->set_server_setting("fsck_opt_policy_only", ($args->{policy_only} ? "1" : undef));
     $sto->set_server_setting("fsck_start_time", $sto->get_db_unixtime);
     $sto->set_server_setting("fsck_stop_time", undef);
     $sto->set_server_setting("fsck_fids_checked", 0);
@@ -1189,16 +1201,19 @@ sub cmd_fsck_getlog {
 sub cmd_fsck_status {
     my MogileFS::Worker::Query $self = shift;
 
+    my $sto        = Mgd::get_store();
     my $fsck_host  = MogileFS::Config->server_setting('fsck_host');
-    my $max_check  = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-    my $opt_nostat = MogileFS::Config->server_setting('fsck_opt_skip_stat')       || 0;
-    my $ret = {
+    my $intss      = sub { MogileFS::Config->server_setting($_[0]) || 0 };
+    return $self->ok_line({
         running         => ($fsck_host ? 1 : 0),
         host            => $fsck_host,
-        max_fid_checked => $max_check,
-        policy_only     => $opt_nostat,
-    };
-    return $self->ok_line($ret);
+        max_fid_checked => $intss->('fsck_highest_fid_checked'),
+        policy_only     => $intss->('fsck_opt_policy_only'),
+        max_fid         => $sto->max_fidid,
+        start_time      => $intss->('fsck_start_time'),
+        stop_time       => $intss->('fsck_stop_time'),
+        current_time    => $sto->get_db_unixtime,
+    });
 }
 
 sub ok_line {

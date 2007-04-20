@@ -78,10 +78,12 @@ sub work {
 
         my $sto        = Mgd::get_store();
         my $max_check  = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-        my $opt_nostat = MogileFS::Config->server_setting('fsck_opt_skip_stat')       || 0;
+        my $opt_nostat = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
         my @fids       = $sto->get_fids_above_id($max_check, 100);
 
         unless (@fids) {
+            $sto->set_server_setting("fsck_host", undef);
+            $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
             $stop->();
             return;
         }
