@@ -4,6 +4,7 @@ use strict;
 use base 'MogileFS::Worker';
 use fields (
             'last_stop_check',  # unixtime 'should_stop_running' last called
+            'last_maxcheck_write', # unixtime maxcheck written
             );
 use MogileFS::Util qw(every error debug);
 use List::Util ();
@@ -23,6 +24,8 @@ use constant EV_START_SEARCH     => "SRCH";
 use constant EV_FOUND_FID        => "FOND";
 use constant EV_RE_REPLICATE     => "REPL";
 
+my $nowish;  # approximate unixtime, updated once per loop.
+
 sub watchdog_timeout { 30 }
 
 sub work {
@@ -35,20 +38,18 @@ sub work {
     my $n_check = 0; # items checked
     my $start = sub {
         return if $running;
-        $running = time();
+        $running = $nowish = time();
     };
     my $stats = sub {
         return unless $running;
-        my $now = time();
-        my $elap = $now - $running;
+        my $elap = $nowish - $running;
         debug("[fsck] In %d secs, %d fids, %0.02f fids/sec\n", $elap, $n_check, ($n_check / ($elap || 1)));
     };
     my $last_beat = 0;
     my $beat = sub {
-        my $now = time();
-        return unless $now >= $last_beat + 5;
+        return unless $nowish >= $last_beat + 5;
         $stats->();
-        $last_beat = $now;
+        $last_beat = $nowish;
     };
     my $stop = sub {
         return unless $running;
@@ -58,12 +59,19 @@ sub work {
     };
     # </debug crap>
 
+    my $sto         = Mgd::get_store();
+    my $max_checked = 0;
+
     every(5.0, sub {
         my $sleep_set = shift;
         $self->parent_ping;
+        $nowish = time();
 
         # see if we're even enabled for this host.
-        return unless $self->should_be_running;
+        unless ($self->should_be_running) {
+            $max_checked = 0;  # uncache this
+            return;
+        }
 
         # checking doesn't go well if the monitor job hasn't actively started
         # marking things as being available
@@ -75,14 +83,14 @@ sub work {
             return;
         }
 
-        my $sto        = Mgd::get_store();
-        my $max_check  = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
+        $max_checked ||= MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
         my $opt_nostat = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
-        my @fids       = $sto->get_fids_above_id($max_check, 100);
+        my @fids       = $sto->get_fids_above_id($max_checked, 5000);
 
         unless (@fids) {
             $sto->set_server_setting("fsck_host", undef);
             $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
+            $self->set_max_checked($max_checked) if $max_checked;
             $stop->();
             return;
         }
@@ -90,9 +98,14 @@ sub work {
 
         MogileFS::FID->mass_load_devids(@fids);
 
+        # don't sleep in loop, next round, since we found stuff to work on
+        # this round...
+        $sleep_set->(0);
+
         my $new_max;
         my $hit_problem = 0;
         foreach my $fid (@fids) {
+            $nowish = time();
             $self->still_alive;
             last if $self->should_stop_running;
             if (!$self->check_fid($fid, no_stat => $opt_nostat)) {
@@ -101,15 +114,10 @@ sub work {
                 $hit_problem = 1;
                 last;
             }
-            $new_max = $fid->id;
+            $max_checked = $fid->id;
+            $self->set_max_checked_lazy($max_checked);
             $n_check++;
             $beat->();
-        }
-
-        if ($new_max) {
-            MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $new_max);
-            # don't sleep in every() loop next time:
-            $sleep_set->(0);
         }
 
         # if we had connectivity problems, let's sleep a bit
@@ -118,6 +126,19 @@ sub work {
             sleep 5;
         }
     });
+}
+
+# only write to server_settings table our position every 5 seconds
+sub set_max_checked_lazy {
+    my ($self, $nmax) = @_;
+    return 0 if $nowish < ($self->{last_maxcheck_write} || 0) + 5;
+    $self->{last_maxcheck_write} = $nowish;
+    $self->set_max_checked($nmax);
+}
+
+sub set_max_checked {
+    my ($self, $nmax) = @_;
+    MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $nmax);
 }
 
 # this version is accurate,
@@ -131,9 +152,8 @@ sub should_be_running {
 # this version is sloppy, optimized for speed.  only checks db every 5 seconds.
 sub should_stop_running {
     my $self = shift;
-    my $now  = time();
-    return 0 if $now < ($self->{last_stop_check} || 0) + 5;
-    $self->{last_stop_check} = $now;
+    return 0 if $nowish < ($self->{last_stop_check} || 0) + 5;
+    $self->{last_stop_check} = $nowish;
     return ! $self->should_be_running;
 }
 
