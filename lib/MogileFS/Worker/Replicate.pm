@@ -332,11 +332,9 @@ sub rebalance_devices {
     do {
         my $dfid = $sto->get_devfid_rebalance_candidate;
         my ($devid, $fid) = ($dfid->devid, $dfid->fidid);
-        warn "Going to attempt rebalance on FID:$fid and DEVID:$devid\n";
 
         my $ret = $self->rebalance_devfid($dfid);
 
-        warn "Rebalanace attempt returned: $ret\n";
     } until ($stop_at < time());
 }
 
@@ -351,7 +349,8 @@ sub rebalance_devfid {
 
     my $fail = sub {
         my $error = shift;
-        warn "Rebalance for " . $devfid->url . " failed: $error";
+        error("Rebalance for " . $devfid->url . " failed: $error")
+            if ($Mgd::DEBUG >= 1);
         $unlock->();
         return 0;
     };
