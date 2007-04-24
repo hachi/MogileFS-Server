@@ -1193,6 +1193,14 @@ sub _do_fsck_reset {
     $sto->set_server_setting("fsck_stop_time",        undef);
     $sto->set_server_setting("fsck_fids_checked",     0);
     $sto->set_server_setting("fsck_fid_at_end",       $sto->max_fidid);
+
+    # clear existing event counts summaries.
+    my $ss = $sto->server_settings;
+    foreach my $k (keys %$ss) {
+        next unless $k =~ /^fsck_sum_evcount_/;
+        $sto->set_server_setting($k, undef);
+    }
+    $sto->set_server_setting("fsck_start_maxlogid", $sto->max_fsck_logid);
 }
 
 sub cmd_fsck_clearlog {
@@ -1239,9 +1247,19 @@ sub cmd_fsck_status {
     };
 
     # throw some stats in.
-    my $ev_cts = $sto->fsck_evcode_counts(time_gte => $ret->{start_time});
+    my $ss = $sto->server_settings;
+    foreach my $k (keys %$ss) {
+        next unless $k =~ /^fsck_sum_evcount_(.+)/;
+        $ret->{"num_$1"} += $ss->{$k};
+    }
+
+    # add in any stats which might not've been summarized yet.,,
+    my $max_logid = $sto->max_fsck_logid;
+    my $min_logid = MogileFS::Util::max($intss->("fsck_start_maxlogid"),
+                                        $max_logid - ($max_logid % $sto->fsck_log_summarize_every)) + 1;
+    my $ev_cts = $sto->fsck_evcode_counts(logid_range => [$min_logid, $max_logid]);
     while (my ($ev, $ct) = each %$ev_cts) {
-        $ret->{"num_$ev"} = $ct;
+        $ret->{"num_$ev"} += $ct;
     }
 
     return $self->ok_line($ret);

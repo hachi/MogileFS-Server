@@ -2,7 +2,7 @@ package MogileFS::Store;
 use strict;
 use warnings;
 use Carp qw(croak);
-use MogileFS::Util qw(throw);
+use MogileFS::Util qw(throw max);
 use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
 
 # this is incremented whenever the schema changes.  server will refuse
@@ -701,10 +701,34 @@ sub set_server_setting {
     return 1;
 }
 
+# FIXME: racy.  currently the only caller doesn't matter, but should be fixed.
+sub incr_server_setting {
+    my ($self, $key, $val) = @_;
+    $val = 1 unless defined $val;
+    return unless $val;
+
+    return 1 if $self->dbh->do("UPDATE server_settings ".
+                               "SET value=value+? ".
+                               "WHERE field=?", undef,
+                               $val, $key) > 0;
+    $self->set_server_setting($key, $val);
+}
+
 sub server_setting {
     my ($self, $key) = @_;
     return $self->dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?",
                                        undef, $key);
+}
+
+sub server_settings {
+    my ($self) = @_;
+    my $ret = {};
+    my $sth = $self->dbh->prepare("SELECT field, value FROM server_settings");
+    $sth->execute;
+    while (my ($k, $v) = $sth->fetchrow_array) {
+        $ret->{$k} = $v;
+    }
+    return $ret;
 }
 
 # register a tempfile and return the fidid, which should be allocated
@@ -1223,6 +1247,8 @@ sub clear_fsck_log {
     return 1;
 }
 
+sub fsck_log_summarize_every { 100 }
+
 sub fsck_log {
     my ($self, %opts) = @_;
     $self->dbh->do("INSERT INTO fsck_log (utime, fid, evcode, devid) ".
@@ -1232,6 +1258,27 @@ sub fsck_log {
                    delete $opts{code},
                    delete $opts{devid});
     croak("Unknown opts") if %opts;
+
+    my $logid = $self->dbh->last_insert_id(undef, undef, undef, undef)
+        or die "No last_insert_id found for fsck_log table";
+
+    # sum-up evcode counts every so often, to make fsck_status faster,
+    # avoiding a potentially-huge GROUP BY in the future..
+    my $SUM_EVERY = $self->fsck_log_summarize_every;
+    # Note: totally disregards locking/races because there's only one
+    # fsck process running globally (in theory-- there could be 5
+    # second overlaps on quick stop/starts, so we take some regard for
+    # races, but not much).
+    if ($logid % $SUM_EVERY == 0) {
+        my $start_max_logid = $self->server_setting("fsck_start_maxlogid") || 0;
+        # both inclusive:
+        my $min_logid = max($start_max_logid, $logid - $SUM_EVERY) + 1;
+        my $cts = $self->fsck_evcode_counts(logid_range => [$min_logid, $logid]); # inclusive notation :)
+        while (my ($evcode, $ct) = each %$cts) {
+            $self->incr_server_setting("fsck_sum_evcount_$evcode", $ct);
+        }
+    }
+
     return 1;
 }
 
@@ -1247,7 +1294,7 @@ sub max_fidid {
 
 sub max_fsck_logid {
     my $self = shift;
-    return $self->dbh->selectrow_array("SELECT MAX(logid) FROM fsck_log");
+    return $self->dbh->selectrow_array("SELECT MAX(logid) FROM fsck_log") || 0;
 }
 
 # returns array of $row hashrefs, from fsck_log table
@@ -1272,16 +1319,28 @@ sub fsck_log_rows {
 
 sub fsck_evcode_counts {
     my ($self, %opts) = @_;
-    my $gte = delete $opts{time_gte};
+    my $timegte = delete $opts{time_gte};
+    my $logr    = delete $opts{logid_range};
     die if %opts;
 
     my $ret = {};
-    my $sth = $self->dbh->prepare(qq{
-        SELECT evcode, COUNT(*) FROM fsck_log
-        WHERE utime >= ?
-        GROUP BY evcode
-    });
-    $sth->execute($gte||0);
+    my $sth;
+    if ($timegte) {
+        $sth = $self->dbh->prepare(qq{
+            SELECT evcode, COUNT(*) FROM fsck_log
+            WHERE utime >= ?
+            GROUP BY evcode
+         });
+        $sth->execute($timegte||0);
+    }
+    if ($logr) {
+        $sth = $self->dbh->prepare(qq{
+            SELECT evcode, COUNT(*) FROM fsck_log
+            WHERE logid >= ? AND logid <= ?
+            GROUP BY evcode
+         });
+        $sth->execute($logr->[0], $logr->[1]);
+    }
     while (my ($ev, $ct) = $sth->fetchrow_array) {
         $ret->{$ev} = $ct;
     }

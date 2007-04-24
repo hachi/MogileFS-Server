@@ -1,3 +1,8 @@
+        * make fsck faster (though more fastness remains to be done)
+
+        * make fsck_status faster (keep summary stats of evcode counts,
+          rather than doing a full GROUP BY query all the time)
+
 2007-04-20: Release version 2.09
 
         * filesystem checker (Fsck worker).  off by default, unless
