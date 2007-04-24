@@ -218,18 +218,31 @@ sub create_table {
         }
     }
 
-    $self->SUPER::create_table(@_);
+    my $existed = $self->table_exists($table);
 
+    $self->SUPER::create_table(@_);
     return if $ENV{USE_UNSAFE_MYSQL};
 
-    $dbh->do("ALTER TABLE $table TYPE=InnoDB");
-    warn "DBI reported an error of: '" . $dbh->errstr . "' when trying to " .
-         "alter table type of $table to InnoDB\n" if $dbh->err;
+    # don't alter an existing table up to InnoDB from MyISAM...
+    # could be costly.  but on new tables, no problem...
+    unless ($existed) {
+        $dbh->do("ALTER TABLE $table TYPE=InnoDB");
+        warn "DBI reported an error of: '" . $dbh->errstr . "' when trying to " .
+            "alter table type of $table to InnoDB\n" if $dbh->err;
+    }
 
+    # but in any case, let's see if it's already InnoDB or not.
     my $table_status = $dbh->selectrow_hashref("SHOW TABLE STATUS LIKE '$table'");
 
-    die "MySQL didn't change table type to InnoDB as requested.\n\n$errmsg"
-        unless $table_status->{Engine} eq 'InnoDB';
+    # if not, either die or warn.
+    unless (($table_status->{Engine} || $table_status->{Type} || "") eq "InnoDB") {
+        if ($existed) {
+            warn "WARNING: MySQL table that isn't InnoDB: $table\n";
+        } else {
+            die "MySQL didn't change table type to InnoDB as requested.\n\n$errmsg"
+        }
+    }
+
 }
 
 # --------------------------------------------------------------------------

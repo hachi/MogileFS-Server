@@ -332,6 +332,7 @@ sub setup_database {
     my $sto = shift;
 
     # schema history:
+    #   8: adds fsck_log table
     #   7: adds file_to_delete_later table
     #   6: adds file_to_replicate table
     my $curver = $sto->schema_version;
