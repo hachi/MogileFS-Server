@@ -1,3 +1,5 @@
+2007-04-24: Release version 2.10
+
         * bug from earlier refactoring:  changing some 'next' to 'return'
           in MogileFS::Device's create_directory method.  (thanks to
           Justin Huff <jjhuff@mspin.net>)
@@ -7,7 +9,9 @@
           only new tables should become InnoDB on creation.  also,
           detect InnoDB even on old MySQL 4.0.x, not just 4.1/5.0.
 
-        * make fsck faster (though more fastness remains to be done)
+        * make fsck faster by reducing number of db queries (both
+          reads and writes), though more unrelated fastness remains to
+          be done.
 
         * make fsck_status faster (keep summary stats of evcode counts,
           rather than doing a full GROUP BY query all the time)
