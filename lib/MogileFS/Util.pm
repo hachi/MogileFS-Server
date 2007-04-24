@@ -9,6 +9,7 @@ our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(
                     error undeferr debug fatal daemonize weighted_list every
                     wait_for_readability wait_for_writeability throw error_code
+                    max min
                     );
 
 sub every {
@@ -222,5 +223,16 @@ sub url_parts {
     Carp::croak("Bogus URL: $path");
 }
 
+sub max {
+    my ($n1, $n2) = @_;
+    return $n1 if $n1 > $n2;
+    return $n2;
+}
+
+sub min {
+    my ($n1, $n2) = @_;
+    return $n1 if $n1 < $n2;
+    return $n2;
+}
 
 1;
