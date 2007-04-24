@@ -1,3 +1,9 @@
+-- MogileFS::Device ->make_directory on lighttpd isn't exactly right, as WebDAV
+   spec says MKCOL on an existing directory should return 405 (Method Not Allowed),
+   which I think is the same as a server without WebDAV enabled... we need to distinguish
+   between those two cases.  (perhaps in Monitor job?)
+   405 (Method Not Allowed) - MKCOL can only be executed on a deleted/non-existent resource.
+
 -- mogdbsetup should use /etc/mogilefs/mogilefsd.conf for upgrade dsn info
 
 -- make fsck process nice itself, if possible.
