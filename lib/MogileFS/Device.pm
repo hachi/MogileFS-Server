@@ -369,10 +369,11 @@ sub doesnt_know_mkcol {
 
 my %dir_made;  # /dev<n>/path -> $time
 my $dir_made_lastclean = 0;
+# returns 1 on success, 0 on failure
 sub create_directory {
     my ($self, $uri) = @_;
     return 1 if $self->doesnt_know_mkcol;
-    next if $dir_made{$uri};
+    return 1 if $dir_made{$uri};
 
     my $hostid = $self->hostid;
     my $host   = $self->host;
@@ -381,7 +382,8 @@ sub create_directory {
     my $peer = "$hostip:$port";
 
     my $sock = IO::Socket::INET->new(PeerAddr => $peer, Timeout => 1)
-        or next;
+        or return 0;
+
     print $sock "MKCOL $uri HTTP/1.0\r\n".
         "Content-Length: 0\r\n\r\n";
 

@@ -1,3 +1,7 @@
+        * bug from earlier refactoring:  changing some 'next' to 'return'
+          in MogileFS::Device's create_directory method.  (thanks to
+          Justin Huff <jjhuff@mspin.net>)
+
         * make sure mogdbsetup doesn't upgrade an existing table (with
           potentially lot of data) from MyISAM to InnoDB.  just warn.
           only new tables should become InnoDB on creation.  also,
