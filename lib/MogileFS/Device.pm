@@ -165,6 +165,7 @@ sub devices {
 }
 
 # returns hashref of devid -> $device_obj
+# you're allowed to mess with this returned hashref
 sub map {
     my $class = shift;
     my $ret = {};

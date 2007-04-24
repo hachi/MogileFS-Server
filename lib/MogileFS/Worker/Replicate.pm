@@ -112,6 +112,8 @@ sub work {
             $self->replicate_using_devcounts;
         }
 
+        $self->rebalance_devices;
+
     });
 }
 
@@ -318,6 +320,55 @@ sub replicate_using_devcounts {
     });
 }
 
+sub rebalance_devices {
+    my $self = shift;
+
+    my $sto = Mgd::get_store();
+
+    return 0 unless $sto->server_setting('enable_rebalance');
+
+    my $stop_at = time() + 5; # Run for up to 5 seconds, then return.
+
+    do {
+        my $dfid = $sto->get_devfid_rebalance_candidate;
+        my ($devid, $fid) = ($dfid->devid, $dfid->fidid);
+        warn "Going to attempt rebalance on FID:$fid and DEVID:$devid\n";
+
+        my $ret = $self->rebalance_devfid($dfid);
+
+        warn "Rebalanace attempt returned: $ret\n";
+    } until ($stop_at < time());
+}
+
+# Return 1 on success, 0 on failure.
+sub rebalance_devfid {
+    my ($self, $devfid, %opts) = @_;
+
+    my ($ret, $unlock) = replicate($devfid->fidid,
+                                   mask_devids_from_repl_dest => { $devfid->devid => 1 },
+                                   no_unlock => 1,
+                                   );
+
+    my $fail = sub {
+        my $error = shift;
+        warn "Rebalance for " . $devfid->url . " failed: $error";
+        $unlock->();
+        return 0;
+    };
+
+    unless ($ret) {
+        return $fail->("Replication failed");
+    }
+
+    eval { $devfid->destroy };
+    if ($@) {
+        return $fail->("Destruction of original file after rebalance failed: $@");
+    }
+
+    $unlock->();
+    return 1;
+}
+
 # replicates $fid if its devcount is less than $min.  (eh, not quite)
 #
 # $policy_class is optional (perl classname representing replication policy).  if present, used.  if not, looked up based on $fid.
@@ -329,7 +380,10 @@ sub replicate {
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
     my $sdevid    = delete $opts{'source_devid'};
+    my $mask_devids_from_repl_dest = delete $opts{'mask_devids_from_repl_dest'} || {};
     die if %opts;
+
+    die unless ref $mask_devids_from_repl_dest eq "HASH";
 
     # bool:  if source was explicitly requested by caller
     my $fixed_source = $sdevid ? 1 : 0;
@@ -389,15 +443,15 @@ sub replicate {
     }
 
     # learn what this devices file is already on
-    my @on_devs;       # all devices fid is on, reachable or not.
-    my @dead_devid;    # list of dead devids.  FIXME: do something with this?
-    my @on_up_devid;   # subset of @on_devs:  just devs that are alive or readonly
+    my @on_devs;        # all devices fid is on, reachable or not.
+    my @on_devs_masked; # all devices fid is on, except masked devices for destination in replication.
+    my @on_up_devid;    # subset of @on_devs:  just devs that are alive or readonly
 
     foreach my $devid ($fid->devids) {
         my $d = MogileFS::Device->of_devid($devid);
         push @on_devs, $d;
+        push @on_devs_masked, $d unless $mask_devids_from_repl_dest->{$devid};
         unless ($d && $d->status =~ /^alive|readonly$/) {
-            push @dead_devid, $devid;
             next;
         }
         push @on_up_devid, $devid;
@@ -417,14 +471,21 @@ sub replicate {
     my $got_copy_request = 0;  # true once replication policy asks us to move something somewhere
     my $copy_err;
 
+    # We're faking device failures so the repl policy doesn't ask
+    # us to put the devices here.
+    foreach my $mdevid (keys %$mask_devids_from_repl_dest) {
+        delete $devs->{$mdevid};
+        $dest_failed{$mdevid} = 1;
+    }
+
     while ($ddevid = $policy_class->replicate_to(
                                                  fid       => $fidid,
-                                                 on_devs   => \@on_devs, # all device objects fid is on, dead or otherwise
+                                                 on_devs   => \@on_devs_masked, # all device objects fid is on, dead or otherwise
                                                  all_devs  => $devs,
                                                  failed    => \%dest_failed,
                                                  min       => $cls->mindevcount,
                                                  ))
-    {
+   {
         # they can return either a dev hashref/object or a devid number.  we want the number.
         $ddevid = $ddevid->{devid} if ref $ddevid;
         $got_copy_request = 1;
@@ -484,6 +545,7 @@ sub replicate {
         $dfid->add_to_db;
 
         push @on_devs, $devs->{$ddevid};
+        push @on_devs_masked, $devs->{$ddevid};
     }
 
     # returning 0, not undef, means replication policy is happy and we're done.

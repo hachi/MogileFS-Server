@@ -103,6 +103,22 @@ sub add_to_db {
     }
 }
 
+# Destroy a particular replica of a file via HTTP, remove it
+# from the tracker, and update the replication counts to be
+# accurate again.
+sub destroy {
+    my $self = shift;
+    my $httpfile = MogileFS::HTTPFile->at($self->url)
+        or die "Creation of HTTPFile object failed.";
+
+    $httpfile->delete
+        or die "Deletion of file via HTTP failed.";
+
+    my $sto = Mgd::get_store();
+    $sto->remove_fidid_from_devid($self->fidid, $self->devid);
+    $sto->update_devcount($self->fidid);
+}
+
 1;
 
 __END__

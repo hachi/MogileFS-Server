@@ -1170,6 +1170,13 @@ sub reschedule_file_to_replicate_relative {
                    undef, $in_n_secs, $fid);
 }
 
+# TODO brad needs to make this efficient, and make it throw exceptions
+sub get_devfid_rebalance_candidate {
+    my $self = shift;
+    my ($fid, $devid) = $self->dbh->selectrow_array('SELECT fid, devid FROM file_on ORDER BY rand() LIMIT 1');
+    return MogileFS::DevFID->new($devid, $fid);
+}
+
 # Given a dmid prefix after and limit, return an arrayref of dkey from the file
 # table.
 sub get_keys_like {

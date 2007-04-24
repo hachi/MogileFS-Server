@@ -6,7 +6,7 @@ use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
 use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability);
 
 # (caching the connection used for HEAD requests)
-my %head_socket;                # host:port => [$pid, $time, $socket]
+my %http_socket;                # host:port => [$pid, $time, $socket]
 
 my %streamcache;    # host -> IO::Socket::INET to mogstored
 
@@ -56,6 +56,59 @@ sub host {
     return $self->device->host;
 }
 
+# TODO cache connections
+sub delete {
+    my $self = shift;
+    my ($host, $port) = ($self->{host}, $self->{port});
+
+    my $httpsock;
+
+    # try to reuse cached socket
+    if (my $cached = $http_socket{"$host:$port"}) {
+        my ($pid, $conntime, $cachesock) = @{ $cached };
+        # see if it's still connected
+        if ($pid == $$ && getpeername($cachesock) &&
+            $conntime > Time::HiRes::time() - 15 &&
+            # readability would indicated conn closed, or garbage:
+            ! wait_for_readability(fileno($cachesock), 0.00))
+        {
+            $httpsock = $cachesock;
+        }
+    }
+
+    unless ($httpsock) {
+        $httpsock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 2)
+            or return 0;
+    }
+
+    $httpsock->write("DELETE $self->{uri} HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
+
+    my $keep_alive = 0;
+
+    while (defined (my $line = <$httpsock>)) {
+        $line =~ s/[\s\r\n]+$//;
+        last unless length $line;
+        if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
+            # make sure we get a good response
+            unless ($1 == 204) {
+                warn "Bad response from http server";
+                delete $http_socket{"$host:$port"};
+                return 0;
+            }
+        }
+
+        $keep_alive = 1 if $line =~ /^Connection:.+\bkeep-alive\b/i;
+    }
+
+    if ($keep_alive) {
+        $http_socket{"$host:$port"} = [ $$, Time::HiRes::time(), $httpsock ];
+    } else {
+        delete $http_socket{"$host:$port"};
+    }
+
+    return 1;
+}
+
 # returns size of file, (doing a HEAD request and looking at content-length, or side-channel to mogstored)
 # returns 0 on file missing (404 or -1 from sidechannel),
 # returns undef on connectivity error
@@ -81,7 +134,7 @@ sub size {
         return if $httpsock;  # don't allow starting connecting twice
 
         # try to reuse cached socket
-        if (my $cached = $head_socket{"$host:$port"}) {
+        if (my $cached = $http_socket{"$host:$port"}) {
             my ($pid, $conntime, $cachesock) = @{ $cached };
             # see if it's still connected
             if ($pid == $$ && getpeername($cachesock) &&
@@ -242,16 +295,16 @@ sub size {
     while (defined (my $line = <$httpsock>)) {
         if ($line eq "\r\n") {
             if ($keep_alive) {
-                $head_socket{"$host:$port"} = [ $$, Time::HiRes::time(), $httpsock ];
+                $http_socket{"$host:$port"} = [ $$, Time::HiRes::time(), $httpsock ];
             } else {
-                delete $head_socket{"$host:$port"};
+                delete $http_socket{"$host:$port"};
             }
             return $cl;
         }
         $cl = $1        if $line =~ /^Content-length: (\d+)/i;
         $keep_alive = 1 if $line =~ /^Connection:.+\bkeep-alive\b/i;
     }
-    delete $head_socket{"$host:$port"};
+    delete $http_socket{"$host:$port"};
 
     # no content length found?
     return undeferr("get_file_size() found no content-length header in response for $path");

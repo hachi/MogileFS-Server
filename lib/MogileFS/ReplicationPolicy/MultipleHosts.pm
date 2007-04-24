@@ -44,8 +44,8 @@ sub replicate_to {
     my $uniq_hosts_on    = scalar keys %on_host;
     my $total_uniq_hosts = unique_hosts($all_devs);
 
-    # if there are more hosts we're not on yet, we want to exclude those from
-    # our applicable host search.
+    # if there are more hosts we're not on yet, we want to exclude devices we're already
+    # on from our applicable host search.
     my $not_on_hosts = [];
     if ($uniq_hosts_on < $total_uniq_hosts) {
         $not_on_hosts = [ keys %on_host ];
