@@ -56,7 +56,6 @@ sub host {
     return $self->device->host;
 }
 
-# TODO cache connections
 sub delete {
     my $self = shift;
     my ($host, $port) = ($self->{host}, $self->{port});
