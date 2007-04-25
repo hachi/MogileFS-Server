@@ -14,7 +14,6 @@ use strict;
 use lib 'lib';
 use IO::Socket::INET;
 use POSIX qw(WNOHANG);
-use Fcntl qw(SEEK_CUR SEEK_SET SEEK_END O_RDWR O_CREAT O_TRUNC);
 use Perlbal 1.52;
 use FindBin qw($Bin $RealScript);
 
@@ -44,6 +43,7 @@ my $mgmt_listen = "0.0.0.0:7501";
 my $docroot     = "/var/mogdata";
 my $default_config = "/etc/mogilefs/mogstored.conf";
 my $server      = "perlbal";
+my $serverbin   = "";
 
 my %config_opts = (
                    'iostat'       => \$opt_iostat,
@@ -54,6 +54,7 @@ my %config_opts = (
                    'docroot=s'    => \$docroot,
                    'maxconns=i'   => \$max_conns,
                    'server=s'     => \$server,
+                   'serverbin=s'  => \$serverbin,
                    );
 usage() unless Getopt::Long::GetOptions(%config_opts);
 
@@ -77,9 +78,12 @@ Perlbal::run_manage_commands(qq{
 
 # start HTTP server
 my $httpsrv_class = "Mogstored::HTTPServer::" . ucfirst($server);
-my $httpsrv       = $httpsrv_class->new(listen   => $http_listen,
+my $httpsrv       = $httpsrv_class->new(
+                                        listen   => $http_listen,
                                         docroot  => $docroot,
-                                        maxconns => $max_conns);
+                                        maxconns => $max_conns,
+                                        bin      => $serverbin,
+                                        );
 $httpsrv->start;
 
 if ($opt_daemonize) {
@@ -166,6 +170,11 @@ sub harvest_dead_children {
         $code->() if $code;
     }
     Danga::Socket->AddTimer(2, \&harvest_dead_children);
+}
+
+sub Mogstored::on_pid_death {
+    my ($class, $pid, $code) = @_;
+    $on_death{$pid} = $code;
 }
 
 # returns $pid of child, if parent, else runs child.
