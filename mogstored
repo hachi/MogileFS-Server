@@ -8,7 +8,7 @@ eval 'exec /usr/bin/perl -w -S $0 ${1+"$@"}'
 #  (perlbal front-end)
 #
 # (c) 2004, Brad Fitzpatrick, <brad@danga.com>
-# (c) 2006, Six Apart, Ltd.
+# (c) 2006-2007, Six Apart, Ltd.
 
 use strict;
 use lib 'lib';
@@ -17,6 +17,12 @@ use POSIX qw(ENOENT EACCES EBADF WNOHANG);
 use Fcntl qw(SEEK_CUR SEEK_SET SEEK_END O_RDWR O_CREAT O_TRUNC);
 use Perlbal 1.52;
 use FindBin qw($Bin $RealScript);
+
+use Mogstored::HTTPServer;
+use Mogstored::HTTPServer::Perlbal;
+use Mogstored::HTTPServer::Lighttpd;
+use Mogstored::SideChannelListener;
+use Mogstored::SideChannelClient;
 
 # verify their Linux::AIO or IO::AIO works.  Perlbal 1.51 does this,
 # but just copying it here so people don't need to upgrade for this
@@ -80,6 +86,8 @@ my $http_listen = "0.0.0.0:7500";
 my $mgmt_listen = "0.0.0.0:7501";
 my $docroot     = "/var/mogdata";
 my $default_config = "/etc/mogilefs/mogstored.conf";
+my $server      = "perlbal";
+
 my %config_opts = (
                    'iostat'       => \$opt_iostat,
                    'daemonize|d'  => \$opt_daemonize,
@@ -87,65 +95,44 @@ my %config_opts = (
                    'httplisten=s' => \$http_listen,
                    'mgmtlisten=s' => \$mgmt_listen,
                    'docroot=s'    => \$docroot,
-                   'maxconns=i'    => \$max_conns,
+                   'maxconns=i'   => \$max_conns,
+                   'server=s'     => \$server,
                    );
 usage() unless Getopt::Long::GetOptions(%config_opts);
+
+die "Unknown server type.  Valid options: --server={perlbal,lighttpd}"
+    unless $server =~ /^perlbal|lighttpd$/;
 
 $opt_config = $default_config if ! $opt_config && -e $default_config;
 load_config_file($opt_config => \%config_opts) if $opt_config;
 
-# use AIO channels in Perlbal
-Perlbal::AIO::set_file_to_chan_hook(sub {
-    my $filename = shift;
-    $filename =~ m{/dev(\d+)\b} or return undef;
-    return "dev$1";
-});
+# initialize basic required Perlbal machinery, for any HTTP server
+Perlbal::run_manage_commands(qq{
+   CREATE SERVICE mogstored
+     SET role = web_server
+     SET docroot = $docroot
 
-my $xs_conf = "";
-if (eval "use Perlbal::XS::HTTPHeaders (); 1") {
-    $xs_conf .= "xs enable headers\n" unless defined $ENV{PERLBAL_XS_HEADERS} && ! $ENV{PERLBAL_XS_HEADERS};
-}
+    # don't listen... this is just a stub service.
+    CREATE SERVICE mgmt
+       SET role = management
+     ENABLE mgmt
+}, sub { print STDERR "$_[0]\n"; });
 
-# this is the perlbal configuration only.  not the mogstored configuration.
-my $pb_conf = "
-$xs_conf
-SERVER max_connections = $max_conns
-CREATE SERVICE mogstored
-   SET role = web_server
-   SET listen = $http_listen
-   SET docroot = $docroot
-   SET dirindexing = 0
-   SET enable_put = 1
-   SET enable_delete = 1
-   SET min_put_directory = 1
-   SET persist_client = 1
-ENABLE mogstored
-
-# don't listen... this is just a stub service.
-CREATE SERVICE mgmt
-   SET role = management
-ENABLE mgmt
-";
-
-Perlbal::run_manage_commands($pb_conf, sub { print STDERR "$_[0]\n"; });
-
-unless (Perlbal::Socket->WatchedSockets > 0) {
-    die "Invalid configuration.  (shouldn't happen?)  Stopping.\n";
-}
+# start HTTP server
+my $httpsrv_class = "Mogstored::HTTPServer::" . ucfirst($server);
+my $httpsrv       = $httpsrv_class->new(listen   => $http_listen,
+                                        docroot  => $docroot,
+                                        maxconns => $max_conns);
+$httpsrv->start;
 
 if ($opt_daemonize) {
-    die "mogstored won't daemonize with \$ENV{MOGSTORED_RUN_WITHOUT_AIO} set.\n" if $ENV{'MOGSTORED_RUN_WITHOUT_AIO'};
+    $httpsrv->pre_daemonize;
     Perlbal::daemonize();
 } else {
     print "Running.\n";
 }
 
-# set number of AIO threads, between 10-100 (for some reason, have to
-# set aio threads after daemonizing)
-{
-    my $aio_threads = aio_threads(disks($docroot));
-    Perlbal::run_manage_commands("SERVER aio_threads = $aio_threads", sub { print STDERR "$_[0]\n"; });
-}
+$httpsrv->post_daemonize;
 
 # kill our children processes on exit:
 my $parent_pid = $$;
@@ -165,9 +152,6 @@ setup_sidechannel_listener();
 # now start the main loop
 Perlbal::run();
 
-
-############################################################################
-# main:: functions
 ############################################################################
 
 sub usage {
@@ -184,6 +168,11 @@ OPTS:
  --docroot=<path>       Docroot above device mount points.  Defaults to /var/mogdata
 ";
 
+}
+
+# accessor for SideChannelClient:
+sub Mogstored::iostat_available {
+    return $iostat_available;
 }
 
 sub load_config_file {
@@ -247,16 +236,27 @@ sub start_disk_usage_process {
     exec $exe;
 }
 
-sub iostat_subscribe {
+sub Mogstored::iostat_subscribe {
     my $sock = shift;
     $iostat_listeners{fileno($sock->sock)} = $sock;
 }
 
-sub iostat_unsubscribe {
+sub Mogstored::iostat_unsubscribe {
     my $sock = shift;
     my $fdno = fileno($sock->sock);
     return unless defined $fdno;
     delete $iostat_listeners{$fdno};
+}
+
+# to be honest, I have no clue why this exists.  I just had to move it
+# around for multi-server refactoring, and I felt better not
+# understanding it but preserving than killing it.  in particular, why
+# is this "graceful"?  (gets called from SideChannelClient's
+# die_gracefully)
+sub Mogstored::on_sidechannel_die_gracefully {
+    if ($$ == $parent_pid) {
+        kill 'TERM', grep { $_ } keys %on_death;
+    }
 }
 
 sub setup_sidechannel_listener {
@@ -320,139 +320,6 @@ sub read_from_iostat_child {
             # where $line will be like "dev53\t53.23" or a "." to signal end of a group of devices.
             $out_sock->write("$line\n");
         }
-    }
-}
-
-sub disks {
-    my $root = shift;
-    opendir(my $dh, $root) or die "Failed to open docroot: $root: $!";
-    return scalar grep { /^dev\d+$/ } readdir($dh);
-}
-
-# returns aio threads to use, given a disk count
-sub aio_threads {
-    my $disks = shift;
-    my $threads = ($disks || 1) * 10;
-    return 100 if $threads > 100;
-    return $threads;
-}
-
-#############################################################################
-package Mogstored::SideChannelListener;
-use strict;
-use base 'Perlbal::TCPListener';
-
-sub new {
-    my ($class, $hostport) = @_;
-    # we don't _really_ need this, but TCPListener kinda does, to keep it from
-    # exploding/warning.  so we created this stub service above in our static
-    # config, just for this.
-    my $svc    = Perlbal->service("mgmt") or die "Where is mgmt service?";
-    return $class->SUPER::new($hostport, $svc);
-}
-
-sub event_read {
-    my $self = shift;
-    # accept as many connections as we can
-    while (my ($csock, $peeraddr) = $self->{sock}->accept) {
-        IO::Handle::blocking($csock, 0);
-        my $client = Mogstored::SideChannelClient->new($csock);
-        $client->watch_read(1);
-    }
-}
-
-#############################################################################
-### simple package for handling the stream request port
-package Mogstored::SideChannelClient;
-
-use strict;
-use base qw{Perlbal::Socket};
-use fields (
-            'count',      # how many requests we've serviced
-            'read_buf',   # unprocessed read buffer
-            'mogsvc',     # the mogstored Perlbal::Service object
-            );
-
-# needed since we're pretending to be a Perlbal::Socket... never idle out
-sub max_idle_time { return 0; }
-
-sub new {
-    my Mogstored::SideChannelClient $self = shift;
-    $self = fields::new($self) unless ref $self;
-    $self->SUPER::new(@_);
-    $self->{count} = 0;
-    $self->{read_buf} = '';
-    $self->{mogsvc} = Perlbal->service('mogstored');
-    return $self;
-}
-
-sub event_read {
-    my Mogstored::SideChannelClient $self = shift;
-
-    my $bref = $self->read(1024);
-    return $self->close unless defined $bref;
-    $self->{read_buf} .= $$bref;
-
-    my $path = $self->{mogsvc}->{docroot};
-
-    while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
-        my $cmd = $1;
-        if ($cmd =~ /^size (\S+)$/) {
-            # increase our count
-            $self->{count}++;
-
-            # validate uri
-            my $uri = $1;
-            if ($uri =~ /\.\./) {
-                $self->write("ERROR: uri invalid (contains ..)\r\n");
-                return;
-            }
-
-            # now stat the file to get the size and such
-            Perlbal::AIO::aio_stat("$path$uri", sub {
-                return if $self->{closed};
-                my $size = -e _ ? -s _ : -1;
-                $self->write("$uri $size\r\n");
-            });
-        } elsif ($cmd =~ /^watch$/i) {
-            unless ($iostat_available) {
-                $self->write("ERR iostat unavailable\r\n");
-                next;
-            }
-            $self->watch_read(0);
-            main::iostat_subscribe($self);
-        } else {
-            # we don't understand this so pass it on to manage command interface
-            my @out;
-            Perlbal::run_manage_command($cmd, sub { push @out, $_[0]; });
-            $self->write(join("\r\n", @out) . "\r\n");
-        }
-    }
-}
-
-# override Danga::Socket's event handlers which die
-sub event_err { $_[0]->close; }
-sub event_hup { $_[0]->close; }
-
-# as_string handler
-sub as_string {
-    my Mogstored::SideChannelClient $self = shift;
-
-    my $ret = $self->SUPER::as_string;
-    $ret .= "; size_requests=$self->{count}";
-
-    return $ret;
-}
-
-sub close {
-    my Mogstored::SideChannelClient $self = shift;
-    main::iostat_unsubscribe($self);
-    $self->SUPER::close;
-}
-
-sub die_gracefully {
-    if ($$ == $parent_pid) {
-        kill 'TERM', grep { $_ } keys %on_death;
     }
 }
 

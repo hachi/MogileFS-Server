@@ -1,3 +1,13 @@
+        * abstract out the HTTP server support in mogstored, so
+          mogstored isn't just a perlbal wrapper, but an anything
+          wrapper. (in particular, lighttpd and apache)  mogstored still
+          exists for all its other misc admin/monitoring functions,
+          but can then manage/configure apache/lighttpd child process(es).
+          so far they're just stubbed out.
+
+        * split mogstored into separate files per class, rather than one
+          large script.
+
 2007-04-24: Release version 2.10
 
         * bug from earlier refactoring:  changing some 'next' to 'return'
