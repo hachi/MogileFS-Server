@@ -1,0 +1,60 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use Errno qw(ENOENT);
+
+my ($base, $start, $end) = @ARGV;
+
+die unless -d $base;
+
+die unless length $start && length $end;
+die unless $end >= $start;
+
+die if $start > 9_999_999_999;
+die if $end   > 9_999_999_999;
+
+die if $start < 0;
+die if $end   < 0;
+
+my $hdir_start = int($start / 1000);
+my $hdir_end = int($end / 1000);
+
+my $file_start = $start % 1000;
+my $file_end   = $end   % 1000;
+
+for (my $hdir = $hdir_start; $hdir <= $hdir_end; $hdir++) {
+    my $nfid = sprintf '%07d', $hdir;
+    my ( $b, $mmm, $ttt ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})} );
+
+    my $hdir_path = "$base/$b/$mmm/$ttt";
+
+    my $rv = opendir(my $dh, "$base/$b/$mmm/$ttt");
+
+    unless ($rv) {
+        if ($! != ENOENT) {
+            print "ERR Unable to read directory $hdir_path: $!\n";
+            exit 1;
+        }
+        next;
+    }
+
+    foreach my $file (sort readdir($dh)) {
+        next if ($file eq '.' || $file eq '..');
+        unless ($file =~ m/\Q$nfid\E(\d{3})\.fid/) {
+            warn "Spurious file during readdir: $hdir_path/$file\n";
+            next;
+        }
+
+        next if (($hdir == $hdir_start && $1 < $file_start) ||
+                 ($hdir == $hdir_end && $1 > $file_end));
+
+        my $filepath = "$hdir_path/$file";
+        my $size = (stat($filepath))[7];
+        print "$filepath\t$size\n";
+    }
+}
+
+print ".\n";
+exit 0;
