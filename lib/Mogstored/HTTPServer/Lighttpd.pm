@@ -38,11 +38,14 @@ sub start {
 
     my ($fh, $filename) = File::Temp::tempfile();
     $self->{temp_conf_file} = $filename;
+
     my $portnum = $self->listen_port;
+    my $bind_ip = $self->bind_ip;
 
     print $fh qq{
 server.document-root = "$self->{docroot}"
 server.port = $portnum
+server.bind = "$bind_ip"
 server.modules = ( "mod_webdav" )
 webdav.activate = "enable"
 };

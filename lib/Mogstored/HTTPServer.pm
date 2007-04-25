@@ -32,4 +32,15 @@ sub listen_port {
     return $port;
 }
 
+sub bind_ip {
+    my $self = shift;
+    if ($self->{listen} =~ /^(.+):\d+$/) {
+        return $1;
+    } elsif ($self->{listen} =~ /^\d+$/) {
+        return "0.0.0.0";
+    } else {
+        die "Bogus listen value?";
+    }
+}
+
 1;
