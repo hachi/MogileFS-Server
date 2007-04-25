@@ -42,7 +42,7 @@ my $http_listen = "0.0.0.0:7500";
 my $mgmt_listen = "0.0.0.0:7501";
 my $docroot     = "/var/mogdata";
 my $default_config = "/etc/mogilefs/mogstored.conf";
-my $server      = "perlbal";
+my $server      = $ENV{MOGSTORED_SERVER_TYPE} || "perlbal";
 my $serverbin   = "";
 
 my %config_opts = (
@@ -203,12 +203,12 @@ sub start_disk_usage_process {
 }
 
 sub Mogstored::iostat_subscribe {
-    my $sock = shift;
+    my ($class, $sock) = @_;
     $iostat_listeners{fileno($sock->sock)} = $sock;
 }
 
 sub Mogstored::iostat_unsubscribe {
-    my $sock = shift;
+    my ($class, $sock) = @_;
     my $fdno = fileno($sock->sock);
     return unless defined $fdno;
     delete $iostat_listeners{$fdno};
