@@ -411,6 +411,7 @@ sub create_directory {
             delete $dir_made{$k} if $dir_made{$k} < $now - 3600;
         }
     }
+    return 1;
 }
 
 # returns array of MogileFS::Device objects which are in state 'dead'.
