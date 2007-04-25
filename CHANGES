@@ -3,7 +3,8 @@
           activity on storage nodes... policy isn't hard-coded, and is
           in fact currently random)
 
-        * lighttpd support
+        * lighttpd support in both mogilefsd and mogstored.  passes test
+          suite with environment MOGSTORED_SERVER_TYPE=lighttpd set now.
 
         * abstract out the HTTP server support in mogstored, so
           mogstored isn't just a perlbal wrapper, but an anything

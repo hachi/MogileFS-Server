@@ -161,6 +161,12 @@ sub check_device {
     $self->{last_test_write}{$devid} = $now;
 
     # now we want to check if this device is writeable
+
+    # first, create the test-write directory.  this will return
+    # immediately after the first time, as the 'create_directory'
+    # function caches what it's already created.
+    $dev->create_directory("/dev$devid/test-write");
+
     my $num = int(rand 10000);  # this was "$$-$now" before, but we don't yet have a cleaner in mogstored for these files
     my $puturl = "http://$hostip:$port/dev$devid/test-write/test-write-$num";
     my $content = "time=$now rand=$num";

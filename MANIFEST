@@ -46,3 +46,9 @@ t/domains-classes.t
 t/hosts-devices.t
 t/lib/mogtestlib.pl
 t/store.t
+lib/Mogstored/HTTPServer.pm
+lib/Mogstored/HTTPServer/Lighttpd.pm
+lib/Mogstored/HTTPServer/Perlbal.pm
+lib/Mogstored/SideChannelClient.pm
+lib/Mogstored/SideChannelListener.pm
+mogstored-fidsizes

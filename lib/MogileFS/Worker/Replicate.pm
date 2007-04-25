@@ -655,6 +655,9 @@ sub http_copy {
         return 0;
     }
 
+    # need by webdav servers, like lighttpd...
+    $ddev->vivify_directories($d_dfid->url);
+
     # setup our pipe error handler, in case we get closed on
     my $pipe_closed = 0;
     local $SIG{PIPE} = sub { $pipe_closed = 1; };
