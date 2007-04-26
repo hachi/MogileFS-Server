@@ -480,6 +480,18 @@ sub set_state {
     MogileFS::ProcManager->wake_a("reaper") if $state eq "dead";
 }
 
+# class method
+sub valid_state {
+    my ($class, $state) = @_;
+    return $state && $state =~ /^alive|dead|down|readonly$/;
+}
+
+# class method.  valid device state, for newly created devices?
+sub valid_initial_state {
+    my ($class, $state) = @_;
+    return $class->valid_state($state) && $state !~ /^dead$/;
+}
+
 # --------------------------------------------------------------------------
 
 sub _load {

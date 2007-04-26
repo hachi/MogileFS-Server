@@ -1,3 +1,10 @@
+        * [in progress] start of removing all code like $state eq "readonly",
+          and instead convert it into specific questions on policy/traits
+          of given state, like $dev->should_put_new_files_on, or
+          $dev->should_drain_files_off.  this will make adding 'drain' support
+          in the future easier, as drain is some hybrid between current
+          'readonly' and 'dead' modes.
+
         * start of rebalance support.  (where replication workers, in their
           idle time, can rearrange files to even out disk space and/or IO
           activity on storage nodes... policy isn't hard-coded, and is

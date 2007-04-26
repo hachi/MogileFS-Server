@@ -573,7 +573,8 @@ sub cmd_create_device {
     my $args = shift;
 
     my $status = $args->{state} || "alive";
-    return $self->err_line("invalid_state") unless $status =~ /^alive|down|readonly$/;
+    return $self->err_line("invalid_state") unless
+        MogileFS::Device->valid_initial_state($status);
 
     my $devid = $args->{devid};
     return $self->err_line("invalid_devid") unless $devid && $devid =~ /^\d+$/;
