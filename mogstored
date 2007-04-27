@@ -14,7 +14,7 @@ use strict;
 use lib 'lib';
 use IO::Socket::INET;
 use POSIX qw(WNOHANG);
-use Perlbal 1.52;
+use Perlbal 1.53;
 use FindBin qw($Bin $RealScript);
 
 use Mogstored::HTTPServer;
