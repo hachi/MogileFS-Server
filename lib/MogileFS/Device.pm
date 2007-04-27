@@ -492,6 +492,16 @@ sub valid_initial_state {
     return $class->valid_state($state) && $state !~ /^dead$/;
 }
 
+# given the current state, can this device transition into the provided $newstate?
+sub can_change_to_state {
+    my ($self, $newstate) = @_;
+    # don't allow dead -> alive transitions.  (yes, still possible
+    # to go dead -> readonly -> alive to bypass this, but this is
+    # all more of a user-education thing than an absolute policy)
+    return 0 if $self->is_marked_dead && $newstate eq 'alive';
+    return 1;
+}
+
 # --------------------------------------------------------------------------
 
 sub _load {

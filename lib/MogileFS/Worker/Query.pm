@@ -726,7 +726,7 @@ sub cmd_create_host {
     }
 
     return $self->err_line('unknown_state')
-        unless $args->{status} =~ /^(?:alive|down|dead)$/;
+        unless MogileFS::Host->valid_initial_state($args->{status});
 
     # arguments all good, let's do it.
 
@@ -953,14 +953,14 @@ sub cmd_set_state {
     # figure out what they want to do
     my ($hostname, $devid, $state) = ($args->{host}, $args->{device}+0, $args->{state});
     return $self->err_line('bad_params')
-        unless $hostname && $devid && ($state =~ /^(?:alive|down|dead|readonly)$/);
+        unless $hostname && $devid && MogileFS::Device->valid_state($state);
 
     my $dev = MogileFS::Device->from_devid_and_hostname($devid, $hostname)
         or return $self->err_line('host_mismatch');
 
     # make sure the destination state isn't too high
     return $self->err_line('state_too_high')
-        if $dev->is_marked_dead && $state eq 'alive';
+        unless $dev->can_change_to_state($state);
 
     $dev->set_state($state);
     return $self->ok_line;

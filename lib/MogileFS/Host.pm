@@ -220,6 +220,19 @@ sub delete {
     return $rv;
 }
 
+# class method
+sub valid_state {
+    my ($class, $state) = @_;
+    return $state && $state =~ /^alive|dead|down$/;
+}
+
+# class method.  valid host state, for newly created hosts?
+# currently equal to valid_state.
+sub valid_initial_state {
+    my ($class, $state) = @_;
+    return $class->valid_state($state);
+}
+
 # --------------------------------------------------------------------------
 
 sub _load {
