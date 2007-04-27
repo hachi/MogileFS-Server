@@ -1,3 +1,8 @@
+        * Put gearman server in mogstored process, add worker
+          'mogstored-fidsizes' which runs as subprocess of mogstored. Add
+          side-channel command 'fid_sizes' which allows us to quickly enumerate
+          and get sizes for files across entire devices on a storage node.
+
         * [in progress] start of removing all code like $state eq "readonly",
           and instead convert it into specific questions on policy/traits
           of given state, like $dev->should_put_new_files_on, or

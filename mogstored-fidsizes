@@ -4,57 +4,97 @@ use strict;
 use warnings;
 
 use Errno qw(ENOENT);
+use Gearman::Worker;
+use Storable ();
 
-my ($base, $start, $end) = @ARGV;
+my $worker = Gearman::Worker->new;
 
-die unless -d $base;
+$worker->register_function(fid_sizes => \&do_one_run);
 
-die unless length $start && length $end;
-die unless $end >= $start;
+my $docroot = $ENV{MOG_DOCROOT}
+    or die "MOG_DOCROOT environment variable not set";
 
-die if $start > 9_999_999_999;
-die if $end   > 9_999_999_999;
+while (1) {
+    $worker->work();
+}
 
-die if $start < 0;
-die if $end   < 0;
+sub do_one_run {
+    my $job = shift;
+    my $args = Storable::thaw($job->arg);
+    my ($start, $end, $devices) = @$args;
 
-my $hdir_start = int($start / 1000);
-my $hdir_end = int($end / 1000);
-
-my $file_start = $start % 1000;
-my $file_end   = $end   % 1000;
-
-for (my $hdir = $hdir_start; $hdir <= $hdir_end; $hdir++) {
-    my $nfid = sprintf '%07d', $hdir;
-    my ( $b, $mmm, $ttt ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})} );
-
-    my $hdir_path = "$base/$b/$mmm/$ttt";
-
-    my $rv = opendir(my $dh, "$base/$b/$mmm/$ttt");
-
-    unless ($rv) {
-        if ($! != ENOENT) {
-            print "ERR Unable to read directory $hdir_path: $!\n";
-            exit 1;
-        }
-        next;
+    my @output;
+    foreach my $device (@$devices) {
+        my $entries = do_one_device($start, $end, "$docroot/dev$device");
+        push @output, [$device, $entries];
     }
+    return \Storable::nfreeze(\@output);
+}
 
-    foreach my $file (sort readdir($dh)) {
-        next if ($file eq '.' || $file eq '..');
-        unless ($file =~ m/\Q$nfid\E(\d{3})\.fid/) {
-            warn "Spurious file during readdir: $hdir_path/$file\n";
+sub do_one_device {
+    my ($start, $end, $base) = @_;
+
+    die "'$base' isn't a directory"
+        unless -d $base;
+
+    die "start and end are not both defined"
+        unless length $start && length $end;
+
+    die "end cannot come before start"
+        unless $end >= $start;
+
+    die "start out of range"
+        if $start > 9_999_999_999;
+
+    die "end out of range"
+        if $end   > 9_999_999_999;
+
+    die "start less than 0"
+        if $start < 0;
+
+    die "end less than 0"
+        if $end   < 0;
+
+    my $hdir_start = int($start / 1000);
+    my $hdir_end = int($end / 1000);
+
+    my $file_start = $start % 1000;
+    my $file_end   = $end   % 1000;
+
+    my @files;
+
+    for (my $hdir = $hdir_start; $hdir <= $hdir_end; $hdir++) {
+        my $nfid = sprintf '%07d', $hdir;
+        my ( $b, $mmm, $ttt ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})} );
+
+        my $hdir_path = "$base/$b/$mmm/$ttt";
+
+        my $rv = opendir(my $dh, "$base/$b/$mmm/$ttt");
+
+        unless ($rv) {
+            if ($! != ENOENT) {
+                die "Unable to read directory $hdir_path: $!\n";
+            }
             next;
         }
 
-        next if (($hdir == $hdir_start && $1 < $file_start) ||
-                 ($hdir == $hdir_end && $1 > $file_end));
+        foreach my $file (sort readdir($dh)) {
+            next if ($file eq '.' || $file eq '..');
+            unless ($file =~ m/\Q$nfid\E(\d{3})\.fid/) {
+                warn "Spurious file during readdir: $hdir_path/$file\n";
+                next;
+            }
 
-        my $filepath = "$hdir_path/$file";
-        my $size = (stat($filepath))[7];
-        print "$filepath\t$size\n";
+            my $fid = $nfid . $1;
+
+            next if (($hdir == $hdir_start && $1 < $file_start) ||
+                     ($hdir == $hdir_end && $1 > $file_end));
+
+            my $filepath = "$hdir_path/$file";
+            my $size = (stat($filepath))[7];
+            push @files, [$fid, $size];
+        }
     }
-}
 
-print ".\n";
-exit 0;
+    return \@files;
+}
