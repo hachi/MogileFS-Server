@@ -441,8 +441,11 @@ sub HandleQueryWorkerResponse {
 
     # <numeric id> [client-side time to complete] <response>
     my ($time, $id, $res);
-    if ($line =~ /^(\d+-\d+)\s+(\d+\.\d+)\s+(.+)$/) {
+    if ($line =~ /^(\d+-\d+)\s+(\-?\d+\.\d+)\s+(.+)$/) {
         # save time and response for use later
+        # Note the optional negative sign in the regexp.  Somebody
+        # on the mailing list was getting a time of -0.0000, causing
+        # broken connections.
         ($id, $time, $res) = ($1, $2, $3);
     }
 
