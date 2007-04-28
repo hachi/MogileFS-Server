@@ -1,5 +1,6 @@
 .shipit
 makedocs.pl
+dev-mogstored.pl
 \bCVS\b
 ^MANIFEST\.
 ^Makefile$
