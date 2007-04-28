@@ -1,3 +1,7 @@
+        * be robust against system clocks that go backwards between
+          gettimeofday calls:
+          http://lists.danga.com/pipermail/mogilefs/2007-April/000897.html
+
         * Put gearman server in mogstored process, add worker
           'mogstored-fidsizes' which runs as subprocess of mogstored. Add
           side-channel command 'fid_sizes' which allows us to quickly enumerate
