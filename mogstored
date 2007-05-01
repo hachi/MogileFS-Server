@@ -16,6 +16,8 @@ use IO::Socket::INET;
 use POSIX qw(WNOHANG);
 use Perlbal 1.53;
 use FindBin qw($Bin $RealScript);
+use Gearman::Server 1.06;
+use Gearman::Client::Async 0.93;
 
 use Mogstored::HTTPServer;
 use Mogstored::HTTPServer::Perlbal;
@@ -37,7 +39,6 @@ my ($iostat_pipe_r, $iostat_pipe_w);  # pipes for talking to iostat process
 my $opt_daemonize;
 my $opt_config;
 my $opt_iostat = 1;  # default to on now
-my $opt_fidsizes = 0;
 my $max_conns = 10000;
 my $http_listen = "0.0.0.0:7500";
 my $mgmt_listen = "0.0.0.0:7501";
@@ -47,7 +48,6 @@ my $server      = $ENV{MOGSTORED_SERVER_TYPE} || "perlbal";
 my $serverbin   = "";
 
 my %config_opts = (
-                   'fidsizes'      => \$opt_fidsizes,
                    'iostat'       => \$opt_iostat,
                    'daemonize|d'  => \$opt_daemonize,
                    'config=s'     => \$opt_config,
@@ -111,7 +111,7 @@ start_disk_usage_process();
 start_iostat_process() if $opt_iostat;
 harvest_dead_children();  # every 2 seconds, it reschedules itself
 setup_sidechannel_listener();
-start_fidsizes_worker() if $opt_fidsizes;
+start_fidsizes_worker();
 
 # now start the main loop
 Perlbal::run();
@@ -304,26 +304,14 @@ sub read_from_iostat_child {
 }
 
 my $gearman_server;
-
 sub Mogstored::gearman_server {
-    return $gearman_server if $gearman_server;
-
-    die "Unable to create gearman server: $@" unless
-        eval "use Gearman::Server; 1";
-
-    return $gearman_server = Gearman::Server->new;
+    return $gearman_server ||= Gearman::Server->new;
 }
 
 my $gearman_client;
-
 sub Mogstored::gearman_client {
-    return $gearman_client if $gearman_client;
-
-    die "Unable to create gearman client: $@" unless
-        eval "use Gearman::Client::Async; 1";
-
-    return $gearman_client =
-        Gearman::Client::Async->new(job_servers => [ Mogstored::gearman_server() ]);
+    return $gearman_client ||=
+        Gearman::Client::Async->new(job_servers => [ Mogstored->gearman_server ]);
 }
 
 
