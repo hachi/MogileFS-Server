@@ -12,4 +12,5 @@ $ENV{PERL5LIB} = join(":",
                       "$svn/gearman/server/lib",
                       ($ENV{PERL5LIB} ? ($ENV{PERL5LIB}) : ()),
                       );
+print "export PERL5LIB=$ENV{PERL5LIB}\n";
 system($^X, "./mogstored", @ARGV);
