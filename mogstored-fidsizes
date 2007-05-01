@@ -69,7 +69,13 @@ sub do_one_device {
 
         my $hdir_path = "$base/$b/$mmm/$ttt";
 
-        next unless opendir(my $dh, "$base/$b/$mmm/$ttt");
+        my $rv = opendir(my $dh, "$base/$b/$mmm/$ttt");
+        unless ($rv) {
+            if ($! != ENOENT) {
+                die "Unable to read directory $hdir_path: $!\n";
+            }
+            next;
+        }
 
         foreach my $file (sort readdir($dh)) {
             next if ($file eq '.' || $file eq '..');
@@ -81,8 +87,8 @@ sub do_one_device {
             my $hhh = $1;
             my ($fid) = ($nfid . $hhh) =~ /^0*(\d+)$/;
 
-            next if (($hdir == $hdir_start && $1 < $file_start) ||
-                     ($hdir == $hdir_end && $1 > $file_end));
+            next if (($hdir == $hdir_start && $hhh < $file_start) ||
+                     ($hdir == $hdir_end && $hhh > $file_end));
 
             my $filepath = "$hdir_path/$file";
             my $size = (stat($filepath))[7];
