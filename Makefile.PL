@@ -11,8 +11,8 @@
 
 use ExtUtils::MakeMaker;
 
-my $exefiles = ["mogstored", "mogstored-iostat", "mogilefsd", "mogdbsetup", "mogautomount"];
-$exefiles = ["mogstored", "mogstored-iostat"] if exists $ENV{DANGABUILD_MOGSTOREDONLY};
+my $exefiles = ["mogstored", "mogilefsd", "mogdbsetup", "mogautomount"];
+$exefiles = ["mogstored"] if exists $ENV{DANGABUILD_MOGSTOREDONLY};
 $exefiles = ["mogilefsd"] if exists $ENV{DANGABUILD_MOGILEFSDONLY};
 
 WriteMakefile(
@@ -25,12 +25,12 @@ WriteMakefile(
         'Danga::Socket'    => '1.56',
         'Perlbal'          => '1.53',  # Future: make Perlbal optional, for running mogstored
                                        # in only-monitor/usage-writeout mode.
-        'Sys::Syslog'      => 0,,
+        'Sys::Syslog'      => 0,
         'Sys::Syscall'     => '0.22',
         'Getopt::Long'     => 0,
         'Symbol'           => 0,
         'Net::Netmask'     => 0,
-        'Gearman::Server'  => 1.06,
+        'Gearman::Server'  => 1.07,
         'Gearman::Client::Async' => 0.93,
         fields            => 0,
     },

@@ -266,20 +266,13 @@ sub start_iostat_process {
         return;
     }
 
-    close STDIN;
-    close STDOUT;
-    close STDERR;
-
-    # We may not be able to see errors beyond this point
-    open STDIN, '<', '/dev/null'       or die "Couldn't open STDIN for reading from /dev/null";
-    open STDOUT, '>&', $iostat_pipe_w  or die "Couldn't dup pipe for use as STDOUT";
-    open STDERR, '>', '/dev/null'      or die "Couldn't open STDOUT for writing to /dev/null";
-
-    $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
-    my $exe = $selfexe;
-    $exe =~ s/mogstored$/mogstored-iostat/ or die "$0 not what we were expecting!";
-    exec $exe;
+    require Mogstored::ChildProcess::IOStat;
+    my $class = "Mogstored::ChildProcess::IOStat";
+    $class->pre_exec_init;
+    $class->exec;
 }
+
+sub Mogstored::get_iostat_writer_pipe { $iostat_pipe_w }
 
 # (runs in parent event-loop process)
 sub read_from_iostat_child {
@@ -310,7 +303,6 @@ sub Mogstored::gearman_client {
     return $gearman_client ||=
         Gearman::Client::Async->new(job_servers => [ Mogstored->gearman_server ]);
 }
-
 
 # Local Variables:
 # mode: perl
