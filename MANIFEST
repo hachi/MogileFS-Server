@@ -38,7 +38,6 @@ mogautomount
 mogdbsetup
 mogilefsd
 mogstored
-mogstored-diskusage
 mogstored-iostat
 t/00-startup.t
 t/10-weighting.t
@@ -53,3 +52,5 @@ lib/Mogstored/HTTPServer/Perlbal.pm
 lib/Mogstored/SideChannelClient.pm
 lib/Mogstored/SideChannelListener.pm
 mogstored-fidsizes
+lib/Mogstored/ChildProcess.pm
+lib/Mogstored/ChildProcess/DiskUsage.pm

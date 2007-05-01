@@ -1,20 +1,28 @@
-#!/usr/bin/perl
+package Mogstored::ChildProcess::DiskUsage;
 use strict;
+use base 'Mogstored::ChildProcess';
 
-# this is the diskusage subprocess for mogstored.  see 'mogstored' for copyright & licensing info.
-# (C) 2007 Six Apart, Ltd.
+my $docroot;
 
-my $docroot = $ENV{MOG_DOCROOT};
-die "\$ENV{MOG_DOCROOT} not set"                unless $docroot;
-die "\$ENV{MOG_DOCROOT} not set to a directory" unless -d $docroot;
+sub pre_exec_init {
+    my $class = shift;
+    $SIG{TERM} = 'DEFAULT'; # override custom one from earlier
+    $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
+}
 
-# (runs in exec'd child process)
-$0 = "mogstored [diskusage]";
-select((select(STDOUT), $|++)[0]);
+sub run {
+    $docroot = $ENV{MOG_DOCROOT};
+    die "\$ENV{MOG_DOCROOT} not set"                unless $docroot;
+    die "\$ENV{MOG_DOCROOT} not set to a directory" unless -d $docroot;
 
-while (1) {
-    look_at_disk_usage();
-    sleep 10;
+    # (runs in exec'd child process)
+    $0 = "mogstored [diskusage]";
+    select((select(STDOUT), $|++)[0]);
+
+    while (1) {
+        look_at_disk_usage();
+        sleep 10;
+    }
 }
 
 sub look_at_disk_usage {
@@ -68,3 +76,5 @@ sub look_at_disk_usage {
     }
 }
 
+
+1;

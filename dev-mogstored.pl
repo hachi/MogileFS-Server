@@ -6,6 +6,7 @@ my ($svn) = $cwd =~ m!^(.+)/mogilefs/server! or
     die "not sure where we're at";
 
 $ENV{PERL5LIB} = join(":",
+                      "$svn/mogilefs/server/lib",
                       "$svn/perlbal/lib",
                       "$svn/gearman/api/perl/Gearman/lib",
                       "$svn/gearman/api/perl/Gearman-Client-Async/lib",

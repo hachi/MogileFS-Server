@@ -207,13 +207,10 @@ sub start_disk_usage_process {
         return $child;
     }
 
-    $SIG{TERM} = 'DEFAULT'; # override custom one from earlier
-
-    $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
-
-    my $exe = $selfexe;
-    $exe =~ s/mogstored$/mogstored-diskusage/ or die "$0 not what we were expecting!";
-    exec $exe;
+    require Mogstored::ChildProcess::DiskUsage;
+    my $class = "Mogstored::ChildProcess::DiskUsage";
+    $class->pre_exec_init;
+    $class->exec;
 }
 
 sub Mogstored::iostat_subscribe {
