@@ -9,6 +9,7 @@ lib/MogileFS/Class.pm
 lib/MogileFS/Config.pm
 lib/MogileFS/Connection/Client.pm
 lib/MogileFS/Connection/Worker.pm
+lib/MogileFS/Connection/Mogstored.pm
 lib/MogileFS/DevFID.pm
 lib/MogileFS/Device.pm
 lib/MogileFS/Domain.pm

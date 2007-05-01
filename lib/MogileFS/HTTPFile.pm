@@ -8,8 +8,6 @@ use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability)
 # (caching the connection used for HEAD requests)
 my %http_socket;                # host:port => [$pid, $time, $socket]
 
-my %streamcache;    # host -> IO::Socket::INET to mogstored
-
 # get size of file, return 0 on error.
 # tries to finish in 2.5 seconds, under the client's default 3 second timeout.  (configurable)
 my %last_stream_connect_error;  # host => $hirestime.
@@ -124,7 +122,9 @@ sub size {
     my $req = "size $uri\r\n";
     my $reqlen = length $req;
     my $rv = 0;
-    my $sock = $streamcache{$host};
+
+    my $mogconn = $self->host->mogstored_conn;
+    my $sock    = $mogconn->sock_if_connected;
 
     my $start_time = Time::HiRes::time();
 
@@ -197,7 +197,7 @@ sub size {
     if ($sock) {
         $rv = send($sock, $req, $flag_nosignal);
         if ($!) {
-            undef $streamcache{$host};
+            $mogconn->mark_dead;
         } elsif ($rv != $reqlen) {
             # FIXME: perhaps we shouldn't error here, but instead
             # treat the cached socket as bogus and reconnect?  never
@@ -207,17 +207,14 @@ sub size {
             # success
             my $size = $parse_response->();
             return $size if defined $size;
-            undef $streamcache{$host};
+            $mogconn->mark_dead;
         }
     }
     # try creating a connection to the stream
     elsif (($last_stream_connect_error{$host} ||= 0) < $start_time - 15.0)
     {
-        $sock = IO::Socket::INET->new(PeerAddr => $host,
-                                      PeerPort => MogileFS->config("mogstored_stream_port"),
-                                      Timeout  => $conn_timeout);
+        $sock = $mogconn->sock($conn_timeout);
 
-        $streamcache{$host} = $sock;
         if ($sock) {
             $rv = send($sock, $req, $flag_nosignal);
             if ($!) {
@@ -228,7 +225,7 @@ sub size {
                 # success
                 my $size = $parse_response->();
                 return $size if defined $size;
-                undef $streamcache{$host};
+                $mogconn->mark_dead;
             }
         } else {
             # see if we timed out connecting.

@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Net::Netmask;
 use Carp qw(croak);
+use MogileFS::Connection::Mogstored;
 
 my %singleton;        # hostid -> instance
 my $last_load = 0;    # unixtime of last 'reload_hosts'
@@ -218,6 +219,22 @@ sub delete {
     my $rv = Mgd::get_store()->delete_host($host->id);
     MogileFS::Host->invalidate_cache;
     return $rv;
+}
+
+# returns/creates a MogileFS::Connection::Mogstored object to the
+# host's mogstored management/side-channel port (which starts
+# unconnected, and only connects when you ask it to, with its sock
+# method)
+sub mogstored_conn {
+    my $self = shift;
+    return $self->{mogstored_conn} ||=
+      MogileFS::Connection::Mogstored->new($self->ip, $self->sidechannel_port);
+}
+
+sub sidechannel_port {
+    # TODO: let this be configurable per-host?  currently it's configured
+    # once for all machines.
+    MogileFS->config("mogstored_stream_port");
 }
 
 # class method
