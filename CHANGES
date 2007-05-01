@@ -1,3 +1,6 @@
+        * make mogilefsd fsck use new mogstored fid_sizes command, to
+          do bulk stats.  speeds up fscks a ton.
+
         * be robust against system clocks that go backwards between
           gettimeofday calls:
           http://lists.danga.com/pipermail/mogilefs/2007-April/000897.html

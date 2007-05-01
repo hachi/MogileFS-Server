@@ -3,8 +3,9 @@ package MogileFS::Worker::Fsck;
 use strict;
 use base 'MogileFS::Worker';
 use fields (
-            'last_stop_check',  # unixtime 'should_stop_running' last called
+            'last_stop_check',     # unixtime 'should_stop_running' last called
             'last_maxcheck_write', # unixtime maxcheck written
+            'size_checker',        # subref which, given a DevFID, returns size of file
             );
 use MogileFS::Util qw(every error debug);
 use List::Util ();
@@ -97,6 +98,8 @@ sub work {
         $start->();
 
         MogileFS::FID->mass_load_devids(@fids);
+
+        $self->init_size_checker(\@fids);
 
         # don't sleep in loop, next round, since we found stuff to work on
         # this round...
@@ -211,7 +214,7 @@ sub check_fid {
         my $dfid = MogileFS::DevFID->new($devid, $fid);
         my $dev  = $dfid->device;
 
-        my $disk_size = $dfid->size_on_disk;
+        my $disk_size = $self->size_on_disk($dfid);
 
         if (! defined $disk_size) {
             error("Connectivity problem reaching device " . $dev->id . " on host " . $dev->host->ip . "\n");
@@ -262,7 +265,7 @@ sub fix_fid {
             my $dev = $dfid->device;
             next if $already_checked{$dev->id}++;
 
-            my $disk_size = $dfid->size_on_disk;
+            my $disk_size = $self->size_on_disk($dfid);
             die "dev unreachable" unless defined $disk_size;
 
             if ($disk_size == $fid->length) {
@@ -327,6 +330,71 @@ sub fix_fid {
     }
 
     return HANDLED;
+}
+
+sub init_size_checker {
+    my ($self, $fidlist) = @_;
+
+    my $lo_fid = $fidlist->[0]->id;
+    my $hi_fid = $fidlist->[-1]->id;
+
+    my %size;           # $devid -> { $fid -> $size }
+    my %tried_bulkstat; # $devid -> 1
+
+    $self->{size_checker} = sub {
+        my $dfid  = shift;
+        my $devid = $dfid->devid;
+
+        if (my $map = $size{$devid}) {
+            return $map->{$dfid->fidid} || 0;
+        }
+
+        unless ($tried_bulkstat{$devid}++) {
+            my $mogconn = $dfid->device->host->mogstored_conn;
+            my $sock    = $mogconn->sock(5);
+            my $good = 0;
+            my $unknown_cmd = 0;
+            if ($sock) {
+                my $cmd = "fid_sizes $lo_fid-$hi_fid $devid\n";
+                print $sock $cmd;
+                my $map = {};
+                while (my $line = <$sock>) {
+                    if ($line =~ /^\./) {
+                        $good = 1;
+                        last;
+                    } elsif ($line =~ /^(\d+)\s+(\d+)\s+(\d+)/) {
+                        my ($res_devid, $res_fid, $size) = ($1, $2, $3);
+                        last unless $res_devid == $devid;
+                        $map->{$res_fid} = $size;
+                    } elsif ($line =~ /^ERR/) {
+                        $unknown_cmd = 1;
+                        last;
+                    } else {
+                        last;
+                    }
+                }
+                if ($good) {
+                    $size{$devid} = $map;
+                    return $map->{$dfid->fidid} || 0;
+                } elsif (!$unknown_cmd) {
+                    # mogstored connection is unknown state... can't
+                    # trust it, so close it.
+                    $mogconn->mark_dead;
+                }
+            }
+            error("[fsck] fid_sizes mogstored cmd unavailable for dev $devid; using slower method");
+        }
+
+        return $dfid->size_on_disk;
+    };
+}
+
+# returns 0 on missing,
+# undef on connectivity error,
+# else size of file on disk (after HTTP HEAD or mogstored stat)
+sub size_on_disk {
+    my ($self, $dfid) = @_;
+    return $self->{size_checker}->($dfid);
 }
 
 1;
