@@ -82,7 +82,7 @@ ok($fs, "made statter");
     my @list;
     make_file("3001002456", 50);
     make_file("3001002457", 50);
-    make_file("30010023333333458", 50);
+    make_file("30010023383333458", 50);
     make_file("3001002459", 50);
     $fs = Mogstored::FIDStatter->new(
                                      dir  => $td,
