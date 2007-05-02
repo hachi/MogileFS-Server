@@ -2,13 +2,13 @@ package Mogstored::FIDStatter;
 use strict;
 use warnings;
 use Carp qw(croak);
-use File::Find;
 
 # on_fid => sub { my ($fidid, $size) = @_; ... }
+# t_stat => sub { my $fid = shift }
 sub new {
     my ($class, %opts) = @_;
     my $self = bless {}, $class;
-    foreach (qw(dir from to on_fid t_stat t_readdir)) {
+    foreach (qw(dir from to on_fid t_stat)) {
         $self->{$_} = delete $opts{$_};
     }
     croak("unknown opts") if %opts;
@@ -20,137 +20,84 @@ sub new {
 sub run {
     my $self = shift;
 
-    my $base  = $self->{dir};
-    my $start = $self->{from};
-    my $end   = $self->{to};
-    my $on_fid = $self->{on_fid};
+    # min/max dirs we could possibly care about format: "n/nnn/nnn/"
+    my $min_dir = dir($self->{from});
+    my $max_dir = dir($self->{to});
 
-    die "'$base' isn't a directory"
-        unless -d $base;
+    # our start/end fid ranges, zero-padded to 25 or so digits, to be
+    # string-comparable, avoiding integer math (this might be a 32-bit
+    # machine, with a 64-bit mogilefsd/clients)
+    my $min_zpad = zeropad($self->{from});
+    my $max_zpad = zeropad($self->{to});
 
-    die "start and end are not both defined"
-        unless length $start && length $end;
-
-    # Example fid, and where the variables fall inside it.
-    # Note that b, mmm, ttt don't actually align to billion,
-    # million, and thousand all the time.
-    #
-    # Big fid, left aligned no padding necessary.
-    # 52048709972319950
-    # -------           hdir
-    # -                 b
-    #  ---              mmm
-    #     ---           ttt
-    #        ---------- file
-    #
-    # Small fid, right aligned and padded to 10 digits.
-    #        0000023077
-    #        -------    hdir
-    #        -          b
-    #         ---       mmm
-    #            ---    ttt
-    #               --- file
-    #
-    # start refers to the first fid to check, end refers to
-    # the last fid to check.
-
-    my ($start_hdir, $start_file, $end_hdir, $end_file);
-
-    if ($start =~ m/^ (\d{0,6}?) (\d{1,3}) $/x) {
-        ($start_hdir, $start_file) = ($1, $2);
-        $start_hdir ||= 0;
-    } elsif ($start =~ m/^ (\d{7}) (\d{3,}) $/x) {
-        ($start_hdir, $start_file) = ($1, $2);
-    } else {
-        die "Couldn't parse start '$start' into dir and file parts\n";
-    }
-
-    my ($start_b, $start_mmm, $start_ttt) =
-        sprintf('%07d', $start_hdir) =~ m{(\d)(\d{3})(\d{3})};
-
-    my @start_parts = ($start_b, $start_mmm, $start_ttt, $start_file);
-
-    if ($end =~ m/^ (\d{0,6}?) (\d{1,3}) $/x) {
-        ($end_hdir, $end_file) = ($1, $2);
-        $end_hdir ||= 0;
-    } elsif ($end =~ m/^ (\d{7}) (\d{3,}) $/x) {
-        ($end_hdir, $end_file) = ($1, $2);
-    } else {
-        die "Couldn't parse end '$end' into dir and file parts\n";
-    }
-
-    my ($end_b, $end_mmm, $end_ttt) =
-        sprintf('%07d', $end_hdir) =~ m{(\d)(\d{3})(\d{3})};
-
-    my @end_parts = ($end_b, $end_mmm, $end_ttt, $end_file);
-
-    # Contains flags of whether a particular depth needs to check the start or end
-    # for range on the fids/dirs. Set by the previous depth's checks, and we need
-    # to see it with a pair of 1's because we want to check both bounds on the first
-    # pass.
-    my @start_matches = (1);
-    my @end_matches   = (1);
-
-    my $depth = -1;
-
-    my $preprocess = sub {
-        my @dirs;
-        $depth++;
-
-        die if $depth >= 4;
-
-        my $check_regex = $depth < 3 ? qr/^(\d+)$/ : qr/^\d{7}(\d+)\.fid$/;
-        my $start_part = $start_parts[$depth];
-        my $end_part   = $end_parts[$depth];
-        my $start_match = $start_matches[$depth];
-        my $end_match   = $end_matches[$depth];
-
-        foreach my $dir (@_) {
-            next unless $dir =~ $check_regex;
-
-            if ($start_match) {
-                next unless $1 >= $start_part;
-            }
-
-            if ($end_match) {
-                next unless $1 <= $end_part;
-            }
-            push @dirs, $dir;
-        }
-
-        return sort @dirs;
+    my $dir_in_range = sub {
+        my $dir = shift; # "n/[nnn/[nnnn/]]"
+        return 0 if max_subdir($dir) lt $min_dir;
+        return 0 if min_subdir($dir) gt $max_dir;
+        return 1;
     };
 
-    my $postprocess = sub {
-        $depth--;
+    my $file_in_range = sub {
+        my $fid = zeropad(shift);
+        return $fid ge $min_zpad && $fid le $max_zpad;
     };
 
-    my $wanted = sub {
-        my $name = $_;
+    foreach_dentry($self->{dir}, qr/^\d$/, sub {
+        my ($bdir, $dir) = @_;
+        return unless $dir_in_range->("$bdir/");
 
-        return if $depth < 0;
+        foreach_dentry($dir, qr/^\d{3}$/, sub {
+            my ($mdir, $dir) = @_;
+            return unless $dir_in_range->("$bdir/$mdir/");
 
-        if ($depth < 3) {
-            my $start_part = $start_parts[$depth];
-            my $end_part   = $end_parts[$depth];
+            foreach_dentry($dir, qr/^\d{3}$/, sub {
+                my ($tdir, $dir) = @_;
+                return unless $dir_in_range->("$bdir/$mdir/$tdir/");
 
-            # Set the match flags for the next depth.
-            $start_matches[$depth+1] = $name eq $start_part ? 1 : 0;
-            $end_matches[$depth+1]   = $name eq $end_part   ? 1 : 0;
-            return;
-        }
+                foreach_dentry($dir, qr/^\d+\.fid$/, sub {
+                    my ($file, $fullfile) = @_;
+                    my ($fid) = ($file =~ /^0*(\d+)\.fid$/);
+                    return unless $file_in_range->($fid);
 
-        my $size = (stat($File::Find::name))[9];
-        $name =~ s/^0+//;
-        $self->{on_fid}->($name, $size);
-        $self->{t_stat}->($name);
-    };
+                    $self->{t_stat}->($fid);
+                    my $size = (stat($fullfile))[9];
+                    $self->{on_fid}->($fid, $size) if $size;
+                });
+            });
+        });
+    });
+}
 
-    find( {
-        wanted      => $wanted,
-        preprocess  => $preprocess,
-        postprocess => $postprocess,
-    }, $base);
+sub zeropad {
+    my $fid = shift;
+    return "0"x(25-length($fid)) . $fid;
+}
+
+sub foreach_dentry {
+    my ($dir, $re, $code) = @_;
+    opendir(my $dh, $dir) or die "Failed to open $dir: $!";
+    $code->($_, "$dir/$_") foreach sort grep { /$re/ } readdir($dh);
+}
+
+# returns directory that a fid will be in
+# $fid may or may not have leading zeroes.
+sub dir {
+    my $fid = shift;
+    $fid =~ s!^0*!!;
+    $fid = "0"x(10-length($fid)) . $fid if length($fid) < 10;
+    my ($b, $mmm, $ttt) = $fid =~ m{^(\d)(\d{3})(\d{3})};
+    return "$b/$mmm/$ttt/";
+}
+
+sub max_subdir { pad_dir($_[0], "999"); }
+sub min_subdir { pad_dir($_[0], "000"); }
+
+sub pad_dir {
+    my ($dir, $pad) = @_;
+    if (length($dir) ==  2) { return "$dir$pad/$pad/" }
+    if (length($dir) ==  6) { return "$dir$pad/"      }
+    if (length($dir) == 10) { return $dir             }
+    Carp::confess("how do I pad '$dir' ?");
 }
 
 1;
