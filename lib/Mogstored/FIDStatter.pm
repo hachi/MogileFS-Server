@@ -105,13 +105,18 @@ sub run {
         my $start_match = $start_matches[$depth];
         my $end_match   = $end_matches[$depth];
 
-        @dirs = grep { $_ =~ $check_regex &&
-                       (!$start_match || $1 >= $start_part) &&
-                       (!$end_match   || $1 <= $end_part)
-                     } @_;
+        foreach my $dir (@_) {
+            next unless $dir =~ $check_regex;
 
-        push @start_matches, 0;
-        push @end_matches, 0;
+            if ($start_match) {
+                next unless $1 >= $start_part;
+            }
+
+            if ($end_match) {
+                next unless $1 <= $end_part;
+            }
+            push @dirs, $dir;
+        }
 
         return sort @dirs;
     };
