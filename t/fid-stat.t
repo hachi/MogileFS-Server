@@ -8,7 +8,7 @@ use FindBin qw($Bin);
 use Mogstored::FIDStatter;
 use File::Temp qw(tempdir);
 
-plan tests => 10;
+plan tests => 11;
 
 my $td = tempdir(CLEANUP => 1);
 ok($td, "got tempdir");
@@ -71,9 +71,29 @@ ok($fs, "made statter");
                                          push @list, [@_];
                                      },
                                      );
-    ok($fs, "made statter");
     is(scalar @list, 4, "found 4 files");
     is($n_stats, 4, "and statted 4 files");
+}
+
+# trick jonathan...
+{
+    $n_stats = 0;
+    my @list;
+    make_file("3001002456", 50);
+    make_file("3001002457", 50);
+    make_file("30010023333333458", 50);
+    make_file("3001002459", 50);
+    $fs = Mogstored::FIDStatter->new(
+                                     dir  => $td,
+                                     from => "3001002456",
+                                     to   => "3001002459",
+                                     t_stat => sub { $n_stats++ },
+                                     on_fid => sub {
+                                         push @list, [@_];
+                                     },
+                                     );
+    is(scalar @list, 3, "found 3 files");
+    is($n_stats, 3, "and statted 3 files");
 }
 
 sub make_file {
