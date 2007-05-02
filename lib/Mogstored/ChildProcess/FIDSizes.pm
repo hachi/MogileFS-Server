@@ -1,24 +1,36 @@
-#!/usr/bin/perl
-
+package Mogstored::ChildProcess::FIDSizes;
 use strict;
+use base 'Mogstored::ChildProcess';
 use warnings;
-
 use Errno qw(ENOENT);
 use Gearman::Worker;
 use Storable ();
 
-my $worker = Gearman::Worker->new;
+# Note: in this case, this module is loaded *before* the fork (which
+# happens in Gearman::Server's start_worker) in the parent mogstored's
+# process, so be careful nothing heavy/gross is added to the FIDSizes
+# worker.
 
-$worker->register_function(fid_sizes => \&do_one_run);
+my $docroot;
+my $worker;
 
-my $docroot = $ENV{MOG_DOCROOT}
-    or die "MOG_DOCROOT environment variable not set";
+sub pre_exec_init {
+    $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
 
-while (1) {
-    $worker->work();
 }
 
-sub do_one_run {
+sub run {
+    $0 = "mogstored [fidsizes]";
+    $worker = Gearman::Worker->new;
+    $worker->register_function(fid_sizes => \&gw_fidsizes);
+    $docroot = $ENV{MOG_DOCROOT}
+    or die "MOG_DOCROOT environment variable not set";
+    while (1) {
+        $worker->work();
+    }
+}
+
+sub gw_fidsizes {
     my $job = shift;
     my $args = Storable::thaw($job->arg);
     my ($start, $end, $devices) = @$args;
@@ -100,3 +112,5 @@ sub do_one_device {
 
     return \@files;
 }
+
+1;

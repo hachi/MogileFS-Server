@@ -16,7 +16,7 @@ use IO::Socket::INET;
 use POSIX qw(WNOHANG);
 use Perlbal 1.53;
 use FindBin qw($Bin $RealScript);
-use Gearman::Server 1.06;
+use Gearman::Server 1.08;
 use Gearman::Client::Async 0.93;
 
 use Mogstored::HTTPServer;
@@ -176,15 +176,18 @@ sub harvest_dead_children {
 }
 
 sub start_fidsizes_worker {
-    die "Unable to create fidsizes worker: $@"
-        unless eval "use Gearman::Client::Async; 1";
 
-    local $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
-    my $exe = $selfexe;
-    $exe =~ s/mogstored$/mogstored-fidsizes/ or die "$0 not what we were expecting!";
-    Mogstored->gearman_server->start_worker($exe);
+    # Note: in this case, this load is *before* the fork (which happens
+    # in Gearman::Server's start_worker), so be careful nothing
+    # heavy/gross is added to the FIDSizes worker.
+    require Mogstored::ChildProcess::FIDSizes;
+    my $class = "Mogstored::ChildProcess::FIDSizes";
+    $class->pre_exec_init;
+
+    Mogstored->gearman_server->start_worker(sub {
+        $class->exec;
+    });
 }
-
 
 sub Mogstored::on_pid_death {
     my ($class, $pid, $code) = @_;

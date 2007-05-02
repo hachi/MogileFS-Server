@@ -30,7 +30,7 @@ WriteMakefile(
         'Getopt::Long'     => 0,
         'Symbol'           => 0,
         'Net::Netmask'     => 0,
-        'Gearman::Server'  => 1.07,
+        'Gearman::Server'  => 1.08,
         'Gearman::Client::Async' => 0.93,
         fields            => 0,
     },
