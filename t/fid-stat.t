@@ -71,6 +71,7 @@ ok($fs, "made statter");
                                          push @list, [@_];
                                      },
                                      );
+    $fs->run;
     is(scalar @list, 4, "found 4 files");
     is($n_stats, 4, "and statted 4 files");
 }
@@ -92,6 +93,7 @@ ok($fs, "made statter");
                                          push @list, [@_];
                                      },
                                      );
+    $fs->run();
     is(scalar @list, 3, "found 3 files");
     is($n_stats, 3, "and statted 3 files");
 }
