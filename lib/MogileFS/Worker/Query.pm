@@ -1118,8 +1118,17 @@ sub cmd_checker {
 sub cmd_set_server_setting {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
-    return $self->err_line("bad_params") unless $args->{key};
-    MogileFS::Config->set_server_setting($args->{key}, $args->{value});
+    my $key = $args->{key} or
+        return $self->err_line("bad_params");
+    my $val = $args->{value};
+
+    my $chk  = MogileFS::Config->server_setting_is_writable($key) or
+        return $self->err_line("not_writable");
+
+    my $cleanval = eval { $chk->($val); };
+    return $self->err_line("invalid_format") if $@;
+
+    MogileFS::Config->set_server_setting($key, $cleanval);
     return $self->ok_line;
 }
 
@@ -1130,6 +1139,20 @@ sub cmd_server_setting {
     return $self->err_line("bad_params") unless $key;
     my $value = MogileFS::Config->server_setting($key);
     return $self->ok_line({key => $key, value => $value});
+}
+
+sub cmd_server_settings {
+    my MogileFS::Worker::Query $self = shift;
+    my $ss = Mgd::get_store()->server_settings;
+    my $ret = {};
+    my $n = 0;
+    while (my ($k, $v) = each %$ss) {
+        next unless MogileFS::Config->server_setting_is_readable($k);
+        $ret->{"key_count"} = ++$n;
+        $ret->{"key_$n"}    = $k;
+        $ret->{"value_$n"}  = $v;
+    }
+    return $self->ok_line($ret);
 }
 
 sub cmd_do_monitor_round {

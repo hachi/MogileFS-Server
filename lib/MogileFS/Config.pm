@@ -271,6 +271,36 @@ sub hostname {
     return $cache_hostname ||= Sys::Hostname::hostname();
 }
 
+sub server_setting_is_readable {
+    my ($class, $key) = @_;
+    return 0 if $key =~ /^fsck_/;
+    return 1;
+}
+
+# returns subref which cleans (canonicalizes) the value, or dies if invalid format.
+#   my $cleanval = $code->($val);
+sub server_setting_is_writable {
+    my ($class, $key) = @_;
+
+    # common formats:
+    my $any          = sub { $_[0]; };
+    my $del_if_blank = sub { $_[0] || undef };
+    my $bool         = sub {
+        my $v = shift;
+        return "0" unless $v;
+        return "0" if $v =~ /^(0|f|off|n)/i;
+        return "1" if $v =~ /^(1|t|on|y)/i;
+        die "Unknown format";
+    };
+
+    # let slave settings go through unmodified, for now.
+    if ($key =~ /^slave_/) { return $del_if_blank };
+    if ($key eq "enable_rebalance") { return $bool };
+    if ($key eq "memcache_servers") { return $any  };
+
+    return 0;
+}
+
 1;
 
 # Local Variables:

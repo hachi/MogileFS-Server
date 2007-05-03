@@ -1,3 +1,10 @@
+        * new protocol commands to list/set (certain) server settings,
+          with value sanity checking (see MogileFS::Config for which
+          are settable, and with what values).  needed for "enable_rebalance".
+          was partially enabled before for slave settings.  also needed
+          for memcached support before, which was never possible to
+          set with mogadm, only with db tweaking.
+
         * make mogilefsd fsck use new mogstored fid_sizes command, to
           do bulk stats.  speeds up fscks a ton.
 
