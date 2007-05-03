@@ -95,6 +95,29 @@ sub check_slave {
     return 1;
 }
 
+# attempt to grab a lock of lockname, and timeout after timeout seconds.
+# returns 1 on success and 0 on timeout
+sub get_lock {
+    my ($self, $lockname, $timeout) = @_;
+    die "Lock recursion detected (grabbing $lockname, had $self->{last_lock}).  Bailing out." if $self->{lock_depth};
+
+    my $lock = $self->dbh->selectrow_array("SELECT GET_LOCK(?, ?)", undef, $lockname, $timeout);
+    if ($lock) {
+        $self->{lock_depth} = 1;
+        $self->{last_lock}  = $lockname;
+    }
+    return $lock;
+}
+
+# attempt to release a lock of lockname.
+# returns 1 on success and 0 if no lock we have has that name.
+sub release_lock {
+    my ($self, $lockname) = @_;
+    my $rv = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
+    $self->{lock_depth} = 0;
+    return $rv;
+}
+
 # --------------------------------------------------------------------------
 # Functions specific to Store::MySQL subclass.  Not in parent.
 # --------------------------------------------------------------------------
@@ -118,29 +141,6 @@ sub fid_type {
 
     # else, use 32-bit ints for the fid type
     return $self->{_fid_type} = "INT";
-}
-
-# attempt to grab a lock of lockname, and timeout after timeout seconds.
-# returns 1 on success and 0 on timeout
-sub get_lock {
-    my ($self, $lockname, $timeout) = @_;
-    die "Lock recursion detected (grabbing $lockname, had $self->{last_lock}).  Bailing out." if $self->{lock_depth};
-
-    my $lock = $self->dbh->selectrow_array("SELECT GET_LOCK(?, ?)", undef, $lockname, $timeout);
-    if ($lock) {
-        $self->{lock_depth} = 1;
-        $self->{last_lock}  = $lockname;
-    }
-    return $lock;
-}
-
-# attempt to release a lock of lockname.
-# returns 1 on success and 0 if no lock we have has that name.
-sub release_lock {
-    my ($self, $lockname) = @_;
-    my $rv = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
-    $self->{lock_depth} = 0;
-    return $rv;
 }
 
 sub column_type {

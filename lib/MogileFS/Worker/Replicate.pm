@@ -104,27 +104,31 @@ sub work {
             $unreachable{$r->[0]} = 1;
         }
 
+        my $idle = 1;
+
         # this finds stuff to replicate based on its record in the needs_replication table
-        $self->replicate_using_torepl_table;
+        $idle = 0 if $self->replicate_using_torepl_table;
 
         # this finds stuff to replicate based on the devcounts.  (old style)
         if (MogileFS::Config->config("old_repl_compat")) {
-            $self->replicate_using_devcounts;
+            $idle = 0 if $self->replicate_using_devcounts;
         }
 
-        $self->rebalance_devices;
-
+        $self->rebalance_devices if $idle;
     });
 }
 
 use constant REPLFETCH_LIMIT => 1000;
+
+# return 1 if we did something (or tried to do something), return 0 if
+# there was nothing to be done.
 sub replicate_using_torepl_table {
     my $self = shift;
 
     # find some fids to replicate, prioritize based on when they should be tried
     my $sto = Mgd::get_store();
     my @to_repl = $sto->files_to_replicate(REPLFETCH_LIMIT)
-        or return;
+        or return 0;
 
     # get random list of hashref of things to do:
     @to_repl = List::Util::shuffle(@to_repl);
@@ -217,7 +221,7 @@ sub replicate_using_torepl_table {
         $update_nexttry->( offset => int(($backoff[$todo->{failcount}] || 86400) * (rand(0.4) + 0.8)) );
         $unlock->() if $unlock;
     }
-
+    return 1;
 }
 
 sub replicate_using_devcounts {
@@ -229,12 +233,13 @@ sub replicate_using_devcounts {
     # the MogileFS::Store system to make it db portable.  so we just
     # skip here if not using MySQL.
     my $sto = Mgd::get_store();
-    return unless $sto->isa("MogileFS::Store::MySQL");
+    return 0 unless $sto->isa("MogileFS::Store::MySQL");
 
     # call this $mdbh to indiciate it's a MySQL dbh, and to help grepping
     # for old handles.  :)
     my $mdbh = $sto->dbh;
 
+    my $did_something = 0;
     MogileFS::Class->foreach(sub {
         my $mclass = shift;
         my ($dmid, $classid, $min, $policy_class) = map { $mclass->$_ } qw(domainid classid mindevcount policy_class);
@@ -275,6 +280,7 @@ sub replicate_using_devcounts {
             foreach my $fid (@randfids) {
                 # now replicate this fid
                 $attempted++;
+                $did_something = 1;
                 next unless $self->{fidtodo}{$fid};
                 next if $self->peer_is_replicating($fid);
 
@@ -318,24 +324,30 @@ sub replicate_using_devcounts {
             }
         }
     });
+    return $did_something;
 }
 
 sub rebalance_devices {
     my $self = shift;
-
     my $sto = Mgd::get_store();
-
     return 0 unless $sto->server_setting('enable_rebalance');
+
+    my $rclass = $sto->server_setting('rebalance_policy') ||
+        "MogileFS::RebalancePolicy::PercentFree";
+
+    # TODO: don't reconstruct $pol if $rclass is same as last round.
+    #  $pol = $self->get_rebalance_object;
+    return error("Bogus rebalance_policy setting") unless $rclass =~ /^[\w:\-]+$/;
+    return error("Failed to load $rclass: $@") unless eval "use $rclass; 1;";
+    my $pol = eval { $rclass->new; };
+    return error("Failed to instantiate rebalance policy: $@") unless $pol;
 
     my $stop_at = time() + 5; # Run for up to 5 seconds, then return.
 
-    do {
-        my $dfid = $sto->get_devfid_rebalance_candidate;
-        my ($devid, $fid) = ($dfid->devid, $dfid->fidid);
-
-        my $ret = $self->rebalance_devfid($dfid);
-
-    } until ($stop_at < time());
+    while (my $dfid = $pol->devfid_to_rebalance) {
+        $self->rebalance_devfid($dfid);
+        last if time() >= $stop_at;
+    }
 }
 
 # Return 1 on success, 0 on failure.
@@ -349,9 +361,8 @@ sub rebalance_devfid {
 
     my $fail = sub {
         my $error = shift;
-        error("Rebalance for " . $devfid->url . " failed: $error")
-            if ($Mgd::DEBUG >= 1);
         $unlock->();
+        error("Rebalance for " . $devfid->url . " failed: $error");
         return 0;
     };
 
@@ -414,8 +425,10 @@ sub replicate {
             $ret = $rv ? $rv : error($errmsg);
         }
         if ($no_unlock) {
+            die "ERROR: must be called in list context w/ no_unlock" unless wantarray;
             return ($ret, $unlock);
         } else {
+            die "ERROR: must not be called in list context w/o no_unlock" if wantarray;
             $unlock->();
             return $ret;
         }

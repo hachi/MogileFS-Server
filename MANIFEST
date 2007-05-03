@@ -56,3 +56,5 @@ lib/Mogstored/ChildProcess/DiskUsage.pm
 lib/Mogstored/ChildProcess/FIDSizes.pm
 lib/Mogstored/ChildProcess/IOStat.pm
 lib/Mogstored/FIDStatter.pm
+lib/MogileFS/RebalancePolicy.pm
+lib/MogileFS/RebalancePolicy/PercentFree.pm

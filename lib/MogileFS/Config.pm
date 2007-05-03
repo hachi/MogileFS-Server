@@ -292,11 +292,28 @@ sub server_setting_is_writable {
         return "1" if $v =~ /^(1|t|on|y)/i;
         die "Unknown format";
     };
+    my $matchre      = sub {
+        my $re = shift;
+        return sub {
+            my $v = shift;
+            return $v if $v =~ /$re/;
+            die "Doesn't match acceptable format.";
+        };
+    };
 
     # let slave settings go through unmodified, for now.
     if ($key =~ /^slave_/) { return $del_if_blank };
     if ($key eq "enable_rebalance") { return $bool };
     if ($key eq "memcache_servers") { return $any  };
+
+    if ($key eq "rebalance_policy") { return sub {
+        my $v = shift;
+        return undef unless $v;
+        # TODO: actually load the provided class and test if it loads?
+        die "Doesn't match acceptable format" unless
+            $v =~ /^[\w:\-]+$/;
+        return $v;
+    }}
 
     return 0;
 }

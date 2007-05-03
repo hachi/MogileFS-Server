@@ -1146,8 +1146,15 @@ sub should_begin_replicating_fidid {
     1;
 }
 
-# called when replicator is done replicating a fid, so you can cleanup whatever
-# you did in 'should_begin_replicating_fidid' above.
+# called when replicator is done replicating a fid, so you can cleanup
+# whatever you did in 'should_begin_replicating_fidid' above.
+#
+# NOTE: there's a theoretical race condition in the rebalance code,
+# where (without locking as provided by
+# should_begin_replicating_fidid/note_done_replicating), all copies of
+# a file can be deleted by independent replicators doing rebalancing
+# in different ways.  so you'll probably want to implement some
+# locking in this pair of functions.
 sub note_done_replicating {
     my ($self, $fidid) = @_;
 }
@@ -1168,13 +1175,6 @@ sub reschedule_file_to_replicate_relative {
     $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp . " + ?, " .
                    "failcount = failcount + 1 WHERE fid = ?",
                    undef, $in_n_secs, $fid);
-}
-
-# TODO brad needs to make this efficient, and make it throw exceptions
-sub get_devfid_rebalance_candidate {
-    my $self = shift;
-    my ($fid, $devid) = $self->dbh->selectrow_array('SELECT fid, devid FROM file_on ORDER BY rand() LIMIT 1');
-    return MogileFS::DevFID->new($devid, $fid);
 }
 
 # Given a dmid prefix after and limit, return an arrayref of dkey from the file
@@ -1358,6 +1358,22 @@ sub fsck_evcode_counts {
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
 sub pre_daemonize_checks { }
+
+
+# attempt to grab a lock of lockname, and timeout after timeout seconds.
+# returns 1 on success and 0 on timeout.  dies if more than one lock is already outstanding.
+sub get_lock {
+    my ($self, $lockname, $timeout) = @_;
+    die "Lock recursion detected (grabbing $lockname, had $self->{last_lock}).  Bailing out." if $self->{lock_depth};
+    die "get_lock not implemented for $self";
+}
+
+# attempt to release a lock of lockname.
+# returns 1 on success and 0 if no lock we have has that name.
+sub release_lock {
+    my ($self, $lockname) = @_;
+    die "release_lock not implemented for $self";
+}
 
 
 1;
