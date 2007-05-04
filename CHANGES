@@ -1,3 +1,11 @@
+        * make mogstored's devN/usage writing process (DiskUsage) be less
+          racy with the mogilefsd monitoring code... don't open file for
+          write... open read/write, then in one write system call, write
+          the entire file, with newline padding at end to cover old data,
+          then truncate it if necessary.  should remove harmless (but scary)
+          error messages previously reported by the mogilefsd monitor
+          about zero-length usage files.
+
         * new protocol commands to list/set (certain) server settings,
           with value sanity checking (see MogileFS::Config for which
           are settable, and with what values).  needed for "enable_rebalance".

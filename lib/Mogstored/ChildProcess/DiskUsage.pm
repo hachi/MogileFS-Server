@@ -69,16 +69,34 @@ sub look_at_disk_usage {
                 }
             }
 
-            # open a file on that disk location called 'usage'
-            my $rv = open(FILE, ">$disk/usage");
+            # size of old file we'll be overwriting in place (we'll want
+            # to pad with newlines/spaces, before we truncate it, for
+            # minimizing races)
+            my $old_size = (-s "$disk/usage") || 0;
+
+            # string we'll be writing
+            my $new_data = "";
+            foreach (sort keys %$output) {
+                $new_data .= "$_: $output->{$_}\n";
+            }
+
+            my $new_size = length $new_data;
+            my $pad_len  = $old_size > $new_size ? ($old_size - $new_size) : 0;
+            $new_data   .= "\n" x $pad_len;
+
+            # write the file, all at once (with padding) then remove padding
+            my $rv = open(my $fh, "+<$disk/usage");
             unless ($rv) {
-                return $err->("Unable to open '$disk/usage' for writing: $!");
+                $err->("Unable to open '$disk/usage' for writing: $!");
                 next;
             }
-            foreach (sort keys %$output) {
-                print FILE "$_: $output->{$_}\n";
+            unless (syswrite($fh, $new_data)) {
+                close($fh);
+                $err->("Error writing to '$disk/usage': $!");
+                next;
             }
-            close FILE;
+            truncate($fh, $new_size) if $pad_len;
+            close($fh);
         }
     }
 }
