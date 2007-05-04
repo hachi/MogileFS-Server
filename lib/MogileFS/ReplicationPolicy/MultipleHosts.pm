@@ -1,10 +1,12 @@
 package MogileFS::ReplicationPolicy::MultipleHosts;
 use strict;
+use base 'MogileFS::ReplicationPolicy';
 
 # returns:
 #   0:      replication sufficient
 #   undef:  no suitable recommendations currently.
 #   >0:     devid to replicate to.
+#
 sub replicate_to {
     my ($class, %args) = @_;
 

@@ -59,3 +59,4 @@ lib/Mogstored/FIDStatter.pm
 lib/MogileFS/RebalancePolicy.pm
 lib/MogileFS/RebalancePolicy/PercentFree.pm
 lib/MogileFS/RebalancePolicy/Random.pm
+lib/MogileFS/ReplicationPolicy.pm
