@@ -58,3 +58,4 @@ lib/Mogstored/ChildProcess/IOStat.pm
 lib/Mogstored/FIDStatter.pm
 lib/MogileFS/RebalancePolicy.pm
 lib/MogileFS/RebalancePolicy/PercentFree.pm
+lib/MogileFS/RebalancePolicy/Random.pm

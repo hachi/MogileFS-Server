@@ -4,6 +4,7 @@ use warnings;
 use Carp qw(croak);
 use MogileFS::Util qw(throw max);
 use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
+use List::Util ();
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
@@ -1373,6 +1374,25 @@ sub get_lock {
 sub release_lock {
     my ($self, $lockname) = @_;
     die "release_lock not implemented for $self";
+}
+
+# returns up to $limit @fidids which are on provided $devid
+sub random_fids_on_device {
+    my ($self, $devid, $limit) = @_;
+    $limit = int($limit) || 100;
+
+    my $dbh = $self->dbh;
+
+    # FIXME: this blows. not random.  and good chances these will
+    # eventually get to point where they're un-rebalanacable, and we
+    # never move on past the first 5000
+    my @some_fids = List::Util::shuffle(@{
+        $dbh->selectcol_arrayref("SELECT fid FROM file_on WHERE devid=? LIMIT 5000",
+                                 undef, $devid) || []
+                                 });
+
+    @some_fids = @some_fids[0..$limit-1] if $limit < @some_fids;
+    return @some_fids;
 }
 
 

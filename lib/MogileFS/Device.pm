@@ -324,6 +324,18 @@ sub weight {
     return $dev->{weight};
 }
 
+sub can_delete_from {
+    my $self = shift;
+    return 0 if $self->{status} =~ /^readonly|dead|down$/;
+    return 1;
+}
+
+sub can_read_from {
+    my $self = shift;
+    return 1 if $self->{status} =~ /^readonly|alive$/;
+    return 0;
+}
+
 sub is_marked_alive {
     my $self = shift;
     return $self->status eq "alive";

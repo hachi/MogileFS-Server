@@ -13,7 +13,14 @@ sub new {
 # return DevFID (or undef) of a devid to migrate away
 sub devfid_to_rebalance {
     my ($self) = @_;
-    return undef;
+    my $mag = $self->{devfid_magazine};
+    return shift @$mag if @$mag;
+    push @$mag, $self->devfids_to_rebalance;
+    return shift @$mag;
+}
+
+sub devfids_to_rebalance {
+    return ()
 }
 
 sub dest_devs_considered_unusable {

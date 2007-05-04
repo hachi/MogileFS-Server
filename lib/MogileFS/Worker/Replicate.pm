@@ -6,6 +6,7 @@ use base 'MogileFS::Worker';
 use fields (
             'fidtodo',   # hashref { fid => 1 }
             'peerrepl',  # hashref { fid => time() } # when peer started replicating
+            'rebal_pol_obj',    # rebalancer policy object
             );
 
 use List::Util ();
@@ -332,22 +333,31 @@ sub rebalance_devices {
     my $sto = Mgd::get_store();
     return 0 unless $sto->server_setting('enable_rebalance');
 
-    my $rclass = $sto->server_setting('rebalance_policy') ||
-        "MogileFS::RebalancePolicy::PercentFree";
-
-    # TODO: don't reconstruct $pol if $rclass is same as last round.
-    #  $pol = $self->get_rebalance_object;
-    return error("Bogus rebalance_policy setting") unless $rclass =~ /^[\w:\-]+$/;
-    return error("Failed to load $rclass: $@") unless eval "use $rclass; 1;";
-    my $pol = eval { $rclass->new; };
-    return error("Failed to instantiate rebalance policy: $@") unless $pol;
-
+    my $pol = $self->rebalance_policy_obj or return 0;
     my $stop_at = time() + 5; # Run for up to 5 seconds, then return.
 
     while (my $dfid = $pol->devfid_to_rebalance) {
         $self->rebalance_devfid($dfid);
         last if time() >= $stop_at;
     }
+}
+
+sub rebalance_policy_obj {
+    my $self = shift;
+    my $rclass = Mgd::get_store()->server_setting('rebalance_policy') ||
+        "MogileFS::RebalancePolicy::PercentFree";
+
+    # return old one, if it's still of the same type.
+    if ($self->{'rebal_pol_obj'} && ref($self->{'rebal_pol_obj'}) eq $rclass) {
+        return $self->{'rebal_pol_obj'};
+    }
+
+    return error("Bogus rebalance_policy setting") unless $rclass =~ /^[\w:\-]+$/;
+    return error("Failed to load $rclass: $@") unless eval "use $rclass; 1;";
+    my $pol = eval { $rclass->new };
+    warn "Making it!\n";
+    return error("Failed to instantiate rebalance policy: $@") unless $pol;
+    return $self->{'rebal_pol_obj'} = $pol;
 }
 
 # Return 1 on success, 0 on failure.
