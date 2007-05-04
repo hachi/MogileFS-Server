@@ -32,6 +32,7 @@ WriteMakefile(
         'Net::Netmask'     => 0,
         'Gearman::Server'  => 1.08,
         'Gearman::Client::Async' => 0.93,
+        'Gearman::Client' => 1.06,  # for Gearman::Worker, in fidsizes worker
         fields            => 0,
     },
 );

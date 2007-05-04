@@ -3,7 +3,12 @@ use strict;
 use base 'Mogstored::ChildProcess';
 use warnings;
 use Errno qw(ENOENT);
+
+# Gearman version 1.06: bug fix with closing pipe to parent.  we don't actually use Gearman::Client
+# object, but it comes with the updated Gearman::Worker which we do care about
+use Gearman::Client 1.06;
 use Gearman::Worker;
+
 use Storable ();
 
 # Note: in this case, this module is loaded *before* the fork (which
