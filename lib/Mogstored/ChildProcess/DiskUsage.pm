@@ -62,6 +62,13 @@ sub look_at_disk_usage {
                 disk      => $disk,   # mount point of disk (/var/mogdata/dev8), or path if not a mount
             };
 
+            if ($ENV{MOG_DEV_USAGE_VIA_DU}) {
+                my $size = `du -k -c -s $path/$devnum`;
+                if ($size =~ /^(\d+)/) {
+                    $output->{used} = $1;
+                }
+            }
+
             # open a file on that disk location called 'usage'
             my $rv = open(FILE, ">$disk/usage");
             unless ($rv) {
