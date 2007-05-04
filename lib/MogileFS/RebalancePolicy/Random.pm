@@ -17,7 +17,6 @@ sub devfids_to_rebalance {
     while (my $dev = shift @devs) {
         my @fids = $sto->random_fids_on_device($dev->id, 50);
         foreach my $fid (@fids) {
-            warn "random=$fid on dev=", $dev->id, "\n";
             push @ret, MogileFS::DevFID->new($dev, $fid);
         }
         last if @ret >= 50;

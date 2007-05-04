@@ -364,11 +364,20 @@ sub rebalance_policy_obj {
 sub rebalance_devfid {
     my ($self, $devfid, %opts) = @_;
 
-    my ($ret, $unlock) = replicate($devfid->fidid,
+    my $fid = $devfid->fid;
+
+    # bail ou early if this FID is no longer in the namespace (weird
+    # case where file is in file_on because not yet deleted, but
+    # has been replaced/deleted in 'file' table...).  not too harmful
+    # (just nosiy) if thise line didn't exist, but whatever... it
+    # makes stuff cleaner on my intentionally-corrupted-for-fsck-testing
+    # dev machine...
+    return 1 if ! $fid->exists;
+
+    my ($ret, $unlock) = replicate($fid,
                                    mask_devids_from_repl_dest => { $devfid->devid => 1 },
                                    no_unlock => 1,
                                    );
-
     my $fail = sub {
         my $error = shift;
         $unlock->();
@@ -389,26 +398,33 @@ sub rebalance_devfid {
     return 1;
 }
 
-# replicates $fid if its devcount is less than $min.  (eh, not quite)
-#
-# $policy_class is optional (perl classname representing replication policy).  if present, used.  if not, looked up based on $fid.
+# replicates $fid to make sure it meets its class' replicate policy.
 #
 # README: if you update this sub to return a new error code, please update the
 # appropriate callers to know how to deal with the errors returned.
+#
+# returns either:
+#    $rv
+#    ($rv, $unlock_sub)    -- when 'no_unlock' %opt is used. subref to release lock.
+# $rv is one of:
+#    0 = failure  (failure written to ${$opts{errref}})
+#    1 = success
+#    2 = skipping, we did no work and policy was already met.
+#    "nofid" => fid no longer exists. skip replication.
 sub replicate {
-    my ($fidid, %opts) = @_;
+    my ($fid, %opts) = @_;
+    $fid = MogileFS::FID->new($fid) unless ref $fid;
+    my $fidid = $fid->id;
+
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
     my $sdevid    = delete $opts{'source_devid'};
     my $mask_devids_from_repl_dest = delete $opts{'mask_devids_from_repl_dest'} || {};
-    die if %opts;
-
+    die "unknown_opts" if %opts;
     die unless ref $mask_devids_from_repl_dest eq "HASH";
 
     # bool:  if source was explicitly requested by caller
     my $fixed_source = $sdevid ? 1 : 0;
-
-    my $fid    = MogileFS::FID->new($fidid);
 
     my $sto = Mgd::get_store();
     my $unlock = sub {
@@ -455,7 +471,7 @@ sub replicate {
 
     # if the fid doesn't even exist, consider our job done!  no point
     # replicating file contents of a file no longer in the namespace.
-    return $retunlock->(1) unless $fid->exists;
+    return $retunlock->("nofid") unless $fid->exists;
 
     my $cls = $fid->class;
     my $policy_class = $cls->policy_class;

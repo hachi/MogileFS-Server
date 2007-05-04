@@ -54,6 +54,7 @@ sub host {
     return $self->device->host;
 }
 
+# returns true on success, dies on failure
 sub delete {
     my $self = shift;
     my ($host, $port) = ($self->{host}, $self->{port});
@@ -75,27 +76,31 @@ sub delete {
 
     unless ($httpsock) {
         $httpsock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 2)
-            or return 0;
+            or die "can't connect to $host:$port in 2 seconds";
     }
 
     $httpsock->write("DELETE $self->{uri} HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
 
     my $keep_alive = 0;
+    my $did_del    = 0;
 
     while (defined (my $line = <$httpsock>)) {
         $line =~ s/[\s\r\n]+$//;
         last unless length $line;
         if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
+            my $rescode = $1;
             # make sure we get a good response
-            unless ($1 == 204) {
-                warn "Bad response from http server";
+            unless ($rescode == 204) {
                 delete $http_socket{"$host:$port"};
-                return 0;
+                die "Bad response from $host:$port: [$line]";
             }
+            $did_del = 1;
+            next;
         }
-
+        die "Unexpected HTTP response line during DELETE from $host:$port: [$line]" unless $did_del;
         $keep_alive = 1 if $line =~ /^Connection:.+\bkeep-alive\b/i;
     }
+    die "Didn't get valid HTTP response during DELETE from $host:port" unless $did_del;
 
     if ($keep_alive) {
         $http_socket{"$host:$port"} = [ $$, Time::HiRes::time(), $httpsock ];
