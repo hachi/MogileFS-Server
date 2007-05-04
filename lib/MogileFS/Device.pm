@@ -260,6 +260,14 @@ sub absorb_dbrow {
     $dev->{_loaded} = 1;
 }
 
+# returns undef if not known, else [0,1]
+sub percent_full {
+    my $dev = shift;
+    $dev->_load;
+    return undef unless $dev->{mb_total} && $dev->{mb_used};
+    return $dev->{mb_used} / $dev->{mb_total};
+}
+
 our $util_no_broadcast = 0;
 
 sub set_observed_utilization {

@@ -355,7 +355,6 @@ sub rebalance_policy_obj {
     return error("Bogus rebalance_policy setting") unless $rclass =~ /^[\w:\-]+$/;
     return error("Failed to load $rclass: $@") unless eval "use $rclass; 1;";
     my $pol = eval { $rclass->new };
-    warn "Making it!\n";
     return error("Failed to instantiate rebalance policy: $@") unless $pol;
     return $self->{'rebal_pol_obj'} = $pol;
 }
