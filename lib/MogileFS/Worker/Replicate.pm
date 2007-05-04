@@ -155,7 +155,7 @@ sub replicate_using_torepl_table {
             # $status is either 0 (failure, handled below), 1 (success, we actually
             # replicated this file), or 2 (success, but someone else replicated it).
 
-            # when $staus == 2, this delete is unnecessary normally
+            # when $staus eq "lost_race", this delete is unnecessary normally
             # (somebody else presumably already deleted it if they
             # also replicated it), but in the case of running with old
             # replicators from previous versions, -or- simply if the
@@ -300,7 +300,7 @@ sub replicate_using_devcounts {
                     # $status is either 0 (failure, handled below), 1 (success, we actually
                     # replicated this file), or 2 (success, but someone else replicated it).
                     # so if it's 2, we just want to go to the next fid.  this file is done.
-                    next if $status == 2;
+                    next if $status eq "lost_race";
 
                     # if it was no longer reachable, mark it reachable
                     if (delete $unreachable{$fid}) {
@@ -388,9 +388,11 @@ sub rebalance_devfid {
         return $fail->("Replication failed");
     }
 
-    eval { $devfid->destroy };
-    if ($@) {
-        return $fail->("Destruction of original file after rebalance failed: $@");
+    unless ($ret eq "lost_race") {
+        eval { $devfid->destroy };
+        if ($@) {
+            return $fail->("Destruction of original file after rebalance failed (ret=$ret): $@");
+        }
     }
 
     $unlock->();
@@ -408,7 +410,7 @@ sub rebalance_devfid {
 # $rv is one of:
 #    0 = failure  (failure written to ${$opts{errref}})
 #    1 = success
-#    2 = skipping, we did no work and policy was already met.
+#    "lost_race" = skipping, we did no work and policy was already met.
 #    "nofid" => fid no longer exists. skip replication.
 sub replicate {
     my ($fid, %opts) = @_;
@@ -588,7 +590,7 @@ sub replicate {
     # returning 0, not undef, means replication policy is happy and we're done.
     if (defined $ddevid && ! $ddevid) {
         return $retunlock->(1) if $got_copy_request;
-        return $retunlock->(2);  # some other process got to it first.  policy was happy immediately.
+        return $retunlock->("lost_race");  # some other process got to it first.  policy was happy immediately.
     }
 
     # TODO: if we're on only 1 device and they returned undef, let's
