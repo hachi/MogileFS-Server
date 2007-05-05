@@ -11,7 +11,7 @@ require "$Bin/lib/mogtestlib.pl";
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 15;
+    plan tests => 18;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -37,6 +37,14 @@ is(error_code($@), "dup", "yup, was a dup");
 is(scalar MogileFS::Host->hosts, 2, "2 hosts now");
 ok($ha->delete, "deleted hostA");
 is(scalar MogileFS::Host->hosts, 1, "1 host now");
+
+my $da = MogileFS::Device->create(devid => 1,
+                                  hostid => $hb->id,
+                                  status => "alive");
+ok($da, "made dev1");
+ok($da->not_on_hosts($ha), "dev1 not on ha");
+ok(!$da->not_on_hosts($hb), "dev1 is on hb");
+
 
 
 

@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
+use MogileFS::Util qw(okay_args);
 
 BEGIN {
     my $testing = $ENV{TESTING} ? 1 : 0;
@@ -17,6 +18,7 @@ my $all_loaded = 0; # bool: have we loaded all the devices?
 # %args include devid, hostid, and status (in (alive, down, readonly))
 sub create {
     my ($pkg, %args) = @_;
+    okay_args(\%args, qw(devid hostid status));
     my $devid = Mgd::get_store()->create_device(@args{qw(devid hostid status)});
     MogileFS::Device->invalidate_cache;
     return $pkg->of_devid($devid);
@@ -260,11 +262,19 @@ sub absorb_dbrow {
     $dev->{_loaded} = 1;
 }
 
+# returns 0 if not known, else [0,1]
+sub percent_free {
+    my $dev = shift;
+    $dev->_load;
+    return 0 unless $dev->{mb_total} && defined $dev->{mb_used};
+    return 1 - ($dev->{mb_used} / $dev->{mb_total});
+}
+
 # returns undef if not known, else [0,1]
 sub percent_full {
     my $dev = shift;
     $dev->_load;
-    return undef unless $dev->{mb_total} && $dev->{mb_used};
+    return undef unless $dev->{mb_total} && defined $dev->{mb_used};
     return $dev->{mb_used} / $dev->{mb_total};
 }
 
@@ -342,6 +352,20 @@ sub can_read_from {
     my $self = shift;
     return 1 if $self->{status} =~ /^readonly|alive$/;
     return 0;
+}
+
+sub can_get_new_files {
+    my $dev = shift;
+    return 0 if $dev->{status} =~ /^drain|readonly|dead|down$/;
+    return 0 unless $dev->observed_writeable;
+    return 1;
+}
+
+sub not_on_hosts {
+    my ($dev, @hosts) = @_;
+    my @hostids   = map { ref($_) ? $_->hostid : $_ } @hosts;
+    my $my_hostid = $dev->hostid;
+    return (grep { $my_hostid == $_ } @hostids) ? 0 : 1;
 }
 
 sub is_marked_alive {

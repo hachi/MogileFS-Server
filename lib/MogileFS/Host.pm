@@ -99,7 +99,8 @@ sub hosts {
 
 # --------------------------------------------------------------------------
 
-sub id { $_[0]{hostid} }
+sub id     { $_[0]{hostid} }
+sub hostid { $_[0]{hostid} }
 
 sub absorb_dbrow {
     my ($host, $hashref) = @_;
