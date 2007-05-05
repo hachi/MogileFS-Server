@@ -401,6 +401,7 @@ sub rebalance_devfid {
                                    mask_devids_from_repl_dest => { $devfid->devid => 1 },
                                    no_unlock => 1,
                                    );
+
     my $fail = sub {
         my $error = shift;
         $unlock->();
@@ -508,16 +509,16 @@ sub replicate {
     # learn what this devices file is already on
     my @on_devs;        # all devices fid is on, reachable or not.
     my @on_devs_masked; # all devices fid is on, except masked devices for destination in replication.
-    my @on_up_devid;    # subset of @on_devs:  just devs that are alive or readonly
+    my @on_up_devid;    # subset of @on_devs:  just devs that are readable
 
     foreach my $devid ($fid->devids) {
-        my $d = MogileFS::Device->of_devid($devid);
+        my $d = MogileFS::Device->of_devid($devid)
+            or next;
         push @on_devs, $d;
         push @on_devs_masked, $d unless $mask_devids_from_repl_dest->{$devid};
-        unless ($d && $d->status =~ /^alive|readonly$/) {
-            next;
+        if ($d->dstate->can_read_from) {
+            push @on_up_devid, $devid;
         }
-        push @on_up_devid, $devid;
     }
 
     return $retunlock->(0, "no_source",   "Source is no longer available replicating $fidid") if @on_devs == 0;
