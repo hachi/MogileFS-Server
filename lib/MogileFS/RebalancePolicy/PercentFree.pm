@@ -16,7 +16,6 @@ sub devfids_to_rebalance {
     # nothing to do, disabling.
     unless (@devs) {
         error("Rebalancing -- nothing to do..  Disabling.");
-        MogileFS::Config->set_server_setting("enable_rebalance", 0);
         return ();
     }
 
@@ -24,8 +23,7 @@ sub devfids_to_rebalance {
     my $most_full  = $devs[0]->percent_full;
     my $least_full = $devs[-1]->percent_full;
     if ($least_full && ($most_full / $least_full) < 1.25) {
-        error("Rebalancing good enough.  Disabling.");
-        MogileFS::Config->set_server_setting("enable_rebalance", 0);
+        error("Rebalancing good enough now.");
         return ();
     }
 

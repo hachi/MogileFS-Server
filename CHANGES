@@ -1,3 +1,14 @@
+        * adding new device state: "drain".  it's a hybrid of "dead"
+          (in that files are migrated off it) and "readonly", it that
+          it still serves traffic... it just doesn't get new files.
+          this also introduces the new object-oriented DeviceState class,
+          and device_state($name) utility function to get the DeviceState
+          singleton by name
+
+        * internal code cleanup.  notably, kill the old & nasty legacy
+          'find_deviceid' function which was ridiculously long and hairy.
+          the two callers are now more readable with sorts/greps/etc.
+
         * make mogstored's devN/usage writing process (DiskUsage) be less
           racy with the mogilefsd monitoring code... don't open file for
           write... open read/write, then in one write system call, write
@@ -25,12 +36,12 @@
           side-channel command 'fid_sizes' which allows us to quickly enumerate
           and get sizes for files across entire devices on a storage node.
 
-        * [in progress] start of removing all code like $state eq "readonly",
+        * remove all code like $state eq "readonly", $state=~ /^dead|down$/
           and instead convert it into specific questions on policy/traits
           of given state, like $dev->should_put_new_files_on, or
-          $dev->should_drain_files_off.  this will make adding 'drain' support
-          in the future easier, as drain is some hybrid between current
-          'readonly' and 'dead' modes.
+          $dev->should_drain_files_off.  see MogileFS::DeviceState,
+          objects of which are accessed via $dev->dstate, or new
+          MogileFS::Util device_state($name) wrapper.
 
         * start of rebalance support.  (where replication workers, in their
           idle time, can rearrange files to even out disk space and/or IO

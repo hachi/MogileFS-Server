@@ -10,7 +10,8 @@ use List::Util ();
 # to start-up with an old schema version
 #
 # 8: adds fsck_log table
-use constant SCHEMA_VERSION => 8;
+# 9: adds 'drain' state to enum in device table
+use constant SCHEMA_VERSION => 9;
 
 sub new {
     my ($class) = @_;
@@ -366,6 +367,7 @@ sub setup_database {
     $sto->upgrade_add_device_asof;
     $sto->upgrade_add_device_weight;
     $sto->upgrade_add_device_readonly;
+    $sto->upgrade_add_device_drain;
 
     return 1;
 }
@@ -607,6 +609,7 @@ sub upgrade_add_host_altip { 1 }
 sub upgrade_add_device_asof { 1 }
 sub upgrade_add_device_weight { 1 }
 sub upgrade_add_device_readonly { 1 }
+sub upgrade_add_device_drain { die "Not implemented in $_[0]" }
 
 # return true if deleted, 0 if didn't exist, exception if error
 sub delete_host {

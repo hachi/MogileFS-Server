@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use MogileFS::Config qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
-use MogileFS::Util qw(okay_args);
+use MogileFS::Util qw(okay_args device_state error);
 
 BEGIN {
     my $testing = $ENV{TESTING} ? 1 : 0;
@@ -237,6 +237,8 @@ sub observed_unreachable {
     return $dev->{observed_state} && $dev->{observed_state} eq "unreachable";
 }
 
+# returns status as a string (SEE ALSO: dstate, returns DeviceState object,
+# which knows the traits/capabilities of that named state)
 sub status {
     my $dev = shift;
     $dev->_load;
@@ -245,29 +247,32 @@ sub status {
 
 sub weight {
     my $dev = shift;
-
     $dev->_load;
-
     return $dev->{weight};
+}
+
+sub dstate {
+    my $ds = device_state($_[0]->status);
+    return $ds if $ds;
+    error("dev$_[0]->{devid} has bogus status '$_[0]->{status}', pretending 'down'");
+    return device_state("down");
 }
 
 sub can_delete_from {
     my $self = shift;
-    return 0 if $self->{status} =~ /^readonly|dead|down$/;
-    return 1;
+    return $self->dstate->can_delete_from;
 }
 
 sub can_read_from {
     my $self = shift;
-    return 1 if $self->{status} =~ /^readonly|alive$/;
-    return 0;
+    return $self->dstate->can_read_from;
 }
 
 sub should_get_new_files {
-    my $dev = shift;
-    $dev->_load;
+    my $dev    = shift;
+    my $dstate = $dev->dstate;
 
-    return 0 if $dev->{status} =~ /^drain|readonly|dead|down$/;
+    return 0 unless $dstate->should_get_new_files;
     return 0 unless $dev->observed_writeable;
 
     # have enough disk space? (default: 100MB)
@@ -289,26 +294,6 @@ sub not_on_hosts {
     my @hostids   = map { ref($_) ? $_->hostid : $_ } @hosts;
     my $my_hostid = $dev->hostid;
     return (grep { $my_hostid == $_ } @hostids) ? 0 : 1;
-}
-
-sub is_marked_alive {
-    my $self = shift;
-    return $self->status eq "alive";
-}
-
-sub is_marked_dead {
-    my $self = shift;
-    return $self->status eq "dead";
-}
-
-sub is_marked_down {
-    my $self = shift;
-    return $self->status eq "down";
-}
-
-sub is_marked_readonly {
-    my $self = shift;
-    return $self->status eq "readonly";
 }
 
 sub exists {
@@ -381,14 +366,6 @@ sub create_directory {
     return 1;
 }
 
-# returns array of MogileFS::Device objects which are in state 'dead'.
-sub dead_devices {
-    my $class = shift;
-    return
-        grep { $_->status eq "dead" }
-        MogileFS::Device->devices;
-}
-
 sub fid_list {
     my ($self, %opts) = @_;
     my $limit = delete $opts{limit};
@@ -437,26 +414,15 @@ sub set_weight {
 
 sub set_state {
     my ($dev, $state) = @_;
-    die "Bogus state" unless $state =~ /^(?:alive|down|dead|readonly)$/;
+    my $dstate = device_state($state) or
+        die "Bogus state";
     my $sto = Mgd::get_store();
     $sto->set_device_state($dev->id, $state);
     MogileFS::Device->invalidate_cache;
 
     # wake a reaper process up from sleep to get started as soon as possible
     # on re-replication
-    MogileFS::ProcManager->wake_a("reaper") if $state eq "dead";
-}
-
-# class method
-sub valid_state {
-    my ($class, $state) = @_;
-    return $state && $state =~ /^alive|dead|down|readonly$/;
-}
-
-# class method.  valid device state, for newly created devices?
-sub valid_initial_state {
-    my ($class, $state) = @_;
-    return $class->valid_state($state) && $state !~ /^dead$/;
+    MogileFS::ProcManager->wake_a("reaper") if $dstate->should_drain eq "dead";
 }
 
 # given the current state, can this device transition into the provided $newstate?
@@ -465,7 +431,7 @@ sub can_change_to_state {
     # don't allow dead -> alive transitions.  (yes, still possible
     # to go dead -> readonly -> alive to bypass this, but this is
     # all more of a user-education thing than an absolute policy)
-    return 0 if $self->is_marked_dead && $newstate eq 'alive';
+    return 0 if $self->dstate->is_perm_dead && $newstate eq 'alive';
     return 1;
 }
 

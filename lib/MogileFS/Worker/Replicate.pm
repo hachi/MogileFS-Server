@@ -12,6 +12,7 @@ use fields (
 use List::Util ();
 use MogileFS::Util qw(error every debug);
 use MogileFS::Class;
+use MogileFS::RebalancePolicy::DrainDevices;
 
 # setup the value used in a 'nexttry' field to indicate that this item will never
 # actually be tried again and require some sort of manual intervention.
@@ -115,7 +116,13 @@ sub work {
             $idle = 0 if $self->replicate_using_devcounts;
         }
 
-        $self->rebalance_devices if $idle;
+        # if replicators are otherwise idle, use them to make the world
+        # better, rebalancing things (if enabled), and draining devices (if
+        # any are marked drain)
+        if ($idle) {
+            $self->rebalance_devices;
+            $self->drain_devices;
+        }
     });
 }
 
@@ -332,14 +339,31 @@ sub rebalance_devices {
     my $self = shift;
     my $sto = Mgd::get_store();
     return 0 unless $sto->server_setting('enable_rebalance');
-
     my $pol = $self->rebalance_policy_obj or return 0;
-    my $stop_at = time() + 5; # Run for up to 5 seconds, then return.
+    unless ($self->run_rebalance_policy_a_bit($pol)) {
+        error("disabling rebalancing due to lack of work");
+        MogileFS::Config->set_server_setting("enable_rebalance", 0);
+    }
+}
 
+sub drain_devices {
+    my $self = shift;
+    my $pol = MogileFS::RebalancePolicy::DrainDevices->instance;
+    my $rv = $self->run_rebalance_policy_a_bit($pol);
+    #error("[$$] drained = $rv\n") if $rv;
+}
+
+# returns number of files rebalanced.
+sub run_rebalance_policy_a_bit {
+    my ($self, $pol) = @_;
+    my $stop_at = time() + 5; # Run for up to 5 seconds, then return.
+    my $n = 0;
     while (my $dfid = $pol->devfid_to_rebalance) {
         $self->rebalance_devfid($dfid);
+        $n++;
         last if time() >= $stop_at;
     }
+    return $n;
 }
 
 sub rebalance_policy_obj {

@@ -3,13 +3,14 @@ use strict;
 use Carp qw(croak);
 use Time::HiRes;
 use MogileFS::Exception;
+use MogileFS::DeviceState;
 
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(
                     error undeferr debug fatal daemonize weighted_list every
                     wait_for_readability wait_for_writeability throw error_code
-                    max min first okay_args
+                    max min first okay_args device_state
                     );
 
 sub every {
@@ -249,6 +250,11 @@ sub okay_args {
     delete $left{$_} foreach @okay;
     return 1 unless %left;
     Carp::croak("Unknown argument(s): " . join(", ", sort keys %left));
+}
+
+sub device_state {
+    my ($state) = @_;
+    return MogileFS::DeviceState->of_string($state);
 }
 
 1;

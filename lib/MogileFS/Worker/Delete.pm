@@ -174,7 +174,7 @@ sub process_deletes {
             $done_with_devid->("devid_doesnt_exist");
             next;
         }
-        if ($dev->is_marked_dead) {
+        if ($dev->dstate->is_perm_dead) {
             $done_with_devid->("devid_marked_dead");
             next;
         }

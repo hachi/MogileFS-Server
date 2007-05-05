@@ -6,7 +6,8 @@ use warnings;
 
 use base 'MogileFS::Worker';
 use fields qw(querystarttime reqid);
-use MogileFS::Util qw(error error_code first weighted_list);
+use MogileFS::Util qw(error error_code first weighted_list
+                      device_state);
 
 sub new {
     my ($class, $psock) = @_;
@@ -572,7 +573,7 @@ sub cmd_create_device {
 
     my $status = $args->{state} || "alive";
     return $self->err_line("invalid_state") unless
-        MogileFS::Device->valid_initial_state($status);
+        device_state($status);
 
     my $devid = $args->{devid};
     return $self->err_line("invalid_devid") unless $devid && $devid =~ /^\d+$/;
@@ -950,8 +951,10 @@ sub cmd_set_state {
 
     # figure out what they want to do
     my ($hostname, $devid, $state) = ($args->{host}, $args->{device}+0, $args->{state});
+
+    my $dstate = device_state($state);
     return $self->err_line('bad_params')
-        unless $hostname && $devid && MogileFS::Device->valid_state($state);
+        unless $hostname && $devid && $dstate;
 
     my $dev = MogileFS::Device->from_devid_and_hostname($devid, $hostname)
         or return $self->err_line('host_mismatch');

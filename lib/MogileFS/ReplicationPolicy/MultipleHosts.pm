@@ -24,7 +24,7 @@ sub replicate_to {
     my $already_on = @$on_devs;
 
     # total disks available (not marked dead)
-    my $total_disks = scalar grep { ! $_->is_marked_dead } values %$all_devs;
+    my $total_disks = scalar grep { $_->dstate->should_have_files } values %$all_devs;
 
     # if we have two copies and that's all the disks there are
     # anywhere, be happy enough, even if mindevcount is higher.  in

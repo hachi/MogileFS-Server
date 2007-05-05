@@ -299,7 +299,7 @@ sub fix_fid {
         $fid->fsck_log(EV_START_SEARCH);
         @dfids = List::Util::shuffle(
                                      map  { MogileFS::DevFID->new($_, $fid)  }
-                                     grep { ! $_->is_marked_dead }
+                                     grep { $_->dstate->should_fsck_search_on }
                                      MogileFS::Device->devices
                                      );
         $check_dfids->("desperate");

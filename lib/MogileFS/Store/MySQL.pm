@@ -321,6 +321,13 @@ sub upgrade_add_device_readonly {
     }
 }
 
+sub upgrade_add_device_drain {
+    my $self = shift;
+    unless ($self->column_type("device", "status") =~ /drain/) {
+        $self->dowell("ALTER TABLE device MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly', 'drain')");
+    }
+}
+
 sub pre_daemonize_checks {
     my $self = shift;
     # Jay Buffington, from the mailing lists, writes:

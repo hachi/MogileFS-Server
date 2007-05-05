@@ -67,7 +67,7 @@ sub work {
         MogileFS::Host->invalidate_cache;
 
         foreach my $dev (MogileFS::Device->devices) {
-            next if $dev->is_marked_dead || $dev->is_marked_down;
+            next unless $dev->dstate->should_monitor;
             next if $self->{skip_host}{$dev->hostid};
             $self->check_device($dev);
         }
