@@ -9,7 +9,7 @@ our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(
                     error undeferr debug fatal daemonize weighted_list every
                     wait_for_readability wait_for_writeability throw error_code
-                    max min
+                    max min first okay_args
                     );
 
 sub every {
@@ -159,7 +159,7 @@ sub daemonize {
 #   my @items = weighted_list( [ 1, 10 ], [ 2, 20 ], [ 3, 0 ] );
 #
 #   returns (1, 2) or (2, 1) with the latter far more likely
-sub weighted_list {
+sub weighted_list (@) {
     my @list = grep { $_->[1] > 0 } @_;
     my @ret;
 
@@ -233,6 +233,22 @@ sub min {
     my ($n1, $n2) = @_;
     return $n1 if $n1 < $n2;
     return $n2;
+}
+
+sub first (&@) {
+    my $code = shift;
+    foreach (@_) {
+        return $_ if $code->();
+    }
+    undef;
+}
+
+sub okay_args {
+    my ($href, @okay) = @_;
+    my %left = %$href;
+    delete $left{$_} foreach @okay;
+    return 1 unless %left;
+    Carp::croak("Unknown argument(s): " . join(", ", sort keys %left));
 }
 
 1;
