@@ -72,7 +72,9 @@ sub look_at_disk_usage {
             # size of old file we'll be overwriting in place (we'll want
             # to pad with newlines/spaces, before we truncate it, for
             # minimizing races)
-            my $old_size = (-s "$disk/usage") || 0;
+            my $ufile    = "$disk/usage";
+            my $old_size = (-s $ufile) || 0;
+            my $mode     = $old_size ? "+<" : ">";
 
             # string we'll be writing
             my $new_data = "";
@@ -85,14 +87,14 @@ sub look_at_disk_usage {
             $new_data   .= "\n" x $pad_len;
 
             # write the file, all at once (with padding) then remove padding
-            my $rv = open(my $fh, "+<$disk/usage");
+            my $rv = open(my $fh, $mode, $ufile);
             unless ($rv) {
-                $err->("Unable to open '$disk/usage' for writing: $!");
+                $err->("Unable to open '$ufile' for writing: $!");
                 next;
             }
             unless (syswrite($fh, $new_data)) {
                 close($fh);
-                $err->("Error writing to '$disk/usage': $!");
+                $err->("Error writing to '$ufile': $!");
                 next;
             }
             truncate($fh, $new_size) if $pad_len;
