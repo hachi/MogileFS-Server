@@ -50,6 +50,8 @@ sub should_monitor    { $_[0]->{monitor}   }
 # "dead"
 sub is_perm_dead      { $_[0]->{dead}   }
 
+sub should_wake_reaper { $_[0]->{dead}   }
+
 sub should_fsck_search_on {
     my $ds = shift;
     return $ds->can_read_from || $ds->should_have_files;

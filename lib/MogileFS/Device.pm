@@ -422,7 +422,7 @@ sub set_state {
 
     # wake a reaper process up from sleep to get started as soon as possible
     # on re-replication
-    MogileFS::ProcManager->wake_a("reaper") if $dstate->should_drain eq "dead";
+    MogileFS::ProcManager->wake_a("reaper") if $dstate->should_wake_reaper;
 }
 
 # given the current state, can this device transition into the provided $newstate?
