@@ -354,10 +354,18 @@ sub can_read_from {
     return 0;
 }
 
-sub can_get_new_files {
+sub should_get_new_files {
     my $dev = shift;
+    $dev->_load;
+
     return 0 if $dev->{status} =~ /^drain|readonly|dead|down$/;
     return 0 unless $dev->observed_writeable;
+
+    # have enough disk space? (default: 100MB)
+    my $min_free = MogileFS->config("min_free_space");
+    return 0 if $dev->{mb_total} &&
+        $dev->{mb_free} < $min_free;
+
     return 1;
 }
 

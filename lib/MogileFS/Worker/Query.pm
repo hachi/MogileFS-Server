@@ -6,7 +6,7 @@ use warnings;
 
 use base 'MogileFS::Worker';
 use fields qw(querystarttime reqid);
-use MogileFS::Util qw(error error_code);
+use MogileFS::Util qw(error error_code first weighted_list);
 
 sub new {
     my ($class, $psock) = @_;
@@ -236,22 +236,20 @@ sub cmd_create_open {
     $profstart->("wait_monitor");
     $self->wait_for_monitor;
 
-    # find a device to put this file on that has 100Mb free.
-    my (@dests, @hosts);
+    # find suitable device(s) to put this file on.
+    my @dests; # MogileFS::Device objects which are suitabke
 
     $profstart->("find_deviceid");
     while (scalar(@dests) < ($multi ? 3 : 1)) {
-        my $devid = MogileFS::Device->find_deviceid(
-                                                    random           => 1,
-                                                    must_be_writeable => 1,
-                                                    weight_by_free   => 1,
-                                                    not_on_hosts     => \@hosts,
-                                                    );
-        last unless defined $devid;
+        my $ddev = first {
+            $_->should_get_new_files &&
+            $_->not_on_hosts(map { $_->host } @dests)
+        } weighted_list map {
+            [$_, 100 * $_->percent_free]
+        } MogileFS::Device->devices;
 
-        my $ddev = MogileFS::Device->of_devid($devid);
-        push @dests, $devid;
-        push @hosts, $ddev->hostid;
+        last unless $ddev;
+        push @dests, $ddev;
     }
     return $self->err_line("no_devices") unless @dests;
 
@@ -272,9 +270,9 @@ sub cmd_create_open {
     }
 
     # make sure directories exist for client to be able to PUT into
-    foreach my $devid (@dests) {
-        $profstart->("vivify_dir_on_dev$devid");
-        my $dfid = MogileFS::DevFID->new($devid, $fidid);
+    foreach my $dev (@dests) {
+        $profstart->("vivify_dir_on_dev" . $dev->id);
+        my $dfid = MogileFS::DevFID->new($dev, $fidid);
         $dfid->vivify_directories;
     }
 
@@ -300,15 +298,15 @@ sub cmd_create_open {
     # add path info
     if ($multi) {
         my $ct = 0;
-        foreach my $devid (@dests) {
+        foreach my $dev (@dests) {
             $ct++;
-            $res->{"devid_$ct"} = $devid;
-            $res->{"path_$ct"} = MogileFS::DevFID->new($devid, $fidid)->url;
+            $res->{"devid_$ct"} = $dev->id;
+            $res->{"path_$ct"} = MogileFS::DevFID->new($dev, $fidid)->url;
         }
         $res->{dev_count} = $ct;
     } else {
-        $res->{devid} = $dests[0];
-        $res->{path}  = MogileFS::DevFID->new($res->{devid}, $fidid)->url;
+        $res->{devid} = $dests[0]->id;
+        $res->{path}  = MogileFS::DevFID->new($dests[0], $fidid)->url;
     }
 
     return $self->ok_line($res);
