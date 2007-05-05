@@ -1,6 +1,7 @@
 package MogileFS::ReplicationPolicy::MultipleHosts;
 use strict;
 use base 'MogileFS::ReplicationPolicy';
+use MogileFS::Util qw(weighted_list);
 
 # returns:
 #   0:      replication sufficient
@@ -48,22 +49,22 @@ sub replicate_to {
 
     # if there are more hosts we're not on yet, we want to exclude devices we're already
     # on from our applicable host search.
-    my $not_on_hosts = [];
+    my %skip_host; # hostid => 1
     if ($uniq_hosts_on < $total_uniq_hosts) {
-        $not_on_hosts = [ keys %on_host ];
+        %skip_host = %on_host;
     }
 
-    my $good_devid =
-        MogileFS::Device->find_deviceid(
-                                        weight_by_free => 1, # NOTE: misleading name,
-                                                             # forces only return value!
-                                        random         => 1,
-                                        not_on_hosts   => $not_on_hosts,
-                                        not_devs       => { %on_dev, %$failed },
-                                        );
+    my @dests = weighted_list map {
+        [$_, 100 * $_->percent_free]
+     } grep {
+         ! $on_dev{$_->devid} &&
+         ! $failed->{$_->devid} &&
+         ! $skip_host{$_->hostid} &&
+         $_->should_get_replicated_files
+     } MogileFS::Device->devices;
 
-    return undef unless $good_devid;
-    return $good_devid;
+    return undef unless @dests;
+    return $dests[0]->devid;  # TODO: return all
 }
 
 sub unique_hosts {
