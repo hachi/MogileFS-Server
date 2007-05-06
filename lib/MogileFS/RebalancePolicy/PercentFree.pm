@@ -2,7 +2,7 @@ package MogileFS::RebalancePolicy::PercentFree;
 use strict;
 use warnings;
 use base 'MogileFS::RebalancePolicy';
-use MogileFS::Util qw(weighted_list error);
+use MogileFS::Util qw(weighted_list error debug);
 
 sub devfids_to_rebalance {
     my ($self) = @_;
@@ -22,9 +22,13 @@ sub devfids_to_rebalance {
     # stop if most full is only 25% more full than least full.
     my $most_full  = $devs[0]->percent_full;
     my $least_full = $devs[-1]->percent_full;
-    if ($least_full && ($most_full / $least_full) < 1.25) {
-        error("Rebalancing good enough now.");
-        return ();
+    if ($least_full) {
+        my $factor = ($most_full / $least_full);
+        debug("rebalance disparity: $factor (working towards 1.25)");
+        if ($factor < 1.25) {
+            error("Rebalancing good enough now.");
+            return ();
+        }
     }
 
     my $to_chop = int(@devs / 2);
