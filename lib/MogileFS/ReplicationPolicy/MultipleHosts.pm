@@ -2,12 +2,8 @@ package MogileFS::ReplicationPolicy::MultipleHosts;
 use strict;
 use base 'MogileFS::ReplicationPolicy';
 use MogileFS::Util qw(weighted_list);
+use MogileFS::ReplicationRequest qw(ALL_GOOD TEMP_NO_ANSWER);
 
-# returns:
-#   0:      replication sufficient
-#   undef:  no suitable recommendations currently.
-#   >0:     devid to replicate to.
-#
 sub replicate_to {
     my ($class, %args) = @_;
 
@@ -30,12 +26,12 @@ sub replicate_to {
     # anywhere, be happy enough, even if mindevcount is higher.  in
     # that case, when they add more disks later, they'll need to fsck
     # to make files replicate more.
-    return 0 if $already_on >= 2 && $already_on == $total_disks;
+    return ALL_GOOD if $already_on >= 2 && $already_on == $total_disks;
 
     # FIXME: this is NOT true.  make sure it's on 2+ hosts at least, if min > 1.
 
     # replication good.
-    return 0 if $already_on >= $min;
+    return ALL_GOOD if $already_on >= $min;
 
     # see which and how many unique hosts we're already on.
     my %on_dev;
@@ -63,7 +59,7 @@ sub replicate_to {
          $_->should_get_replicated_files
      } MogileFS::Device->devices;
 
-    return undef unless @dests;
+    return TEMP_NO_ANSWER unless @dests;
     return $dests[0]->devid;  # TODO: return all
 }
 

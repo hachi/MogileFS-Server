@@ -2,7 +2,12 @@ package MogileFS::ReplicationRequest;
 use strict;
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT_OK = qw(rr_upgrade);
+our @EXPORT_OK = qw(rr_upgrade ALL_GOOD TEMP_NO_ANSWER);
+
+my $no_answer = bless { temp_fail => 1 };
+sub TEMP_NO_ANSWER () { $no_answer }
+my $all_good = bless { all_good => 1 };
+sub ALL_GOOD () { $all_good }
 
 # upgrades the return values from old-style ReplicationPolicy classes
 # to MogileFS::ReplicationRequest objects, unless they already are,
@@ -10,33 +15,10 @@ our @EXPORT_OK = qw(rr_upgrade);
 # upgrade path for old plugins.
 sub rr_upgrade {
     my ($rv) = @_;
-
-    # pass through unchanged...
-    return $rv if ref $rv;
-
-    if (!defined $rv) {
-        return MogileFS::ReplicationRequest->no_suggestions_at_present;
-    }
-
-    if (!$rv) {
-        return MogileFS::ReplicationRequest->replication_sufficient;
-    }
-
+    return $rv            if ref $rv;
+    return TEMP_NO_ANSWER if !defined $rv;
+    return ALL_GOOD       if !$rv;
     return MogileFS::ReplicationRequest->replicate_to($rv);
-}
-
-sub no_suggestions_at_present {
-    my ($class) = @_;
-    return bless {
-        temp_fail => 1,
-    }, $class;
-}
-
-sub replication_sufficient {
-    my ($class) = @_;
-    return bless {
-        all_good => 1,
-    }, $class;
 }
 
 # NOTE: this legacy interface provides no way to say that provided
