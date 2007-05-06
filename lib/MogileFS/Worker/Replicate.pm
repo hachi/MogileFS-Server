@@ -389,7 +389,7 @@ sub rebalance_devfid {
 
     my $fid = $devfid->fid;
 
-    # bail ou early if this FID is no longer in the namespace (weird
+    # bail out early if this FID is no longer in the namespace (weird
     # case where file is in file_on because not yet deleted, but
     # has been replaced/deleted in 'file' table...).  not too harmful
     # (just nosiy) if thise line didn't exist, but whatever... it
@@ -405,7 +405,7 @@ sub rebalance_devfid {
     my $fail = sub {
         my $error = shift;
         $unlock->();
-        error("Rebalance for " . $devfid->url . " failed: $error");
+        error("Rebalance for $devfid (" . $devfid->url . ") failed: $error");
         return 0;
     };
 
@@ -413,10 +413,45 @@ sub rebalance_devfid {
         return $fail->("Replication failed");
     }
 
-    unless ($ret eq "lost_race") {
+    my $should_delete = 0;
+    my $del_reason;
+
+    if ($ret eq "lost_race") {
+        # for some reason, we did no work. that could be because
+        # either 1) we lost the race, as the error code implies,
+        # and some other process rebalanced this first, or 2)
+        # the file is over-replicated, and everybody just thinks they
+        # lost the race because the replication policy said there's
+        # nothing to do, even with this devfid masked away.
+        # so let's figure it out... if this devfid still exists,
+        # we're overreplicated, else we just lost the race.
+        if ($devfid->exists) {
+            # over-replicated
+
+            # see if some copy, besides this one we want
+            # to delete, is currently alive & of right size..
+            # just as extra paranoid check before we delete it
+            foreach my $test_df ($fid->devfids) {
+                next if $test_df->devid == $devfid->devid;
+                if ($test_df->size_matches) {
+                    $should_delete = 1;
+                    $del_reason = "over_replicated";
+                    last;
+                }
+            }
+        } else {
+            # lost race
+            $should_delete = 0;  # no-op
+        }
+    } else {
+        $should_delete = 1;
+        $del_reason = "did_rebalance;ret=$ret";
+    }
+
+    if ($should_delete) {
         eval { $devfid->destroy };
         if ($@) {
-            return $fail->("Destruction of original file after rebalance failed (ret=$ret): $@");
+            return $fail->("HTTP delete (due to '$del_reason') failed: $@");
         }
     }
 
