@@ -2,6 +2,7 @@ package MogileFS::FID;
 use strict;
 use warnings;
 use Carp qw(croak);
+use MogileFS::ReplicationRequest qw(rr_upgrade);
 
 sub new {
     my ($class, $fidid) = @_;
@@ -155,6 +156,11 @@ sub devids {
     return Mgd::get_store()->read_store->fid_devids($self->id);
 }
 
+sub devs {
+    my $self = shift;
+    return map { MogileFS::Device->of_devid($_) } $self->devids;
+}
+
 sub devfids {
     my $self = shift;
     return map { MogileFS::DevFID->new($_, $self) } $self->devids;
@@ -167,8 +173,9 @@ sub class {
     return MogileFS::Class->of_fid($self);
 }
 
-# returns bool:  if fid's presumed-to-be-on devids meet the file class'
-# replication policy rules.
+# returns bool: if fid's presumed-to-be-on devids meet the file class'
+# replication policy rules.  dies on failure to load class, world
+# info, etc.
 sub devids_meet_policy {
     my $self = shift;
     my $cls  = $self->class;
@@ -182,17 +189,15 @@ sub devids_meet_policy {
     eval "use $policy_class; 1;";
     die "Failed to load policy class: $policy_class: $@" if $@;
 
-    my $ddevid = $policy_class->replicate_to(
-                                             fid       => $self->id,
-                                             on_devs   => [ map { MogileFS::Device->of_devid($_) } $self->devids ],
-                                             all_devs  => $alldev,
-                                             failed    => {},
-                                             min       => $cls->mindevcount,
-                                             );
-
-    # it's good only if the plugin policy returns defined zero.  undef and >0 are bad.
-    return 1 if defined $ddevid && $ddevid == 0;
-    return 0;
+    my %rep_args = (
+                    fid       => $self->id,
+                    on_devs   => [$self->devs],
+                    all_devs  => $alldev,
+                    failed    => {},
+                    min       => $cls->mindevcount,
+                    );
+    my $rr = rr_upgrade($policy_class->replicate_to(%rep_args));
+    return $rr->is_happy;
 }
 
 sub fsck_log {
