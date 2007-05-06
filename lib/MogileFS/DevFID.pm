@@ -1,6 +1,7 @@
 package MogileFS::DevFID;
 use strict;
 use warnings;
+use overload '""' => \&as_string;
 
 sub new {
     my ($class, $devarg, $fidarg) = @_;
@@ -17,6 +18,10 @@ sub new {
 sub devid { $_[0]{devid} }
 sub fidid { $_[0]{fidid} }
 
+sub as_string {
+    "DevFID[d=" . $_[0]{devid} . ";f=" . $_[0]{fidid} . "]";
+}
+
 sub device {
     my $self = shift;
     return $self->{dev} ||= MogileFS::Device->of_devid($self->{devid});
@@ -25,6 +30,13 @@ sub device {
 sub fid {
     my $self = shift;
     return $self->{fid} ||= MogileFS::FID->new($self->{fidid});
+}
+
+# returns true if DevFID actually exists in database
+sub exists {
+    my $self = shift;
+    my $fid  = $self->fid;
+    return (grep { $_ == $self->{devid} } $fid->devids) ? 1 : 0;
 }
 
 sub url {

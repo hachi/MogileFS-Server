@@ -141,6 +141,9 @@ sub rename {
 }
 
 # returns array of devids that this fid is on
+# NOTE: TODO: by default, this doesn't cache.  callers might be surprised from
+#   having an old version later on.  before caching is added, auditting needs
+#   to be done.
 sub devids {
     my $self = shift;
 
@@ -151,6 +154,12 @@ sub devids {
     # else get it from the database
     return Mgd::get_store()->read_store->fid_devids($self->id);
 }
+
+sub devfids {
+    my $self = shift;
+    return map { MogileFS::DevFID->new($_, $self) } $self->devids;
+}
+
 
 # return FID's class
 sub class {
