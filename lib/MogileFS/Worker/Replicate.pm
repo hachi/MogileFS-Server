@@ -13,6 +13,7 @@ use List::Util ();
 use MogileFS::Util qw(error every debug);
 use MogileFS::Class;
 use MogileFS::RebalancePolicy::DrainDevices;
+use MogileFS::ReplicationRequest qw(rr_upgrade);
 
 # setup the value used in a 'nexttry' field to indicate that this item will never
 # actually be tried again and require some sort of manual intervention.
@@ -564,7 +565,6 @@ sub replicate {
         return $retunlock->(0, "source_down", "Requested replication source device $sdevid not available");
     }
 
-    my $ddevid;
     my %dest_failed;    # devid -> 1 for each devid we were asked to copy to, but failed.
     my %source_failed;  # devid -> 1 for each devid we had problems reading from.
     my $got_copy_request = 0;  # true once replication policy asks us to move something somewhere
@@ -577,16 +577,30 @@ sub replicate {
         $dest_failed{$mdevid} = 1;
     }
 
-    while ($ddevid = $policy_class->replicate_to(
-                                                 fid       => $fidid,
-                                                 on_devs   => \@on_devs_masked, # all device objects fid is on, dead or otherwise
-                                                 all_devs  => $devs,
-                                                 failed    => \%dest_failed,
-                                                 min       => $cls->mindevcount,
-                                                 ))
-   {
-        # they can return either a dev hashref/object or a devid number.  we want the number.
-        $ddevid = $ddevid->{devid} if ref $ddevid;
+    my $rr;  # MogileFS::ReplicationRequest
+    while (1) {
+        $rr = rr_upgrade($policy_class->replicate_to(
+                                                     fid       => $fidid,
+                                                     on_devs   => \@on_devs_masked, # all device objects fid is on, dead or otherwise
+                                                     all_devs  => $devs,
+                                                     failed    => \%dest_failed,
+                                                     min       => $cls->mindevcount,
+                                                     ));
+
+        last if $rr->is_happy;
+
+        my @ddevs;  # dest devs, in order of preferrence
+        my $ddevid; # dest devid we've chosen to copy to
+        if (@ddevs = $rr->copy_to_one_of_ideally) {
+            $ddevid = $ddevs[0]->id;
+        } elsif (@ddevs = $rr->copy_to_one_of_desperate) {
+            # TODO: reschedule a replication for 'n' minutes in future, or
+            # when new hosts/devices become available or change state
+            $ddevid = $ddevs[0]->id;
+        } else {
+            last;
+        }
+
         $got_copy_request = 1;
 
         # replication policy shouldn't tell us to put a file on a device
@@ -647,17 +661,10 @@ sub replicate {
         push @on_devs_masked, $devs->{$ddevid};
     }
 
-    # returning 0, not undef, means replication policy is happy and we're done.
-    if (defined $ddevid && ! $ddevid) {
+    if ($rr->is_happy) {
         return $retunlock->(1) if $got_copy_request;
         return $retunlock->("lost_race");  # some other process got to it first.  policy was happy immediately.
     }
-
-    # TODO: if we're on only 1 device and they returned undef, let's
-    # try and put it SOMEWHERE just to make ourselves happy, even if
-    # it it doesn't obey policy?  or is that decision itself policy?
-    # unfortunately, there's no way for the replication policy to say
-    # "replicate to 6, but I don't like that, so don't count it as good"
 
     if ($got_copy_request) {
         return $retunlock->(0, "copy_error", "errors copying fid $fidid during replication");

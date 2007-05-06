@@ -62,3 +62,4 @@ lib/MogileFS/RebalancePolicy/Random.pm
 lib/MogileFS/ReplicationPolicy.pm
 lib/MogileFS/DeviceState.pm
 lib/MogileFS/RebalancePolicy/DrainDevices.pm
+lib/MogileFS/ReplicationRequest.pm

@@ -1,3 +1,10 @@
+        * replication policies now can optionally return a new return
+          value of the (new) type MogileFS::ReplicationRequest, which
+          has pretty accessor names, can suggest multiple places,
+          can indicate non-ideal emergency replication decisions.
+          old plugins' return values will be transparently upgraded
+          to the equivalent new return value objects.
+
         * adding new device state: "drain".  it's a hybrid of "dead"
           (in that files are migrated off it) and "readonly", it that
           it still serves traffic... it just doesn't get new files.
