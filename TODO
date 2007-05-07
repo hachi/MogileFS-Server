@@ -6,8 +6,6 @@
 
 -- mogdbsetup should use /etc/mogilefs/mogilefsd.conf for upgrade dsn info
 
--- make fsck process nice itself, if possible.
-
 -- fix 5/second in mogadm fsck status.  hard-coded to 5.  whoops.
 
 -- in MogileFS::Device,

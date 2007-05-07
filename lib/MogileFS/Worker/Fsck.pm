@@ -25,6 +25,8 @@ use constant EV_START_SEARCH     => "SRCH";
 use constant EV_FOUND_FID        => "FOND";
 use constant EV_RE_REPLICATE     => "REPL";
 
+use POSIX ();
+
 my $nowish;  # approximate unixtime, updated once per loop.
 
 sub watchdog_timeout { 30 }
@@ -33,6 +35,9 @@ sub work {
     my $self = shift;
 
     my $run_count = 0;
+
+    # this can be CPU-intensive.  let's nice ourselves down.
+    POSIX::nice(10);
 
     # <debug crap>
     my $running = 0; # start time
