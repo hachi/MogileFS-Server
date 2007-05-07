@@ -10,7 +10,7 @@ use MogileFS::Util qw(error_code);
 use MogileFS::ReplicationPolicy::MultipleHosts;
 require "$Bin/lib/mogtestlib.pl";
 
-plan tests => 12;
+plan tests => 13;
 
 # already good.
 is(rr("min=2  h1[d1=X d2=_] h2[d3=X d4=_]"),
@@ -61,6 +61,9 @@ is(rr("min=2 h1[d1=X d2=_] h2[d3=X d4=_] h3[d5=X]"),
 is(rr("min=2 h1[d1=X d2=X] h2[d3=X d4=_]"),
    "too_good");
 
+# be happy with 3 copies, even though two are on same host (that's our max unique hosts)
+is(rr("min=3 h1[d1=_ d2=X] h2[d3=X d4=X]"),
+   "all_good");
 
 sub rr {
     my ($state) = @_;

@@ -44,6 +44,7 @@ sub replicate_to {
     return TOO_GOOD if $uniq_hosts_on >  $min;
     return TOO_GOOD if $uniq_hosts_on == $min && $already_on > $min;
     return ALL_GOOD if $uniq_hosts_on == $min;
+    return ALL_GOOD if $uniq_hosts_on >= $total_uniq_hosts && $already_on >= $min;
 
     # if there are more hosts we're not on yet, we want to exclude devices we're already
     # on from our applicable host search.

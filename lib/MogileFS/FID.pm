@@ -3,6 +3,7 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use MogileFS::ReplicationRequest qw(rr_upgrade);
+use overload '""' => \&as_string;
 
 sub new {
     my ($class, $fidid) = @_;
@@ -16,6 +17,11 @@ sub new {
         _loaded  => 0,
         _devids  => undef,   # undef, or pre-loaded arrayref devid list
     }, $class;
+}
+
+sub as_string {
+    my $self = shift;
+    "FID[f=$self->{fidid}]";
 }
 
 # mutates/blesses given row.
