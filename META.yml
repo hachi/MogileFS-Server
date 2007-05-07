@@ -1,15 +1,18 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         mogilefs-server
-version:      2.10
+version:      2.15
 version_from: lib/MogileFS/Server.pm
 installdirs:  site
 requires:
     Danga::Socket:                 1.56
     fields:                        0
+    Gearman::Client:               1.07
+    Gearman::Client::Async:        0.93
+    Gearman::Server:               1.08
     Getopt::Long:                  0
     Net::Netmask:                  0
-    Perlbal:                       1.52
+    Perlbal:                       1.53
     Symbol:                        0
     Sys::Syscall:                  0.22
     Sys::Syslog:                   0

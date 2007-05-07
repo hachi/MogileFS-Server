@@ -1,3 +1,5 @@
+2007-05-07: Release version 2.15 ("fsck/drain/rebalance")
+
         * minor bug fixes and enhancements for MultipleHosts replication
           policy.  bunch of corner cases now checked with new tests.
           now easy to write more replication policy tests in future.
