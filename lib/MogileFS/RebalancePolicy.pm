@@ -23,10 +23,12 @@ sub devfids_to_rebalance {
     return ()
 }
 
-sub dest_devs_considered_unusable {
-}
-
-sub dest_devs_preferred_unusable {
+# return MogileFS::Device objects which shouldn't
+# be replicated towards, since it wouldn't help
+# out...
+sub dest_devs_to_avoid {
+    my $self = shift;
+    ()
 }
 
 1;

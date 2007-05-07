@@ -1,3 +1,14 @@
+        * minor bug fixes and enhancements for MultipleHosts replication
+          policy.  bunch of corner cases now checked with new tests.
+          now easy to write more replication policy tests in future.
+
+        * replication policies can now return "desperate" requests,
+          signalling that a replication reassessment should be
+          enqueued for the future, to see if things could be improved.
+          (that part's not currently implemented, but the real feature
+           and motivation is that the rebalancer now won't delete a
+           DevFID if it results in a desperate move, only an ideal move. )
+
         * replication policies now can optionally return a new return
           value of the (new) type MogileFS::ReplicationRequest, which
           has pretty accessor names, can suggest multiple places,

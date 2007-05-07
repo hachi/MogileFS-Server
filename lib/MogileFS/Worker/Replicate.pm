@@ -359,8 +359,9 @@ sub run_rebalance_policy_a_bit {
     my ($self, $pol) = @_;
     my $stop_at = time() + 5; # Run for up to 5 seconds, then return.
     my $n = 0;
+    my %avoid_devids = map { $_->id => 1 } $pol->dest_devs_to_avoid;
     while (my $dfid = $pol->devfid_to_rebalance) {
-        $self->rebalance_devfid($dfid);
+        $self->rebalance_devfid($dfid, avoid_devids => \%avoid_devids);
         $n++;
         last if time() >= $stop_at;
     }
@@ -387,6 +388,7 @@ sub rebalance_policy_obj {
 # Return 1 on success, 0 on failure.
 sub rebalance_devfid {
     my ($self, $devfid, %opts) = @_;
+    MogileFS::Util::okay_args(\%opts, qw(avoid_devids));
 
     my $fid = $devfid->fid;
 
@@ -399,8 +401,9 @@ sub rebalance_devfid {
     return 1 if ! $fid->exists;
 
     my ($ret, $unlock) = replicate($fid,
-                                   mask_devids_from_repl_dest => { $devfid->devid => 1 },
-                                   no_unlock => 1,
+                                   mask_devids  => { $devfid->devid => 1 },
+                                   no_unlock    => 1,
+                                   avoid_devids => $opts{avoid_devids},
                                    );
 
     my $fail = sub {
@@ -481,9 +484,10 @@ sub replicate {
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
     my $sdevid    = delete $opts{'source_devid'};
-    my $mask_devids_from_repl_dest = delete $opts{'mask_devids_from_repl_dest'} || {};
+    my $mask_devids  = delete $opts{'mask_devids'}  || {};
+    my $avoid_devids = delete $opts{'avoid_devids'} || {};
     die "unknown_opts" if %opts;
-    die unless ref $mask_devids_from_repl_dest eq "HASH";
+    die unless ref $mask_devids eq "HASH";
 
     # bool:  if source was explicitly requested by caller
     my $fixed_source = $sdevid ? 1 : 0;
@@ -543,15 +547,17 @@ sub replicate {
     }
 
     # learn what this devices file is already on
-    my @on_devs;        # all devices fid is on, reachable or not.
-    my @on_devs_masked; # all devices fid is on, except masked devices for destination in replication.
-    my @on_up_devid;    # subset of @on_devs:  just devs that are readable
+    my @on_devs;         # all devices fid is on, reachable or not.
+    my @on_devs_tellpol; # subset of @on_devs, to tell the policy class about
+    my @on_up_devid;     # subset of @on_devs:  just devs that are readable
 
     foreach my $devid ($fid->devids) {
         my $d = MogileFS::Device->of_devid($devid)
             or next;
         push @on_devs, $d;
-        push @on_devs_masked, $d unless $mask_devids_from_repl_dest->{$devid};
+        if ($d->dstate->should_have_files && ! $mask_devids->{$devid}) {
+            push @on_devs_tellpol, $d;
+        }
         if ($d->dstate->can_read_from) {
             push @on_up_devid, $devid;
         }
@@ -570,18 +576,11 @@ sub replicate {
     my $got_copy_request = 0;  # true once replication policy asks us to move something somewhere
     my $copy_err;
 
-    # We're faking device failures so the repl policy doesn't ask
-    # us to put the devices here.
-    foreach my $mdevid (keys %$mask_devids_from_repl_dest) {
-        delete $devs->{$mdevid};
-        $dest_failed{$mdevid} = 1;
-    }
-
     my $rr;  # MogileFS::ReplicationRequest
     while (1) {
         $rr = rr_upgrade($policy_class->replicate_to(
                                                      fid       => $fidid,
-                                                     on_devs   => \@on_devs_masked, # all device objects fid is on, dead or otherwise
+                                                     on_devs   => \@on_devs_tellpol, # all device objects fid is on, dead or otherwise
                                                      all_devs  => $devs,
                                                      failed    => \%dest_failed,
                                                      min       => $cls->mindevcount,
@@ -592,7 +591,27 @@ sub replicate {
         my @ddevs;  # dest devs, in order of preferrence
         my $ddevid; # dest devid we've chosen to copy to
         if (@ddevs = $rr->copy_to_one_of_ideally) {
-            $ddevid = $ddevs[0]->id;
+            if (my @not_masked_ids = (grep { ! $mask_devids->{$_} &&
+                                             ! $avoid_devids->{$_}
+                                         }
+                                      map { $_->id } @ddevs)) {
+                $ddevid = $not_masked_ids[0];
+            } else {
+                # once we masked devids away, there were no
+                # ideal suggestions.  this is the case of rebalancing,
+                # which without this check could 'worsen' the state
+                # of the world.  consider the case:
+                #    h1[ d1 d2 ] h2[ d3 ]
+                # and files are on d1 & d3, an ideal layout.
+                # if d3 is being rebalanced, and masked away, the
+                # replication policy could presumably say to put
+                # the file on d2, even though d3 isn't dead.
+                # so instead, when masking is in effect, we don't
+                # use non-ideal placement, just bailing out.
+
+                # saying we lost a race is a bit of a lie.. but eh.
+                return $retunlock->("lost_race");
+            }
         } elsif (@ddevs = $rr->copy_to_one_of_desperate) {
             # TODO: reschedule a replication for 'n' minutes in future, or
             # when new hosts/devices become available or change state
@@ -658,7 +677,7 @@ sub replicate {
         $dfid->add_to_db;
 
         push @on_devs, $devs->{$ddevid};
-        push @on_devs_masked, $devs->{$ddevid};
+        push @on_devs_tellpol, $devs->{$ddevid};
     }
 
     if ($rr->is_happy) {
@@ -666,11 +685,8 @@ sub replicate {
         return $retunlock->("lost_race");  # some other process got to it first.  policy was happy immediately.
     }
 
-    if ($got_copy_request) {
-        return $retunlock->(0, "copy_error", "errors copying fid $fidid during replication");
-    } else {
-        return $retunlock->(0, "policy_no_suggestions", "replication policy ran out of suggestions for us replicating fid $fidid");
-    }
+    return $retunlock->(0, "policy_no_suggestions",
+                        "replication policy ran out of suggestions for us replicating fid $fidid");
 }
 
 my $last_peerreplclean = 0;

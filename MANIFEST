@@ -63,3 +63,5 @@ lib/MogileFS/ReplicationPolicy.pm
 lib/MogileFS/DeviceState.pm
 lib/MogileFS/RebalancePolicy/DrainDevices.pm
 lib/MogileFS/ReplicationRequest.pm
+t/multiple-hosts-replpol.t
+t/util.t

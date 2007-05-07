@@ -4,6 +4,19 @@ use warnings;
 use base 'MogileFS::RebalancePolicy';
 use MogileFS::Util qw(weighted_list error debug);
 
+# return MogileFS::Device objects which shouldn't
+# be replicated towards, since it wouldn't help
+# out...
+sub dest_devs_to_avoid {
+    my $self = shift;
+    my @devs = (sort { $b->percent_full <=> $a->percent_full }
+                grep { defined $_->percent_full }
+                MogileFS::Device->devices);
+    my $to_chop = int(@devs / 2);
+    @devs = @devs[0..$#devs-$to_chop];
+    return @devs;
+}
+
 sub devfids_to_rebalance {
     my ($self) = @_;
 

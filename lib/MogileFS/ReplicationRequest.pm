@@ -2,12 +2,14 @@ package MogileFS::ReplicationRequest;
 use strict;
 require Exporter;
 our @ISA = qw(Exporter);
-our @EXPORT_OK = qw(rr_upgrade ALL_GOOD TEMP_NO_ANSWER);
+our @EXPORT_OK = qw(rr_upgrade ALL_GOOD TOO_GOOD TEMP_NO_ANSWER);
 
 my $no_answer = bless { temp_fail => 1 };
 sub TEMP_NO_ANSWER () { $no_answer }
 my $all_good = bless { all_good => 1 };
 sub ALL_GOOD () { $all_good }
+my $too_good = bless { all_good => 1, too_good => 1 };
+sub TOO_GOOD () { $too_good }
 
 # upgrades the return values from old-style ReplicationPolicy classes
 # to MogileFS::ReplicationRequest objects, unless they already are,
@@ -21,14 +23,22 @@ sub rr_upgrade {
     return MogileFS::ReplicationRequest->replicate_to($rv);
 }
 
-# NOTE: this legacy interface provides no way to say that provided
-# dev isn't ideal, so we just treat it as ideal here.
+# for ideal replications
 sub replicate_to {
-    my ($class, $dev) = @_;
-    $dev = MogileFS::Device->of_devid($dev) unless ref $dev;
+    my ($class, @devs) = @_;
+    @devs = map { ref $_ ? $_ : MogileFS::Device->of_devid($_) } @devs;
     return bless {
-        ideal_next => [ $dev ],
+        ideal_next => \@devs,
     }, $class;
+}
+
+sub new {
+    my ($class, %opts) = @_;
+    my $self = bless {}, $class;
+    $self->{ideal_next}     = delete $opts{ideal}     || [];
+    $self->{desperate_next} = delete $opts{desperate} || [];
+    Carp::croak("unknown args") if %opts;
+    return $self;
 }
 
 ############################################################################
@@ -55,6 +65,21 @@ sub copy_to_one_of_desperate {
     return @{ $self->{desperate_next} || [] };
 }
 
+# for test suite..
+sub t_as_string {
+    my $self = shift;
+    return "too_good"  if $self->{too_good};
+    return "all_good"  if $self->{all_good};
+    return "temp_fail" if $self->{temp_fail};
+    my @devs;
+    if (@devs = $self->copy_to_one_of_ideally) {
+        return "ideal(" . join(",", sort {$a<=>$b} map { $_->id } @devs) . ")";
+    }
+    if (@devs = $self->copy_to_one_of_desperate) {
+        return "desperate(" . join(",", sort {$a<=>$b}  map { $_->id } @devs) . ")";
+    }
+    die "unknown $self type";
+}
 
 1;
 

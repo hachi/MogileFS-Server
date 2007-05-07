@@ -34,6 +34,27 @@ sub of_devid {
     }, $class;
 }
 
+sub t_wipe_singletons {
+    %singleton = ();
+    $last_load = time();  # fake it
+}
+
+sub t_init {
+    my ($self, $hostid, $state) = @_;
+    $self->{_loaded} = 1;
+
+    my $dstate = device_state($state) or
+        die "Bogus state";
+
+    $self->{hostid}  = $hostid;
+    $self->{status}  = $state;
+    $self->{observed_state} = "writeable";
+
+    # say it's 10% full, of 1GB
+    $self->{mb_total} = 1000;
+    $self->{mb_used}  = 100;
+}
+
 sub from_devid_and_hostname {
     my ($class, $devid, $hostname) = @_;
     my $dev = MogileFS::Device->of_devid($devid)
@@ -145,10 +166,6 @@ sub absorb_dbrow {
     }
 
     $dev->{$_} ||= 0 foreach qw(mb_total mb_used mb_asof);
-
-    # makes others have an easier time of finding devices by free space
-    # FIXME: this should just be an accessor nowadays, not pre-calced
-    $dev->{mb_free} = $dev->{mb_total} - $dev->{mb_used};
 
     my $host = MogileFS::Host->of_hostid($dev->{hostid});
     if ($host && $host->exists) {
@@ -274,13 +291,19 @@ sub should_get_new_files {
 
     return 0 unless $dstate->should_get_new_files;
     return 0 unless $dev->observed_writeable;
+    return 0 unless $dev->host->should_get_new_files;
 
     # have enough disk space? (default: 100MB)
     my $min_free = MogileFS->config("min_free_space");
     return 0 if $dev->{mb_total} &&
-        $dev->{mb_free} < $min_free;
+        $dev->mb_free < $min_free;
 
     return 1;
+}
+
+sub mb_free {
+    my $self = shift;
+    return $self->{mb_total} - $self->{mb_used};
 }
 
 # currently the same policy, but leaving it open for differences later.
@@ -399,9 +422,10 @@ sub overview_hashref {
 
     my $ret = {};
     foreach my $k (qw(devid hostid status weight observed_state
-                      mb_total mb_used mb_asof mb_free utilization)) {
+                      mb_total mb_used mb_asof utilization)) {
         $ret->{$k} = $dev->{$k};
     }
+    $ret->{mb_free} = $dev->mb_free;
     return $ret;
 }
 

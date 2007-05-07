@@ -16,6 +16,10 @@ sub create {
     return MogileFS::Host->of_hostid($hid);
 }
 
+sub t_wipe_singletons {
+    %singleton = ();
+}
+
 sub of_hostid {
     my ($class, $hostid) = @_;
     return undef unless $hostid;
@@ -139,6 +143,18 @@ sub set_http_get_port { shift->_set_field("http_get_port", @_); }
 sub set_alt_ip        { shift->_set_field("altip",         @_); }
 sub set_alt_mask      { shift->_set_field("altmask",       @_); }
 
+# for test suite.  set fields in memory, without a MogileFS::Store
+sub t_init {
+    my $self = shift;
+    my $status = shift;
+    # TODO: once we have a MogileFS::HostState, update this to
+    # validate it.  not so important for now, though, since
+    # typos in tests will just make tests fail.
+    $self->{status}  = $status;
+    $self->{_loaded} = 1;
+    $self->{observed_state} = "reachable";
+}
+
 sub _set_field {
     my ($self, $field, $val) = @_;
     # $field is both the database column field and our member keys
@@ -191,6 +207,11 @@ sub hostname {
     my $host = shift;
     $host->_load;
     return $host->{hostname};
+}
+
+sub should_get_new_files {
+    my $host = shift;
+    return $host->status eq "alive";
 }
 
 sub is_marked_down {
