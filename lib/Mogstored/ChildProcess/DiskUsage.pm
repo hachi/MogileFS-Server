@@ -19,9 +19,16 @@ sub run {
     $0 = "mogstored [diskusage]";
     select((select(STDOUT), $|++)[0]);
 
+    my $start_ppid = getppid();
+
     while (1) {
         look_at_disk_usage();
         sleep 10;
+
+        # shut ourselves down if our parent mogstored
+        # has gone away.
+        my $ppid = getppid();
+        exit(0) unless $ppid == $start_ppid && kill(0,$ppid);
     }
 }
 

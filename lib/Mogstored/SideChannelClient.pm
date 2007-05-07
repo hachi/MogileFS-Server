@@ -93,6 +93,13 @@ sub event_read {
     }
 }
 
+# stop watching writability if we've nothing else to
+# write to them.  else just kick off more writes.
+sub event_write {
+    my $self = shift;
+    $self->watch_write(0) if $self->write(undef);
+}
+
 # override Danga::Socket's event handlers which die
 sub event_err { $_[0]->close; }
 sub event_hup { $_[0]->close; }

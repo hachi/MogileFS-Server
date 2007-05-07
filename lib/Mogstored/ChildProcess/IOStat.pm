@@ -81,6 +81,15 @@ sub run {
                 }
                 $ret .= ".\n";
                 print $ret;
+
+                # shut ourselves down if our parent mogstored
+                # has gone away.
+                my $ppid = getppid();
+                unless ($ppid && kill(0,$ppid)) {
+                    kill 9, $iostat_pid if $iostat_pid;
+                    exit(0);
+                }
+
                 next;
             }
         }
