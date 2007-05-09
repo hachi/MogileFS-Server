@@ -1,3 +1,5 @@
+        * slightly faster fsck (do less syscalls)
+
         * efficiency: don't broadcast dup state information to children
           (track in parent what children know already)
 

@@ -114,8 +114,8 @@ sub work {
 
         my $new_max;
         my $hit_problem = 0;
+
         foreach my $fid (@fids) {
-            $nowish = $self->still_alive;
             last if $self->should_stop_running;
             if (!$self->check_fid($fid)) {
                 # some connectivity problem... abort checking more
@@ -183,6 +183,9 @@ sub check_fid {
             return STALLED;
         }
         $fid->fsck_log(EV_CANT_FIX) if ! $fixed;
+
+        # that might've all taken awhile, let's update our approximate time
+        $nowish = $self->still_alive;
         return HANDLED;
     };
 
@@ -338,6 +341,8 @@ sub fix_fid {
 sub init_size_checker {
     my ($self, $fidlist) = @_;
 
+    $self->still_alive;
+
     my $lo_fid = $fidlist->[0]->id;
     my $hi_fid = $fidlist->[-1]->id;
 
@@ -376,6 +381,11 @@ sub init_size_checker {
                         last;
                     }
                 }
+
+                # we only update our $nowish (approximate time) lazily, when we
+                # know time might've advanced (like during potentially slow RPC call)
+                $nowish = $self->still_alive;
+
                 if ($good) {
                     $size{$devid} = $map;
                     return $map->{$dfid->fidid} || 0;
@@ -388,6 +398,8 @@ sub init_size_checker {
             error("[fsck] fid_sizes mogstored cmd unavailable for dev $devid; using slower method");
         }
 
+        # slow case (not using new command)
+        $nowish = $self->still_alive;
         return $dfid->size_on_disk;
     };
 }
