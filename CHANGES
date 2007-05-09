@@ -1,3 +1,6 @@
+        * efficiency: don't broadcast dup state information to children
+          (track in parent what children know already)
+
         * if using Gearman::Server >= 1.09, respawn the fidsizes
           worker if it dies.
 

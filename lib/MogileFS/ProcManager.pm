@@ -704,8 +704,16 @@ sub is_child {
 }
 
 sub state_change {
-    my ($what, $whatid, $state, $child) = @_;
-    MogileFS::ProcManager->send_to_all_children(":state_change $what $whatid $state", $child);
+    my ($what, $whatid, $state, $exclude) = @_;
+    my $key = "$what-$whatid";
+    foreach my $child (values %child) {
+        next if $exclude && $child == $exclude;
+        my $old = $child->{known_state}{$key} || "";
+        if ($old ne $state) {
+            $child->{known_state}{$key} = $state;
+            $child->write(":state_change $what $whatid $state\r\n");
+        }
+    }
 }
 
 sub wake_a {

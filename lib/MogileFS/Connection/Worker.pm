@@ -12,6 +12,7 @@ use fields (
             'pid',
             'reqid',
             'last_alive',  # unixtime
+            'known_state', # hashref of { "$what-$whatid" => $state }
             );
 
 sub new {
@@ -19,10 +20,11 @@ sub new {
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new( @_ );
 
-    $self->{pid}        = 0;
-    $self->{reqid}      = 0;
-    $self->{job}        = undef;
-    $self->{last_alive} = time();
+    $self->{pid}         = 0;
+    $self->{reqid}       = 0;
+    $self->{job}         = undef;
+    $self->{last_alive}  = time();
+    $self->{known_state} = {};
 
     return $self;
 }
