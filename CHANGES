@@ -1,3 +1,5 @@
+2007-05-09: Release version 2.16
+
         * BUG FIX from 2.15:  partially written but never closed
           tempfiles weren't being cleaned up properly.
 

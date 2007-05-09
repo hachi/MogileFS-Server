@@ -15,3 +15,7 @@ _blib$
 \bconf\b
 \.svn
 dev-killmogstored.sh
+make-par.sh
+mogstored.pp
+pp.log
+trace
