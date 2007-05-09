@@ -260,7 +260,7 @@ sub cmd_create_open {
                                 dmid    => $dmid,
                                 key     => $key,
                                 classid => $classid,
-                                devids  => join(',', @dests),
+                                devids  => join(',', map { $_->id } @dests),
                                 );
     };
     unless ($fidid) {

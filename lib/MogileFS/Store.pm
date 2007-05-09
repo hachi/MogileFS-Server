@@ -972,6 +972,9 @@ sub get_all_classes {
 # returns 1 on success, 0 on duplicate
 sub add_fidid_to_devid {
     my ($self, $fidid, $devid) = @_;
+    croak("fidid not non-zero") unless $fidid;
+    croak("devid not non-zero") unless $devid;
+
     my $rv = $self->dowell($self->ignore_replace . " INTO file_on (fid, devid) VALUES (?,?)",
                            undef, $fidid, $devid);
     return 1 if $rv > 0;
@@ -1215,8 +1218,15 @@ sub mass_insert_file_on {
         $self->mass_insert_file_on($_) foreach @devfids;
         return 1;
     }
-    my @qmarks = map { "(?,?)" } @devfids;
-    my @binds  = map { $_->fidid, $_->devid } @devfids;
+
+    my (@qmarks, @binds);
+    foreach my $df (@devfids) {
+        my ($fidid, $devid) = ($df->fidid, $df->devid);
+        Carp::croak("got a false fidid") unless $fidid;
+        Carp::croak("got a false devid") unless $devid;
+        push @binds, $fidid, $devid;
+        push @qmarks, "(?,?)";
+    }
 
     $self->dowell($self->ignore_replace . " INTO file_on (fid, devid) VALUES " . join(',', @qmarks), undef, @binds);
     return 1;

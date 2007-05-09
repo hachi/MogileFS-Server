@@ -2,6 +2,7 @@ package MogileFS::DevFID;
 use strict;
 use warnings;
 use overload '""' => \&as_string;
+use Carp qw(croak);
 
 sub new {
     my ($class, $devarg, $fidarg) = @_;
@@ -105,6 +106,8 @@ sub _make_full_url {
 
 sub add_to_db {
     my ($self, $no_lock) = @_;
+    croak("fidid not non-zero") unless $self->{fidid};
+    croak("devid not non-zero") unless $self->{devid};
 
     my $sto = Mgd::get_store();
     if ($sto->add_fidid_to_devid($self->{fidid}, $self->{devid})) {

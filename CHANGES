@@ -1,5 +1,8 @@
-       * start to work better when compiled as a stand-alone
-         PAR all-in-one script/archive
+        * BUG FIX from 2.15:  partially written but never closed
+          tempfiles weren't being cleaned up properly.
+
+        * start to work better when compiled as a stand-alone
+          PAR all-in-one script/archive
 
 2007-05-07: Release version 2.15 ("fsck/drain/rebalance")
 
