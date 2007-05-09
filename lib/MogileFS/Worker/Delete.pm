@@ -99,7 +99,14 @@ sub process_tempfiles {
     my (@devfids, @fidids);
     foreach my $row (@$tempfiles) {
         push @fidids, $row->[0];
-        foreach my $devid (split /,/, $row->[1]) {
+
+        # sanity check the string column.
+        my $devids = $row->[1];
+        unless ($devids =~ /^(\d+)(,\d+)*$/) {
+            $devids = "";
+        }
+
+        foreach my $devid (split /,/, $devids) {
             push @devfids, MogileFS::DevFID->new($devid, $row->[0]);
         }
     }
