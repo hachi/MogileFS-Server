@@ -149,7 +149,7 @@ sub invalidate_cache {
 
 sub check_cache {
     my $class = shift;
-    my $now = time();
+    my $now = $Mgd::nowish || time();
     return if $last_load > $now - DEVICE_SUMMARY_CACHE_TIMEOUT;
     MogileFS::Device->reload_devices;
 }

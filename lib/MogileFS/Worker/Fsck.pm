@@ -6,6 +6,7 @@ use fields (
             'last_stop_check',     # unixtime 'should_stop_running' last called
             'last_maxcheck_write', # unixtime maxcheck written
             'size_checker',        # subref which, given a DevFID, returns size of file
+            'opt_nostat',          # bool: do we trust mogstoreds? skipping size stats?
             );
 use MogileFS::Util qw(every error debug);
 use List::Util ();
@@ -72,6 +73,7 @@ sub work {
         my $sleep_set = shift;
         $self->parent_ping;
         $nowish = time();
+        local $Mgd::nowish = $nowish;
 
         # see if we're even enabled for this host.
         unless ($self->should_be_running) {
@@ -90,7 +92,7 @@ sub work {
         }
 
         $max_checked ||= MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-        my $opt_nostat = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
+        $self->{opt_nostat} = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
         my @fids       = $sto->get_fids_above_id($max_checked, 5000);
 
         unless (@fids) {
@@ -113,10 +115,9 @@ sub work {
         my $new_max;
         my $hit_problem = 0;
         foreach my $fid (@fids) {
-            $nowish = time();
-            $self->still_alive;
+            $nowish = $self->still_alive;
             last if $self->should_stop_running;
-            if (!$self->check_fid($fid, no_stat => $opt_nostat)) {
+            if (!$self->check_fid($fid)) {
                 # some connectivity problem... abort checking more
                 # for now.
                 $hit_problem = 1;
@@ -173,9 +174,7 @@ sub should_stop_running {
 use constant STALLED => 0;
 use constant HANDLED => 1;
 sub check_fid {
-    my ($self, $fid, %opts) = @_;
-    my $opt_no_stat = delete $opts{no_stat};
-    die "badopts" if %opts;
+    my ($self, $fid) = @_;
 
     my $fix = sub {
         my $fixed = eval { $self->fix_fid($fid) };
@@ -208,15 +207,14 @@ sub check_fid {
     # in the fast case, do nothing else (don't check if assumed file
     # locations are actually there).  in the fast case, all we do is
     # check the replication policy, which is already done, so finish.
-    return HANDLED if $opt_no_stat;
+    return HANDLED if $self->{opt_nostat};
 
     # stat each device to see if it's still there.  on first problem,
     # stop and go into the slow(er) fix function.
-    foreach my $devid ($fid->devids) {
+    foreach my $dfid ($fid->devfids) {
         # setup and do the request.  these failures are total failures in that we expect
         # them to work again later, as it's probably transient and will persist no matter
         # how many paths we try.
-        my $dfid = MogileFS::DevFID->new($devid, $fid);
         my $dev  = $dfid->device;
 
         my $disk_size = $self->size_on_disk($dfid);

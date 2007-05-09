@@ -64,6 +64,7 @@ sub wait_for_monitor {
 
 # method that workers can call just to write something to the parent, so worker
 # doesn't get killed.  (during idle/slow operation, say)
+# returns current time, so caller can avoid a time() call as well, for its loop
 sub still_alive {
     my $self = shift;
     my $now = time();
@@ -71,6 +72,7 @@ sub still_alive {
         $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
         $self->{last_ping} = $now;
     }
+    return $now;
 }
 
 sub send_to_parent {
