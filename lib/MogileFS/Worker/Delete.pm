@@ -176,8 +176,10 @@ sub process_deletes {
         }
 
         # CASE: devid is marked dead or doesn't exist: consider it deleted on this devid.
-        my $dev = MogileFS::Device->of_devid($devid);
-        unless ($dev->exists) {
+        # (Note: we're tolerant of '0' as a devid, due to old buggy version which
+        # would sometimes put that in there)
+        my $dev = $devid ? MogileFS::Device->of_devid($devid) : undef;
+        unless ($dev && $dev->exists) {
             $done_with_devid->("devid_doesnt_exist");
             next;
         }
