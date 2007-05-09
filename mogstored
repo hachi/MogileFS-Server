@@ -184,9 +184,14 @@ sub start_fidsizes_worker {
     my $class = "Mogstored::ChildProcess::FIDSizes";
     $class->pre_exec_init;
 
-    Mogstored->gearman_server->start_worker(sub {
+    my $pid = Mogstored->gearman_server->start_worker(sub {
         $class->exec;
     });
+
+    # old Gearman::Servers didn't return pid integegers
+    if ($pid =~ /^\d+$/) {
+        Mogstored->on_pid_death($pid, \&start_fidsizes_worker);
+    }
 }
 
 sub Mogstored::on_pid_death {
