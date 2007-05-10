@@ -214,33 +214,41 @@ sub check_fid {
 
     # stat each device to see if it's still there.  on first problem,
     # stop and go into the slow(er) fix function.
-    foreach my $dfid ($fid->devfids) {
-        # setup and do the request.  these failures are total failures in that we expect
-        # them to work again later, as it's probably transient and will persist no matter
-        # how many paths we try.
-        my $dev  = $dfid->device;
-
-        my $disk_size = $self->size_on_disk($dfid);
-
+    my $err;
+    my $rv = $self->parallel_check_sizes([ $fid->devfids ], sub {
+        my ($dfid, $disk_size) = @_;
         if (! defined $disk_size) {
+            my $dev  = $dfid->device;
             error("Connectivity problem reaching device " . $dev->id . " on host " . $dev->host->ip . "\n");
-            return STALLED;
+            $err = "stalled";
+            return 0;
         }
-
-        # great, check the size against what's in the database
-        if ($disk_size == $fid->length) {
-            # yay!
-            next;
-        }
-
+        return 1 if $disk_size == $fid->length;
+        $err = "needfix";
         # Note: not doing fsck_log, as fix_fid will log status for each device.
+        return 0;
+    });
 
-        # no point continuing loop now, once we find one problem.
-        # fix_fid will fully check all devices...
+    if ($rv) {
+        return HANDLED;
+    } elsif ($err eq "stalled") {
+        return STALLED;
+    } elsif ($err eq "needfix") {
         return $fix->();
+    } else {
+        die "Unknown error checking fid sizes in parallel.\n";
     }
+}
 
-    return HANDLED;
+sub parallel_check_sizes {
+    my ($self, $dflist, $cb) = @_;
+    # serial, for now: (just prepping for future parallel future,
+    # getting interface right)
+    foreach my $df (@$dflist) {
+        my $size = $self->size_on_disk($df);
+        return 0 unless $cb->($df, $size);
+    }
+    return 1;
 }
 
 # this is the slow path.  if something above in check_fid finds
