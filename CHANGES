@@ -1,3 +1,7 @@
+        * use signifigantly less CPU when re-broadcasting around
+          iostat device utilization% to child processes.  (future:
+          don't rebroadcast at all and use shared memory)
+
         * slightly faster fsck (do less syscalls)
 
         * efficiency: don't broadcast dup state information to children

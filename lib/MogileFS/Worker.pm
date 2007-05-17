@@ -270,10 +270,15 @@ sub process_generic_command {
         return 1;
     }
 
-    if (my ($devid, $util) = $$lineref =~ /^:set_dev_utilization (\d+) (.+)/) {
-        my $dev = MogileFS::Device->of_devid($devid);
+    # :set_dev_utilization dev# 45.2 dev# 45.2 dev# 45.2 dev# 45.2 dev 45.2\n
+    # (dev#, utilz%)+
+    if (my ($devid, $util) = $$lineref =~ /^:set_dev_utilization (.+)/) {
+        my %pairs = split(/\s+/, $1);
         local $MogileFS::Device::util_no_broadcast = 1;
-        $dev->set_observed_utilization($util);
+        while (my ($devid, $util) = each %pairs) {
+            my $dev = eval { MogileFS::Device->of_devid($devid) } or next;
+            $dev->set_observed_utilization($util);
+        }
         return 1;
     }
 

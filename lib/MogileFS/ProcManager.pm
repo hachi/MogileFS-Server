@@ -40,6 +40,11 @@ my @prefork_cleanup;  # subrefs to run to clean stuff up before we make a new ch
 
 *error = \&Mgd::error;
 
+my %dev_util;         # devid -> utilization
+my $last_util_spray = 0;  # time we lost spread %dev_util to children
+
+my $nowish;  # updated approximately once per second
+
 sub push_pre_fork_cleanup {
     my ($class, $code) = @_;
     push @prefork_cleanup, $code;
@@ -122,9 +127,9 @@ sub PostEventLoopChecker {
 
     return sub {
         # run only once per second
-        my $now = time();
-        return 1 unless $now > $lastspawntime;
-        $lastspawntime = $now;
+        $nowish = time();
+        return 1 unless $nowish > $lastspawntime;
+        $lastspawntime = $nowish;
 
         MogileFS::ProcManager->WatchDog;
 
@@ -620,8 +625,13 @@ sub HandleChildRequest {
         # (including the one that just set it to us, but eh)
         MogileFS::Config->set_config($1, $2);
     } elsif (my ($devid, $util) = $cmd =~ /^:set_dev_utilization (\d+) (.+)/) {
-        # rebroadcast dev utilization messages to all children
-        MogileFS::ProcManager->send_to_all_children(":set_dev_utilization $devid $util");
+        $dev_util{$devid} = $util;
+
+        # time to rebroadcast dev utilization messages to all children?
+        if ($nowish > $last_util_spray + 3) {
+            $last_util_spray = $nowish;
+            MogileFS::ProcManager->send_to_all_children(":set_dev_utilization " . join(" ", %dev_util));
+        }
     } else {
         # unknown command
         my $show = $cmd;
