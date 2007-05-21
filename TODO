@@ -1,3 +1,5 @@
+-- change debug level at runtime from mgmt port, propogate to children.
+
 -- MogileFS::Device ->make_directory on lighttpd isn't exactly right, as WebDAV
    spec says MKCOL on an existing directory should return 405 (Method Not Allowed),
    which I think is the same as a server without WebDAV enabled... we need to distinguish
