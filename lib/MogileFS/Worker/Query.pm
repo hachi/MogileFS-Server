@@ -894,7 +894,7 @@ sub cmd_get_paths {
     # construct result paths
     foreach my $devid (@list) {
         my $dev = $dmap->{$devid};
-        next unless $dev && ($dev->status eq "alive" || $dev->status eq "readonly");
+        next unless $dev && ($dev->can_read_from);
 
         my $host = $dev->host;
         next unless $dev && $host;
