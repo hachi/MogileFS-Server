@@ -1,3 +1,5 @@
+        * support drive identifiers above sdz (Arjan <info@bouncetek.com>)
+
         * make mogstored's iostat child process properly shutdown,
           even when iostat binary isn't installed.  (previously
           it was stuck in a loop every 10 seconds, hoping for
