@@ -1,3 +1,9 @@
+        * make mogstored's iostat child process properly shutdown,
+          even when iostat binary isn't installed.  (previously
+          it was stuck in a loop every 10 seconds, hoping for
+          iostat to be installed, but never respecting parent
+          process' death)
+
         * Change delete worker to use new DeviceStates interface.
 
         * Fix get_paths to honor new device state of 'drain' via new
