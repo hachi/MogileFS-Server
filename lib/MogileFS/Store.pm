@@ -42,6 +42,8 @@ sub new_from_dsn_user_pass {
         raise_errors => $subclass->want_raise_errors,
         slave_list_cachetime => 0,
         slave_list_cache     => [],
+        recheck_req_gen  => 0,  # incremented generation, of recheck of dbh being requested
+        recheck_done_gen => 0,  # once recheck is done, copy of what the request generation was
     }, $subclass;
     $self->init;
     return $self;
@@ -213,8 +215,10 @@ sub read_store {
     return $self unless $self->can_do_slaves;
 
     if ($self->{slave_ok}) {
-        my $slave = $self->get_slave;
-        return $slave if $slave;
+        if (my $slave = $self->get_slave) {
+            $slave->{recheck_req_gen} = $self->{recheck_req_gen};
+            return $slave;
+        }
     }
 
     return $self;
@@ -233,15 +237,15 @@ sub slaves_ok {
 
 sub recheck_dbh {
     my $self = shift;
-    $self->{needs_ping} = 1;
+    $self->{recheck_req_gen}++;
 }
 
 sub dbh {
     my $self = shift;
     if ($self->{dbh}) {
-        if ($self->{needs_ping}) {
-            $self->{needs_ping} = 0;
+        if ($self->{recheck_done_gen} != $self->{recheck_req_gen}) {
             $self->{dbh} = undef unless $self->{dbh}->ping;
+            $self->{recheck_done_gen} = $self->{recheck_req_gen};
         }
         return $self->{dbh} if $self->{dbh};
     }

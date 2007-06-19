@@ -1,3 +1,6 @@
+        * make Mgd::validate_dbh() re-check/ping slave dbhs as well.
+          (problem mentioned by Steven Shou <steven.shou@verizon.net>)
+
         * support drive identifiers above sdz (Arjan <info@bouncetek.com>)
 
         * make mogstored's iostat child process properly shutdown,
