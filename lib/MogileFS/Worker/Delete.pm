@@ -194,8 +194,8 @@ sub process_deletes {
             next;
         }
 
-        # CASE: devid is marked readonly/down: delay for 2 hours
-        if ($dev->status ne "alive") {
+        # CASE: devid is marked readonly/down/etc: delay for 2 hours
+        unless ($dev->can_delete_from) {
             $reschedule_fid->(60 * 60 * 2, "devid_marked_not_alive");
             next;
         }

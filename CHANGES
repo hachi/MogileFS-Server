@@ -1,3 +1,5 @@
+        * Change delete worker to use new DeviceStates interface.
+
         * Fix get_paths to honor new device state of 'drain' via new
           DeviceStates interface.
 
