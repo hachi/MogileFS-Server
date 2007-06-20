@@ -100,7 +100,7 @@ MogileFS::ReplicationPolicy::MultipleHosts -- default replication policy
 
 This policy tries to put files onto devices which are on different
 hosts.  If you only have 1 host and 2 devices on that one host, it
-obviously can't, so it'll grudgingly put it on the same device.  But
+obviously can't, so it'll grudgingly put it on the same host.  But
 if you request a minimum replica count of 2 and have 3 devices, it'll
 put 2 copies on different hosts.  If you have 4 devices on 2 hosts,
 and request a minima replica count of 3, you'll get 3 copies on
