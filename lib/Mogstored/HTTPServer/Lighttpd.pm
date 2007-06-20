@@ -46,8 +46,9 @@ sub start {
 server.document-root = "$self->{docroot}"
 server.port = $portnum
 server.bind = "$bind_ip"
-server.modules = ( "mod_webdav" )
+server.modules = ( "mod_webdav", "mod_status" )
 webdav.activate = "enable"
+status.status-url  = "/"
 };
 
     exec $exe, "-D", "-f", $filename;
