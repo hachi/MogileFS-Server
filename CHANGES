@@ -1,3 +1,8 @@
+        * remove Linux::AIO support, now that Perlbal has removed it as well,
+          and because Linux::AIO support (when Perlbal then chooses
+          IO::AIO) was hanging mogstored on shutdown.  so also add a
+          mogstored shutdown test (after a full daemonization of it)
+
         * make Mgd::validate_dbh() re-check/ping slave dbhs as well.
           (problem mentioned by Steven Shou <steven.shou@verizon.net>)
 

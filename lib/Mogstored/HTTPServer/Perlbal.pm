@@ -4,47 +4,15 @@ use base 'Mogstored::HTTPServer';
 use POSIX qw(ENOENT);
 use Fcntl qw(SEEK_CUR SEEK_SET SEEK_END O_RDWR O_CREAT O_TRUNC);
 
-# verify their Linux::AIO or IO::AIO works.  Perlbal 1.51 does this,
-# but just copying it here so people don't need to upgrade for this
-# one check.  also because the rules are different:  in Perlbal
-# it's understandable to not have working in AIO, in mogstored
-# it's essentially required, except for dev and light testing.
 my $OPTMOD_IO_AIO;
-my $OPTMOD_LINUX_AIO;
 BEGIN {
     $OPTMOD_IO_AIO        = eval "use IO::AIO 1.6 (); 1;";
-    $OPTMOD_LINUX_AIO     = eval "use Linux::AIO 1.71 (); 1;";
-    if ($OPTMOD_LINUX_AIO) {
-        my $good = 0;
-        Linux::AIO::aio_open("/tmp/$$-" . rand() . "-bogusdir/bogusfile-$$", O_RDWR|O_CREAT|O_TRUNC, 0, sub {
-            $good = 1 if $_[0] < 0 && $! == ENOENT;
-        });
-        while (Linux::AIO::nreqs()) {
-            my $rfd = "";
-            vec ($rfd, Linux::AIO::poll_fileno(), 1) = 1;
-            select $rfd, undef, undef, undef;
-            Linux::AIO::poll_cb();
-        }
-        unless ($good) {
-            # pretend that they don't have Linux::AIO, but only bitch at them if they don't have IO::AIO ...
-            if ($OPTMOD_IO_AIO) {
-                $Perlbal::AIO_MODE = "ioaio";
-            } else {
-                warn("WARNING:  Your installation of Linux::AIO doesn't work.\n".
-                     "          You seem to have installed it without 'make test',\n".
-                     "          or you ignored the failing tests.  I'm going to ignore\n".
-                     "          that you have it and proceed without async IO.  The\n".
-                     "          modern replacement to Linux::AIO is IO::AIO.\n");
-            }
-            $OPTMOD_LINUX_AIO = 0;
-        }
-    }
 }
 
 sub start {
     my $self = shift;
 
-    unless ($OPTMOD_LINUX_AIO || $OPTMOD_IO_AIO) {
+    unless ($OPTMOD_IO_AIO) {
         if ($ENV{'MOGSTORED_RUN_WITHOUT_AIO'}) {
             warn("WARNING:  Running without async IO.  Won't run well with many clients.\n");
         } else {

@@ -95,9 +95,7 @@ sub create_temp_tracker {
 }
 
 sub create_mogstored {
-    my ($ip, $root) = @_;
-
-    my $pid = fork();
+    my ($ip, $root, $daemonize) = @_;
 
     my $connect = sub {
         return IO::Socket::INET->new(PeerAddr => "$ip:7500",
@@ -107,12 +105,24 @@ sub create_mogstored {
     my $conn = $connect->();
     die "Failed:  tracker already running on port 7500?\n" if $conn;
 
-    unless ($pid) {
-        exec("$Bin/../mogstored",
-             "--httplisten=$ip:7500",
-             "--mgmtlisten=$ip:7501",
-             "--maxconns=1000",  # because we're not root, put it below 1024
-             "--docroot=$root");
+    my @args = ("$Bin/../mogstored",
+                "--httplisten=$ip:7500",
+                "--mgmtlisten=$ip:7501",
+                "--maxconns=1000",  # because we're not root, put it below 1024
+                "--docroot=$root");
+
+    my $pid;
+    if ($daemonize) {
+        # don't set pid.  since our fork fid would just
+        # go away, once perlbal daemonized itself.
+        push @args, "--daemonize";
+        system(@args) and die "Failed to start daemonized mogstored.";
+    } else {
+        $pid = fork();
+        die "failed to fork: $!" unless defined $pid;
+        unless ($pid) {
+            exec(@args);
+        }
     }
 
     for (1..12) {
