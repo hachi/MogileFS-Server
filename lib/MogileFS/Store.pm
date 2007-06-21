@@ -74,7 +74,8 @@ sub new_from_mogdbsetup {
 
     # otherwise, we need to make the requested database, setup permissions, etc
     $class->status("couldn't connect to database as mogilefs user.  trying root...");
-    my $rdbh = DBI->connect($class->dsn_of_root, $args{dbrootuser}, $args{dbrootpass}, {
+    my $rootdsn = $class->dsn_of_root($args{dbname}, $args{dbhost});
+    my $rdbh = DBI->connect($rootdsn, $args{dbrootuser}, $args{dbrootpass}, {
         PrintError => 0,
     }) or
         die "Failed to connect to $dsn as specified root user: " . DBI->errstr . "\n";

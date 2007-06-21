@@ -1,3 +1,6 @@
+        * Root DSN may need the hostname as well, so pass it in rather than 
+          leaving it out.
+
         * Use insert_ignore instead of raw INSERT IGNORE inside Delete worker.
 
         * The unix_timestamp function belongs to the Store, not other classes.
