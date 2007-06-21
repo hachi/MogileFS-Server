@@ -1,3 +1,5 @@
+        * Use insert_ignore instead of raw INSERT IGNORE inside Delete worker.
+
         * The unix_timestamp function belongs to the Store, not other classes.
           Need to add testcases for process_deletes and stats.
 
