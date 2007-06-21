@@ -16,7 +16,7 @@ sub run {
     die "\$ENV{MOG_DOCROOT} not set to a directory" unless -d $docroot;
 
     # (runs in exec'd child process)
-    $0 = "mogstored [diskusage]";
+    $0 .= " [diskusage]";
     select((select(STDOUT), $|++)[0]);
 
     my $start_ppid = getppid();

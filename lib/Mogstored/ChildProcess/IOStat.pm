@@ -28,7 +28,7 @@ sub run {
     die "\$ENV{MOG_DOCROOT} not set to a directory" unless -d $docroot;
 
     # (runs in exec'd child process)
-    $0 = "mogstored [iostat]";
+    $0 .= " [iostat]";
     select((select(STDOUT), $|++)[0]);
 
     my $iostat_pid;

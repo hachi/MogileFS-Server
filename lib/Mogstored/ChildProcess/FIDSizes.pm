@@ -25,7 +25,7 @@ sub pre_exec_init {
 }
 
 sub run {
-    $0 = "mogstored [fidsizes]";
+    $0 .= " [fidsizes]";
     $worker = Gearman::Worker->new;
     $worker->register_function(fid_sizes => \&gw_fidsizes);
     $docroot = $ENV{MOG_DOCROOT}

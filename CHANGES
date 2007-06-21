@@ -1,3 +1,5 @@
+        * Append the mogstored job type to $0 instead of replacing it entirely.
+
         * Alter $0 so that the scripts show up as '$SCRIPTNAME' in the process
           listing instead of '/usr/bin/perl $SCRIPTNAME'. This makes init.d
           scripts easier to manage.
