@@ -796,7 +796,7 @@ sub register_tempfile {
         unless (defined $fid) {
             # if they did not give us a fid, then we want to grab the one that was
             # theoretically automatically generated
-            $fid = $dbh->last_insert_id(undef, undef, undef, undef)
+            $fid = $dbh->last_insert_id(undef, undef, 'tempfile', 'fid')
                 or die "No last_insert_id found";
         }
         return undef unless defined $fid && $fid > 0;
@@ -1304,7 +1304,7 @@ sub fsck_log {
                    delete $opts{devid});
     croak("Unknown opts") if %opts;
 
-    my $logid = $self->dbh->last_insert_id(undef, undef, undef, undef)
+    my $logid = $self->dbh->last_insert_id(undef, undef, 'fsck_log', 'logid')
         or die "No last_insert_id found for fsck_log table";
 
     # sum-up evcode counts every so often, to make fsck_status faster,
