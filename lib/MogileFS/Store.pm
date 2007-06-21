@@ -765,9 +765,23 @@ sub register_tempfile {
     # one.  that should be fine.
     my $ins_tempfile = sub {
         my $rv = eval {
-            $dbh->do("INSERT INTO tempfile (fid, dmid, dkey, classid, devids, createtime) VALUES ".
-                     "(?,?,?,?,?," . $self->unix_timestamp . ")",
-                     undef, $fid || undef, $arg{dmid}, $arg{key}, $arg{classid} || 0, $arg{devids});
+            # We must only pass the correct number of bind parameters
+            # Using 'NULL' for the AUTO_INCREMENT/SERIAL column will fail on
+            # Postgres, where you are expected to leave it out or use DEFAULT
+            # Leaving it out seems sanest and least likely to cause problems
+            # with other databases.
+            my @keys = ('dmid', 'dkey', 'classid', 'devids', 'createtime');
+            my @vars = ('?'   , '?'   , '?'      , '?'     , $self->unix_timestamp);
+            my @vals = ($arg{dmid}, $arg{key}, $arg{classid} || 0, $arg{devids});
+			# Do not check for $explicit_fid_used, but rather $fid directly
+			# as this anonymous sub is called from the loop later
+            if($fid) {
+                unshift @keys, 'fid';
+                unshift @vars, '?';
+                unshift @vals, $fid;
+            }
+            my $sql = "INSERT INTO tempfile (".join(',',@keys).") VALUES (".join(',',@vars).")";
+            $dbh->do($sql, undef, @vals);
         };
         if (!$rv) {
             return undef if $self->was_duplicate_error;

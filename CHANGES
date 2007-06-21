@@ -1,3 +1,7 @@
+        * Using NULL during an INSERT for the AUTO_INCREMENT column does not
+          work very well outside of MySQL. Pass the correct number of arguments
+          to the INSERT instead.
+
         * Clean up all raw usages of UNIX_TIMETAMP() function, in preparation
           for database independence. If you need the unix timestamp, include the output
           of $self->unix_timestamp directly into your query.
