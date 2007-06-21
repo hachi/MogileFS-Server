@@ -12,6 +12,9 @@ use warnings;
 use lib 'lib';
 use MogileFS::Server;
 
+# Rename binary in process list to make init scripts saner
+$0 = $_ = $0;
+
 my $s = MogileFS::Server->server;
 $s->run;
 

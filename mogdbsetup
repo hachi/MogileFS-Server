@@ -4,6 +4,9 @@ use Getopt::Long;
 use lib 'lib';
 use MogileFS::Store;
 
+# Rename binary in process list to make init scripts saner
+$0 = $_ = $0;
+
 my %args = (
             dbhost => "localhost",
             dbname => "mogilefs",

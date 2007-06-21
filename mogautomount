@@ -3,6 +3,9 @@
 use strict;
 use Getopt::Long;
 
+# Rename binary in process list to make init scripts saner
+$0 = $_ = $0;
+
 my ($help, $verbose);
 usage(0) unless GetOptions(
                            'help' => \$help,

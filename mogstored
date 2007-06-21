@@ -47,6 +47,9 @@ my $default_config = "/etc/mogilefs/mogstored.conf";
 my $server      = $ENV{MOGSTORED_SERVER_TYPE} || "perlbal";
 my $serverbin   = "";
 
+# Rename binary in process list to make init scripts saner
+$0 = $_ = $0;
+
 my %config_opts = (
                    'iostat'       => \$opt_iostat,
                    'daemonize|d'  => \$opt_daemonize,

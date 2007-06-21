@@ -1,3 +1,7 @@
+        * Alter $0 so that the scripts show up as '$SCRIPTNAME' in the process
+          listing instead of '/usr/bin/perl $SCRIPTNAME'. This makes init.d
+          scripts easier to manage.
+
         * make mogstored's lighttpd config use mod_status for "/", so
           mogadm doesn't think it's dead when it previously saw a 404
           (Justin Huff <jjhuff@mspin.net>)
