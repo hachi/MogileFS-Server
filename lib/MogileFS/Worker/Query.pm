@@ -974,6 +974,7 @@ sub cmd_stats {
 
     # get database handle
     my $ret = {};
+    my $sto = Mgd::get_store();
     my $dbh = Mgd::get_dbh()
         or return $self->err_line('nodb');
 
@@ -1014,7 +1015,7 @@ sub cmd_stats {
         $ret->{"replicationcount"} = $count;
 
         # now we want to do the "new" replication stats
-        my $db_time = $dbh->selectrow_array('SELECT '.$self->unix_timestamp);
+        my $db_time = $dbh->selectrow_array('SELECT '.$sto->unix_timestamp);
         $stats = $dbh->selectall_arrayref('SELECT nexttry, COUNT(*) FROM file_to_replicate GROUP BY 1');
         foreach my $stat (@$stats) {
             if ($stat->[0] < 1000) {

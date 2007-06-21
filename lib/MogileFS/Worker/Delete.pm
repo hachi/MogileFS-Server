@@ -156,7 +156,7 @@ sub process_deletes {
         my $reschedule_fid = sub {
             my ($secs, $reason) = (int(shift), shift);
             $dbh->do("INSERT IGNORE INTO file_to_delete_later (fid, delafter) ".
-                     "VALUES (?,".$self->unix_timestamp."+$secs)", undef,
+                     "VALUES (?,".$sto->unix_timestamp."+$secs)", undef,
                      $fid);
             $sto->condthrow("Failure to insert into file_to_delete_later");
             error("delete of fid $fid rescheduled: $reason") if $Mgd::DEBUG >= 2;

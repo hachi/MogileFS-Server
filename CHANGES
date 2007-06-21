@@ -1,3 +1,6 @@
+        * The unix_timestamp function belongs to the Store, not other classes.
+          Need to add testcases for process_deletes and stats.
+
         * Using NULL during an INSERT for the AUTO_INCREMENT column does not
           work very well outside of MySQL. Pass the correct number of arguments
           to the INSERT instead.
