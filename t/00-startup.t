@@ -216,7 +216,7 @@ sleep(3);  # FIXME: make an explicit "rescan" or "remonitor" job to mogilefsd, j
 ok($tmptrack->mogadm("device", "mark", "hostB", 3, "dead"), "marked device B/3 dead");
 ok($tmptrack->mogadm("device", "mark", "hostB", 4, "dead"), "marked device B/4 dead");
 
-ok(try_for(15, sub {
+ok(try_for(30, sub {
     my %has;
     my $sth = $dbh->prepare("SELECT devid, COUNT(*) FROM file_on GROUP BY devid");
     $sth->execute;
