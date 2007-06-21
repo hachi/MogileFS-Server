@@ -20,7 +20,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 55;
+    plan tests => 56;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -61,6 +61,17 @@ my $mogc = MogileFS::Client->new(
                                  hosts  => [ "127.0.0.1:7001" ],
                                  );
 my $be = $mogc->{backend}; # gross, reaching inside of MogileFS::Client
+
+my $lasttime = 1167609600; # Mon Jan  1 00:00:00 UTC 2007
+ok(try_for(3, sub {
+    my $timestamp = $dbh->selectrow_array("SELECT ".$sto->unix_timestamp);
+	# FIXME: Some databases might be pedantic about the FROM
+	# but having it on others means that if the table has no rows
+	# we won't get any results!
+    my $rv = $timestamp > $lasttime;
+    $lasttime = $timestamp;
+    return $rv;
+}), "Store provides sane unix_timestamp");
 
 # test some basic commands to backend
 ok($be->do_request("test", {}), "test ping worked");
