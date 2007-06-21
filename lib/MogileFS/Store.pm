@@ -405,6 +405,9 @@ sub create_table {
     }
 }
 
+# Please try to keep all tables aligned nicely
+# with '"CREATE TABLE' on the first line
+# and ')"' alone on the last line.
 
 sub TABLE_domain {
     # classes are tied to domains.  domains can have classes of items
@@ -416,20 +419,21 @@ sub TABLE_domain {
     # unspecified classname means classid=0 (implicit class), and that
     # implies mindevcount=2
     "CREATE TABLE domain (
-   dmid         SMALLINT UNSIGNED NOT NULL PRIMARY KEY,
-   namespace    VARCHAR(255),
-   UNIQUE (namespace))"
+    dmid         SMALLINT UNSIGNED NOT NULL PRIMARY KEY,
+    namespace    VARCHAR(255),
+    UNIQUE (namespace)
+    )"
 }
 
 sub TABLE_class {
     "CREATE TABLE class (
-      dmid          SMALLINT UNSIGNED NOT NULL,
-      classid       TINYINT UNSIGNED NOT NULL,
-      PRIMARY KEY (dmid,classid),
-      classname     VARCHAR(50),
-      UNIQUE      (dmid,classname),
-      mindevcount   TINYINT UNSIGNED NOT NULL
-)"
+    dmid          SMALLINT UNSIGNED NOT NULL,
+    classid       TINYINT UNSIGNED NOT NULL,
+    PRIMARY KEY (dmid,classid),
+    classname     VARCHAR(50),
+    UNIQUE      (dmid,classname),
+    mindevcount   TINYINT UNSIGNED NOT NULL
+    )"
 }
 
 # the length field is only here for easy verifications of content
@@ -446,32 +450,32 @@ sub TABLE_class {
 # the application can recreate it from its original)
 sub TABLE_file {
     "CREATE TABLE file (
-   fid          INT UNSIGNED NOT NULL,
-   PRIMARY KEY  (fid),
+    fid          INT UNSIGNED NOT NULL,
+    PRIMARY KEY  (fid),
 
-   dmid          SMALLINT UNSIGNED NOT NULL,
-   dkey           VARCHAR(255),     # domain-defined
-   UNIQUE dkey  (dmid, dkey),
+    dmid          SMALLINT UNSIGNED NOT NULL,
+    dkey           VARCHAR(255),     # domain-defined
+    UNIQUE dkey  (dmid, dkey),
 
-   length        INT UNSIGNED,        # 4GB limit
+    length        INT UNSIGNED,        # 4GB limit
 
-   classid       TINYINT UNSIGNED NOT NULL,
-   devcount      TINYINT UNSIGNED NOT NULL,
-   INDEX devcount (dmid,classid,devcount)
-)"
+    classid       TINYINT UNSIGNED NOT NULL,
+    devcount      TINYINT UNSIGNED NOT NULL,
+    INDEX devcount (dmid,classid,devcount)
+    )"
 }
 
 sub TABLE_tempfile {
     "CREATE TABLE tempfile (
-   fid          INT UNSIGNED NOT NULL AUTO_INCREMENT,
-   PRIMARY KEY  (fid),
+    fid          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY  (fid),
 
-   createtime   INT UNSIGNED NOT NULL,
-   classid      TINYINT UNSIGNED NOT NULL,
-   dmid          SMALLINT UNSIGNED NOT NULL,
-   dkey           VARCHAR(255),
-   devids       VARCHAR(60)
-)"
+    createtime   INT UNSIGNED NOT NULL,
+    classid      TINYINT UNSIGNED NOT NULL,
+    dmid          SMALLINT UNSIGNED NOT NULL,
+    dkey           VARCHAR(255),
+    devids       VARCHAR(60)
+    )"
 }
 
 # files marked for death when their key is overwritten.  then they get a new
@@ -480,9 +484,9 @@ sub TABLE_tempfile {
 # all devices.
 sub TABLE_file_to_delete {
     "CREATE TABLE file_to_delete (
-   fid  INT UNSIGNED NOT NULL,
-   PRIMARY KEY (fid)
-)"
+    fid  INT UNSIGNED NOT NULL,
+    PRIMARY KEY (fid)
+    )"
 }
 
 # if the replicator notices that a fid has no sources, that file gets inserted
@@ -490,11 +494,11 @@ sub TABLE_file_to_delete {
 # handle fids stored in this table.
 sub TABLE_unreachable_fids {
     "CREATE TABLE unreachable_fids (
-   fid        INT UNSIGNED NOT NULL,
-   lastupdate INT UNSIGNED NOT NULL,
-   PRIMARY KEY (fid),
-   INDEX (lastupdate)
-)"
+    fid        INT UNSIGNED NOT NULL,
+    lastupdate INT UNSIGNED NOT NULL,
+    PRIMARY KEY (fid),
+    INDEX (lastupdate)
+    )"
 }
 
 # what files are on what devices?  (most likely physical devices,
@@ -504,11 +508,11 @@ sub TABLE_unreachable_fids {
 # the devid index lets us answer "What files were on this now-dead disk?"
 sub TABLE_file_on {
     "CREATE TABLE file_on (
-   fid          INT UNSIGNED NOT NULL,
-   devid        MEDIUMINT UNSIGNED NOT NULL,
-   PRIMARY KEY (fid, devid),
-   INDEX (devid)
-)"
+    fid          INT UNSIGNED NOT NULL,
+    devid        MEDIUMINT UNSIGNED NOT NULL,
+    PRIMARY KEY (fid, devid),
+    INDEX (devid)
+    )"
 }
 
 # if application or framework detects an error in one of the duplicate files
@@ -518,52 +522,53 @@ sub TABLE_file_on {
 #        on the other devices?
 sub TABLE_file_on_corrupt {
     "CREATE TABLE file_on_corrupt (
-   fid          INT UNSIGNED NOT NULL,
-   devid        MEDIUMINT UNSIGNED NOT NULL,
-   PRIMARY KEY (fid, devid)
-)"
+    fid          INT UNSIGNED NOT NULL,
+    devid        MEDIUMINT UNSIGNED NOT NULL,
+    PRIMARY KEY (fid, devid)
+    )"
 }
 
 # hosts (which contain devices...)
 sub TABLE_host {
     "CREATE TABLE host (
-   hostid     MEDIUMINT UNSIGNED NOT NULL PRIMARY KEY,
+    hostid     MEDIUMINT UNSIGNED NOT NULL PRIMARY KEY,
 
-   status     ENUM('alive','dead','down'),
-   http_port  MEDIUMINT UNSIGNED DEFAULT 7500,
-   http_get_port MEDIUMINT UNSIGNED,
+    status     ENUM('alive','dead','down'),
+    http_port  MEDIUMINT UNSIGNED DEFAULT 7500,
+    http_get_port MEDIUMINT UNSIGNED,
 
-   hostname   VARCHAR(40),
-   hostip     VARCHAR(15),
-   altip      VARCHAR(15),
-   altmask    VARCHAR(18),
-   UNIQUE     (hostname),
-   UNIQUE     (hostip),
-   UNIQUE     (altip)
-)"
+    hostname   VARCHAR(40),
+    hostip     VARCHAR(15),
+    altip      VARCHAR(15),
+    altmask    VARCHAR(18),
+    UNIQUE     (hostname),
+    UNIQUE     (hostip),
+    UNIQUE     (altip)
+    )"
 }
 
 # disks...
 sub TABLE_device {
     "CREATE TABLE device (
-   devid   MEDIUMINT UNSIGNED NOT NULL,
-   hostid     MEDIUMINT UNSIGNED NOT NULL,
+    devid   MEDIUMINT UNSIGNED NOT NULL,
+    hostid     MEDIUMINT UNSIGNED NOT NULL,
 
-   status  ENUM('alive','dead','down'),
-   weight  MEDIUMINT DEFAULT 100,
+    status  ENUM('alive','dead','down'),
+    weight  MEDIUMINT DEFAULT 100,
 
-   mb_total   MEDIUMINT UNSIGNED,
-   mb_used    MEDIUMINT UNSIGNED,
-   mb_asof    INT UNSIGNED,
-   PRIMARY KEY (devid),
-   INDEX   (status)
-)"
+    mb_total   MEDIUMINT UNSIGNED,
+    mb_used    MEDIUMINT UNSIGNED,
+    mb_asof    INT UNSIGNED,
+    PRIMARY KEY (devid),
+    INDEX   (status)
+    )"
 }
 
 sub TABLE_server_settings {
     "CREATE TABLE server_settings (
-   field   VARCHAR(50) PRIMARY KEY,
-   value   VARCHAR(255))"
+    field   VARCHAR(50) PRIMARY KEY,
+    value   VARCHAR(255)
+    )"
 }
 
 sub TABLE_file_to_replicate {
@@ -575,33 +580,33 @@ sub TABLE_file_to_replicate {
     # failcount.  how many times we've failed, just for doing backoff of nexttry.
     # flags.  reserved for future use.
     "CREATE TABLE file_to_replicate (
-   fid        INT UNSIGNED NOT NULL PRIMARY KEY,
-   nexttry    INT UNSIGNED NOT NULL,
-   INDEX (nexttry),
-   fromdevid  INT UNSIGNED,
-   failcount  TINYINT UNSIGNED NOT NULL DEFAULT 0,
-   flags      SMALLINT UNSIGNED NOT NULL DEFAULT 0
-   )"
+    fid        INT UNSIGNED NOT NULL PRIMARY KEY,
+    nexttry    INT UNSIGNED NOT NULL,
+    INDEX (nexttry),
+    fromdevid  INT UNSIGNED,
+    failcount  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    flags      SMALLINT UNSIGNED NOT NULL DEFAULT 0
+    )"
 }
 
 sub TABLE_file_to_delete_later {
     "CREATE TABLE file_to_delete_later (
-   fid  INT UNSIGNED NOT NULL PRIMARY KEY,
-   delafter INT UNSIGNED NOT NULL,
-   INDEX (delafter)
-)"
+    fid  INT UNSIGNED NOT NULL PRIMARY KEY,
+    delafter INT UNSIGNED NOT NULL,
+    INDEX (delafter)
+    )"
 }
 
 sub TABLE_fsck_log {
     "CREATE TABLE fsck_log (
-logid  INT UNSIGNED NOT NULL AUTO_INCREMENT,
-PRIMARY KEY (logid),
-utime  INT UNSIGNED NOT NULL,
-fid    INT UNSIGNED NULL,
-evcode CHAR(4),
-devid  MEDIUMINT UNSIGNED,
-INDEX(utime)
-)"
+    logid  INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    PRIMARY KEY (logid),
+    utime  INT UNSIGNED NOT NULL,
+    fid    INT UNSIGNED NULL,
+    evcode CHAR(4),
+    devid  MEDIUMINT UNSIGNED,
+    INDEX(utime)
+    )"
 }
 
 # these five only necessary for MySQL, since no other database existed
@@ -773,8 +778,8 @@ sub register_tempfile {
             my @keys = ('dmid', 'dkey', 'classid', 'devids', 'createtime');
             my @vars = ('?'   , '?'   , '?'      , '?'     , $self->unix_timestamp);
             my @vals = ($arg{dmid}, $arg{key}, $arg{classid} || 0, $arg{devids});
-			# Do not check for $explicit_fid_used, but rather $fid directly
-			# as this anonymous sub is called from the loop later
+            # Do not check for $explicit_fid_used, but rather $fid directly
+            # as this anonymous sub is called from the loop later
             if($fid) {
                 unshift @keys, 'fid';
                 unshift @vars, '?';
