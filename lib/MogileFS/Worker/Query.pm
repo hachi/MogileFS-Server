@@ -1014,7 +1014,7 @@ sub cmd_stats {
         $ret->{"replicationcount"} = $count;
 
         # now we want to do the "new" replication stats
-        my $db_time = $dbh->selectrow_array('SELECT UNIX_TIMESTAMP()');
+        my $db_time = $dbh->selectrow_array('SELECT '.$self->unix_timestamp);
         $stats = $dbh->selectall_arrayref('SELECT nexttry, COUNT(*) FROM file_to_replicate GROUP BY 1');
         foreach my $stat (@$stats) {
             if ($stat->[0] < 1000) {

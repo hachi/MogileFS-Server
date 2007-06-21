@@ -1,3 +1,7 @@
+        * Clean up all raw usages of UNIX_TIMETAMP() function, in preparation
+          for database independence. If you need the unix timestamp, include the output
+          of $self->unix_timestamp directly into your query.
+
         * Append the mogstored job type to $0 instead of replacing it entirely.
 
         * Alter $0 so that the scripts show up as '$SCRIPTNAME' in the process
