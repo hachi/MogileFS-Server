@@ -874,8 +874,9 @@ sub cmd_get_paths {
     foreach my $devid (@fid_devids) {
         my $weight;
         my $dev = $dmap->{$devid};
+        my $util = $dev->observed_utilization;
 
-        if (defined(my $util = $dev->observed_utilization)) {
+        if (defined($util)) {
             $weight = 102 - $util;
             $weight ||= 100;
         } else {
