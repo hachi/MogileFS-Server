@@ -876,7 +876,7 @@ sub cmd_get_paths {
         my $dev = $dmap->{$devid};
         my $util = $dev->observed_utilization;
 
-        if (defined($util)) {
+        if (defined($util) and $util =~ /\A\d+\Z/) {
             $weight = 102 - $util;
             $weight ||= 100;
         } else {
