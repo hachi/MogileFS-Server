@@ -334,6 +334,11 @@ sub add_extra_tables {
     push @extra_tables, @_;
 }
 
+use constant TABLES => qw( domain class file tempfile file_to_delete
+                            unreachable_fids file_on file_on_corrupt host
+                            device server_settings file_to_replicate
+                            file_to_delete_later fsck_log);
+
 sub setup_database {
     my $sto = shift;
 
@@ -357,12 +362,7 @@ sub setup_database {
         $sto->confirm("Install/upgrade your schema from version $curver to version $latestver?");
     }
 
-    foreach my $t (qw(
-                      domain class file tempfile file_to_delete
-                      unreachable_fids file_on file_on_corrupt host
-                      device server_settings file_to_replicate
-                      file_to_delete_later fsck_log
-                      ), @extra_tables) {
+    foreach my $t (TABLES, @extra_tables) {
         $sto->create_table($t);
     }
 
