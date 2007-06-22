@@ -1,3 +1,6 @@
+        * Handle HiRes gettimeofday correctly to get useful results. Arrays are
+          important. This gives us correct timing output.
+        
         * Handle input to log() correctly. Based on the implementation of
           Sys::Syslog::syslog(), produces no ugly warnings, and makes sure that
           printf stuff works nicely.

@@ -90,7 +90,9 @@ sub process_line {
     # set global variables for zone determination
     local $MogileFS::REQ_client_ip = $client_ip;
 
-    $self->{querystarttime} = Time::HiRes::gettimeofday();
+    # Use as array here, otherwise we get a string which breaks usage of
+    # Time::HiRes::tv_interval further on.
+    $self->{querystarttime} = [ Time::HiRes::gettimeofday() ];
 
     # fallback to normal command handling
     if ($line =~ /^(\w+)\s*(.*)/) {
@@ -1297,7 +1299,7 @@ sub ok_line {
 
     my $delay = '';
     if ($self->{querystarttime}) {
-        $delay = sprintf("%.4f ", Time::HiRes::tv_interval([ $self->{querystarttime} ]));
+        $delay = sprintf("%.4f ", Time::HiRes::tv_interval( $self->{querystarttime} ));
         $self->{querystarttime} = undef;
     }
 
@@ -1353,7 +1355,7 @@ sub err_line {
 
     my $delay = '';
     if ($self->{querystarttime}) {
-        $delay = sprintf("%.4f ", Time::HiRes::tv_interval([ $self->{querystarttime} ]));
+        $delay = sprintf("%.4f ", Time::HiRes::tv_interval($self->{querystarttime}));
         $self->{querystarttime} = undef;
     }
 
