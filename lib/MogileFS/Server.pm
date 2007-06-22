@@ -233,7 +233,10 @@ sub log {
     if (! $MogileFS::Config::daemonize) {
         # syslog acts like printf so we have to use printf and append a \n
         shift; # ignore the first parameter (info, warn, critical, etc)
-        printf(shift(@_) . "\n", @_);
+        my $mask = shift; # format string
+        $mask .= "\n" unless $mask =~ /\n$/;
+        my $message = @_ ? sprintf($mask, @_) : $mask;
+        print $message;
     } else {
         # just pass the parameters to syslog
         Sys::Syslog::syslog(@_);
