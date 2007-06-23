@@ -90,7 +90,7 @@ sub process_tempfiles {
 
     # dig up some temporary files to purge
     my $sto = Mgd::get_store();
-    my $too_old = int($ENV{T_TEMPFILE_TOO_OLD}) || 3600;
+    my $too_old = int($ENV{T_TEMPFILE_TOO_OLD} || 3600);
     my $tempfiles = $sto->old_tempfiles($too_old);
     return 0 unless $tempfiles && @$tempfiles;
 
