@@ -10,6 +10,8 @@ use fields ('psock',              # socket for parent/child communications
             );
 
 use MogileFS::Util qw(error);
+use MogileFS::Server;
+
 use vars (
           '$got_live_vs_die',    # local'ized scalarref flag for whether we've
                                  # gotten a live-vs-die instruction from parent

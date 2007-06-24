@@ -4,7 +4,6 @@ use Carp qw(croak);
 use Time::HiRes;
 use MogileFS::Exception;
 use MogileFS::DeviceState;
-use MogileFS::Server;
 
 require Exporter;
 our @ISA = qw(Exporter);
