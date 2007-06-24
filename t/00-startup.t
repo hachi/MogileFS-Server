@@ -20,7 +20,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 56;
+    plan tests => 59;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -65,9 +65,9 @@ my $be = $mogc->{backend}; # gross, reaching inside of MogileFS::Client
 my $lasttime = 1167609600; # Mon Jan  1 00:00:00 UTC 2007
 ok(try_for(3, sub {
     my $timestamp = $dbh->selectrow_array("SELECT ".$sto->unix_timestamp);
-	# FIXME: Some databases might be pedantic about the FROM
-	# but having it on others means that if the table has no rows
-	# we won't get any results!
+    # FIXME: Some databases might be pedantic about the FROM
+    # but having it on others means that if the table has no rows
+    # we won't get any results!
     my $rv = $timestamp > $lasttime;
     $lasttime = $timestamp;
     return $rv;
@@ -248,6 +248,14 @@ ok(try_for(20, sub {
     return @files == 0;
 }), "and they're gone from filesystem");
 
+foreach my $t (qw(file file_on file_to_delete)) {
+    my $rows = $dbh->selectrow_array("SELECT COUNT(*) FROM $t");
+	if($rows > 0) {
+		fail("$rows files still exist in $t!")
+	} else {
+		pass("$t cleaned");
+	}
+}
 
 sub try_for {
     my ($tries, $code) = @_;
