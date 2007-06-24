@@ -200,6 +200,7 @@ sub run_global_hook {
 package Mgd;  # conveniently short name
 use strict;
 use warnings;
+use MogileFS::Config;
 use MogileFS::Util qw(error fatal debug); # for others calling Mgd::foo()
 
 sub server {
