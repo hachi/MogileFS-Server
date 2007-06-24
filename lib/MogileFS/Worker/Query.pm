@@ -805,7 +805,7 @@ sub cmd_get_paths {
 
     # memcache mappings are as follows:
     #  mogfid:<dmid>:<dkey> -> fidid     (and TODO: invalidate this when key is replaced)
-    #  mogdevids:<fidid>    -> \@devids
+    #  mogdevids:<fidid>    -> \@devids  (and TODO: invalidate when the replication or deletion is run!)
 
     # if you specify 'noverify', that means a correct answer isn't needed and memcache can
     # be used.
