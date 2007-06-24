@@ -1,6 +1,3 @@
-        * Fix deletion crash if a file existed in the database but was not on
-          any device. INNER JOIN instead of LEFT JOIN.
-       
         * Handle HiRes gettimeofday correctly to get useful results. Arrays are
           important. This gives us correct timing output.
         

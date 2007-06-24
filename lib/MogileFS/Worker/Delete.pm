@@ -125,7 +125,7 @@ sub process_deletes {
 
     my $delmap = $dbh->selectall_arrayref("SELECT fd.fid, fo.devid ".
                                           "FROM file_to_delete fd ".
-                                          "INNER JOIN file_on fo ON fd.fid=fo.fid ".
+                                          "LEFT JOIN file_on fo ON fd.fid=fo.fid ".
                                           "LIMIT " . LIMIT);
     my $count = $delmap ? scalar @$delmap : 0;
     return 0 unless $count;
