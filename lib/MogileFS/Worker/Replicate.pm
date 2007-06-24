@@ -154,11 +154,14 @@ sub replicate_using_torepl_table {
         next if $self->peer_is_replicating($fid);
 
         my $errcode;
-        my ($status, $unlock) = replicate($fid,
-                                          errref       => \$errcode,
-                                          no_unlock    => 1,   # to make it return an $unlock subref
-                                          source_devid => $todo->{fromdevid},
-                                          );
+
+        my %opts;
+        $opts{errref} = \$errcode;
+        $opts{no_unlock} = 1; # to make it return an $unlock subref
+        $opts{source_devid} = $todo->{fromdevid} if $todo->{fromdevid};
+
+        my ($status, $unlock) = replicate($fid, %opts);
+
         if ($status) {
             # $status is either 0 (failure, handled below), 1 (success, we actually
             # replicated this file), or 2 (success, but someone else replicated it).
@@ -172,6 +175,8 @@ sub replicate_using_torepl_table {
             $unlock->() if $unlock;
             next;
         }
+
+        debug("Replication of fid=$fid failed with errcode=$errcode") if $Mgd::DEBUG >= 2;
 
         # ERROR CASES:
 
@@ -253,7 +258,7 @@ sub replicate_using_devcounts {
         my $mclass = shift;
         my ($dmid, $classid, $min, $policy_class) = map { $mclass->$_ } qw(domainid classid mindevcount policy_class);
 
-        debug("Checking replication for dmid=$dmid, classid=$classid, min=$min");
+        debug("Checking replication for dmid=$dmid, classid=$classid, min=$min") if $Mgd::DEBUG >= 2;
 
         my $LIMIT = 1000;
 
@@ -277,7 +282,7 @@ sub replicate_using_devcounts {
 
             # see if we have any files to replicate
             my $count = $fids ? scalar @$fids : 0;
-            debug("  found $count for dmid=$dmid/classid=$classid/min=$min");
+            debug("  found $count for dmid=$dmid/classid=$classid/min=$min") if $Mgd::DEBUG >= 2;
             next unless $count;
 
             # randomize the list so multiple daemons/threads working on
@@ -480,6 +485,8 @@ sub replicate {
     my ($fid, %opts) = @_;
     $fid = MogileFS::FID->new($fid) unless ref $fid;
     my $fidid = $fid->id;
+
+    #debug("Replication for $fidid called, opts=".join(',',keys(%opts))) if $Mgd::DEBUG >= 2;
 
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
