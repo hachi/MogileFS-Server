@@ -137,7 +137,7 @@ sub process_deletes {
         $self->still_alive;
         $self->read_from_parent;
         my ($fid, $devid) = @$dm;
-        error("deleting fid $fid, on devid $devid...") if $Mgd::DEBUG >= 2;
+        error("deleting fid $fid, on devid ".($devid || 'NULL')."...") if $Mgd::DEBUG >= 2;
 
         my $done_with_fid = sub {
             my $reason = shift;
