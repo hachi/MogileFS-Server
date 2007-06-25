@@ -290,7 +290,7 @@ sub _valid_params {
     my ($self, $vlist, %uarg) = @_;
     my %ret;
     $ret{$_} = delete $uarg{$_} foreach @$vlist;
-    croak("Bogus options") if %uarg;
+    croak("Bogus options: ".join(',',keys %uarg)) if %uarg;
     return %ret;
 }
 

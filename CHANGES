@@ -1,3 +1,6 @@
+        * When croaking due to bogus options, include the keys in the croak
+          output for easier tracing.
+        
         * Handle HiRes gettimeofday correctly to get useful results. Arrays are
           important. This gives us correct timing output.
         
