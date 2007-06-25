@@ -1291,10 +1291,14 @@ sub fids_to_delete_again {
 # return 1 on success.  die otherwise.
 sub enqueue_fids_to_delete {
     my ($self, @fidids) = @_;
-    if (@fidids > 1 && ! $self->can_insert_multi) {
+    # multi-row insert-ignore/replace CAN fail with the insert_ignore emulation sub.
+    # when the first row causes the duplicate error, and the remaining rows are
+    # not processed.
+    if (@fidids > 1 && ! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
         $self->enqueue_fids_to_delete($_) foreach @fidids;
         return 1;
     }
+    # TODO: convert to prepared statement?
     $self->dbh->do($self->ignore_replace . " INTO file_to_delete (fid) VALUES " .
                    join(",", map { "(" . int($_) . ")" } @fidids))
         or die "file_to_delete insert failed";

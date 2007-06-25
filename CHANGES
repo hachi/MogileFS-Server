@@ -1,3 +1,7 @@
+        * enqueue_fids_to_delete is dangerous when can_insert_multi is true,
+          but can_insertignore AND can_replace are false. This is per the
+          insert_ignore warning.
+        
         * Include warnings and comments regarding usages of insert_ignore and
           insert_replace.
 
