@@ -156,8 +156,8 @@ sub replicate_using_torepl_table {
         my $errcode;
 
         my %opts;
-        $opts{errref} = \$errcode;
-        $opts{no_unlock} = 1; # to make it return an $unlock subref
+        $opts{errref}       = \$errcode;
+        $opts{no_unlock}    = 1; # to make it return an $unlock subref
         $opts{source_devid} = $todo->{fromdevid} if $todo->{fromdevid};
 
         my ($status, $unlock) = replicate($fid, %opts);
@@ -486,7 +486,7 @@ sub replicate {
     $fid = MogileFS::FID->new($fid) unless ref $fid;
     my $fidid = $fid->id;
 
-    #debug("Replication for $fidid called, opts=".join(',',keys(%opts))) if $Mgd::DEBUG >= 2;
+    debug("Replication for $fidid called, opts=".join(',',keys(%opts))) if $Mgd::DEBUG >= 2;
 
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
