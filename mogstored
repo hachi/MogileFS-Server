@@ -49,7 +49,7 @@ my $server      = $ENV{MOGSTORED_SERVER_TYPE} || "perlbal";
 my $serverbin   = "";
 
 # Rename binary in process list to make init scripts saner
-$0 = $_ = $0;
+$0 = "mogstored";
 
 my %config_opts = (
                    'iostat'       => \$opt_iostat,
