@@ -311,12 +311,18 @@ sub conddup {
 }
 
 # insert row if doesn't already exist
+# WARNING: This function is NOT transaction safe if the duplicate errors causes
+# your transaction to halt!
+# WARNING: This function is NOT safe on multi-row inserts if can_insertignore
+# is false! Rows before the duplicate will be inserted, but rows after the
+# duplicate might not be, depending your database.
 sub insert_ignore {
     my ($self, $sql, @params) = @_;
     my $dbh = $self->dbh;
     if ($self->can_insertignore) {
         return $dbh->do("INSERT IGNORE $sql", @params);
     } else {
+        # TODO: Detect bad multi-row insert here.
         my $rv = eval { $dbh->do("INSERT $sql", @params); };
         if ($@ || $dbh->err) {
             return 1 if $self->was_duplicate_error;
@@ -705,6 +711,7 @@ sub nfiles_with_dmid_classid_devcount {
 sub set_server_setting {
     my ($self, $key, $val) = @_;
     my $dbh = $self->dbh;
+    die "Your database does not support REPLACE! Reimplement set_server_setting!" unless $self->can_replace;
 
     if (defined $val) {
         $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
@@ -906,6 +913,7 @@ sub update_device_usage {
 
 sub mark_fidid_unreachable {
     my ($self, $fidid) = @_;
+    die "Your database does not support REPLACE! Reimplement mark_fidid_unreachable!" unless $self->can_replace;
     $self->dbh->do("REPLACE INTO unreachable_fids VALUES (?, " . $self->unix_timestamp . ")",
                    undef, $fidid);
 }
@@ -947,6 +955,7 @@ sub delete_tempfile_row {
 sub replace_into_file {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fidid dmid key length classid)], @_);
+    die "Your database does not support REPLACE! Reimplement replace_into_file!" unless $self->can_replace;
     $self->dbh->do("REPLACE INTO file (fid, dmid, dkey, length, classid, devcount) ".
                    "VALUES (?,?,?,?,?,0) ", undef,
                    @arg{'fidid', 'dmid', 'key', 'length', 'classid'});
@@ -999,6 +1008,9 @@ sub add_fidid_to_devid {
     croak("fidid not non-zero") unless $fidid;
     croak("devid not non-zero") unless $devid;
 
+    # TODO: This should possibly be insert_ignore instead
+    # As if we are adding an extra file_on entry, we do not want to replace the
+    # exist one. Check REPLACE semantics.
     my $rv = $self->dowell($self->ignore_replace . " INTO file_on (fid, devid) VALUES (?,?)",
                            undef, $fidid, $devid);
     return 1 if $rv > 0;
@@ -1252,6 +1264,9 @@ sub mass_insert_file_on {
         push @qmarks, "(?,?)";
     }
 
+    # TODO: This should possibly be insert_ignore instead
+    # As if we are adding an extra file_on entry, we do not want to replace the
+    # exist one. Check REPLACE semantics.
     $self->dowell($self->ignore_replace . " INTO file_on (fid, devid) VALUES " . join(',', @qmarks), undef, @binds);
     return 1;
 }

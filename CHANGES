@@ -1,14 +1,19 @@
+        * Include warnings and comments regarding usages of insert_ignore and
+          insert_replace.
+
+        * Guard usages of REPLACE when can_replace is false.
+
         * When croaking due to bogus options, include the keys in the croak
           output for easier tracing.
-        
+
         * Handle HiRes gettimeofday correctly to get useful results. Arrays are
           important. This gives us correct timing output.
-        
+
         * Handle input to log() correctly. Based on the implementation of
           Sys::Syslog::syslog(), produces no ugly warnings, and makes sure that
           printf stuff works nicely.
 
-        * Root DSN may need the hostname as well, so pass it in rather than 
+        * Root DSN may need the hostname as well, so pass it in rather than
           leaving it out.
 
         * Use insert_ignore instead of raw INSERT IGNORE inside Delete worker.
