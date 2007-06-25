@@ -249,12 +249,9 @@ ok(try_for(20, sub {
 }), "and they're gone from filesystem");
 
 foreach my $t (qw(file file_on file_to_delete)) {
-    my $rows = $dbh->selectrow_array("SELECT COUNT(*) FROM $t");
-	if($rows > 0) {
-		fail("$rows files still exist in $t!")
-	} else {
-		pass("$t cleaned");
-	}
+    ok(try_for(5, sub {
+        return $dbh->selectrow_array("SELECT COUNT(*) FROM $t") == 0;
+    }), "table $t is empty");
 }
 
 sub try_for {
