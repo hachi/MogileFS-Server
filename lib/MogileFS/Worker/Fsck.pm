@@ -50,7 +50,7 @@ sub work {
     my $stats = sub {
         return unless $running;
         my $elap = $nowish - $running;
-        debug("[fsck] In %d secs, %d fids, %0.02f fids/sec\n", $elap, $n_check, ($n_check / ($elap || 1)));
+        debug(sprintf("In %d secs, %d fids, %0.02f fids/sec\n", $elap, $n_check, ($n_check / ($elap || 1))));
     };
     my $last_beat = 0;
     my $beat = sub {
