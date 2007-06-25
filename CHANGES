@@ -1,3 +1,7 @@
+        * Use croak with sane output instead of plain die instead
+          insert_ignore. Helps tracing where the insert_ignore sub breaks
+          transactions.
+
         * Finally trace why replicate acted weird sometimes. If a file was
           deleted while it still had rows in file_to_replicate, those rows
           became stale as they were not removed. Wire up FID::delete to remove

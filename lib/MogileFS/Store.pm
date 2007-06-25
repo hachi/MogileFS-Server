@@ -326,7 +326,12 @@ sub insert_ignore {
         my $rv = eval { $dbh->do("INSERT $sql", @params); };
         if ($@ || $dbh->err) {
             return 1 if $self->was_duplicate_error;
-            die "DB error: " . $dbh->errstr;
+            # This chunk is identical to condthrow, but we include it directly
+            # here as we know there is definetly an error, and we would like
+            # the caller of this function.
+            my ($pkg, $fn, $line) = caller;
+            my $msg = "Database error from $pkg/$fn/$line: " . $dbh->errstr;
+            croak($msg);
         }
         return $rv;
     }
