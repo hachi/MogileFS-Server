@@ -137,6 +137,7 @@ sub mark_unreachable {
 sub delete {
     my $fid = shift;
     my $sto = Mgd::get_store();
+    $sto->delete_fid_from_file_to_replicate($fid->id);
     $sto->delete_fidid($fid->id);
 }
 
