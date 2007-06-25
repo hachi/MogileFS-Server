@@ -1,3 +1,5 @@
+        * Remove duplicated [fsck] in log output of Fsck worker.
+
         * Use croak with sane output instead of plain die instead
           insert_ignore. Helps tracing where the insert_ignore sub breaks
           transactions.

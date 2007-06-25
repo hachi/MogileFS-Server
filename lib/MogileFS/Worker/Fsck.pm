@@ -61,7 +61,7 @@ sub work {
     my $stop = sub {
         return unless $running;
         $stats->();
-        debug("[fsck] done.");
+        debug("done.");
         $running = 0;
     };
     # </debug crap>
@@ -86,7 +86,7 @@ sub work {
         unless ($self->monitor_has_run) {
             # only warn on runs after the first.  gives the monitor job some time to work
             # before we throw a message.
-            debug("[fsck] waiting for monitor job to complete a cycle before beginning")
+            debug("waiting for monitor job to complete a cycle before beginning")
                 if $run_count++ > 0;
             return;
         }
@@ -131,7 +131,7 @@ sub work {
 
         # if we had connectivity problems, let's sleep a bit
         if ($hit_problem) {
-            error("[fsck] connectivity problems; stalling 5s");
+            error("connectivity problems; stalling 5s");
             sleep 5;
         }
     });
@@ -331,7 +331,7 @@ sub fix_fid {
 
     # remove the file_on mappings for devices that were bogus/missing.
     foreach my $bdev (@bad_devs) {
-        error("[fsck] removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
+        error("removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
         $fid->forget_about_device($bdev);
     }
 
@@ -403,7 +403,7 @@ sub init_size_checker {
                     $mogconn->mark_dead;
                 }
             }
-            error("[fsck] fid_sizes mogstored cmd unavailable for dev $devid; using slower method");
+            error("fid_sizes mogstored cmd unavailable for dev $devid; using slower method");
         }
 
         # slow case (not using new command)
