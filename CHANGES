@@ -1,3 +1,5 @@
+        * start of support to make mogstored wrap Apache + web_dav
+
         * Remove duplicated [fsck] in log output of Fsck worker.
 
         * Finally trace why replicate acted weird sometimes. If a file was

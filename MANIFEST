@@ -47,6 +47,7 @@ t/lib/mogtestlib.pl
 t/store.t
 t/fid-stat.t
 lib/Mogstored/HTTPServer.pm
+lib/Mogstored/HTTPServer/Apache.pm
 lib/Mogstored/HTTPServer/Lighttpd.pm
 lib/Mogstored/HTTPServer/Perlbal.pm
 lib/Mogstored/SideChannelClient.pm

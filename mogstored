@@ -22,6 +22,7 @@ use Gearman::Client::Async 0.93;
 use Mogstored::HTTPServer;
 use Mogstored::HTTPServer::Perlbal;
 use Mogstored::HTTPServer::Lighttpd;
+use Mogstored::HTTPServer::Apache;
 use Mogstored::SideChannelListener;
 use Mogstored::SideChannelClient;
 
@@ -63,8 +64,8 @@ my %config_opts = (
                    );
 usage() unless Getopt::Long::GetOptions(%config_opts);
 
-die "Unknown server type.  Valid options: --server={perlbal,lighttpd}"
-    unless $server =~ /^perlbal|lighttpd$/;
+die "Unknown server type.  Valid options: --server={perlbal,lighttpd,apache}"
+    unless $server =~ /^perlbal|lighttpd|apache$/;
 
 $opt_config = $default_config if ! $opt_config && -e $default_config;
 load_config_file($opt_config => \%config_opts) if $opt_config;
