@@ -59,6 +59,9 @@ sub unix_timestamp { "EXTRACT(epoch FROM NOW())::int4" }
 sub init {
     my $self = shift;
     $self->SUPER::init;
+    my $database_version = $self->dbh->get_info(18); # SQL_DBMS_VER
+    # We need >=pg-8.2 because we use SAVEPOINT and ROLLBACK TO.
+    die "Postgres is too old! Must use >=postgresql-8.2!" if($database_version =~ /\A0[0-7]\.|08\.0[01]/);
     $self->{lock_depth} = 0;
 }
 

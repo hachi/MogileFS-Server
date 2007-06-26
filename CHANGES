@@ -1,6 +1,8 @@
+        * Add a safety check to ensure that Postgresql-8.2 or newer is used.
+
         * Update mogdbsetup usage, and ensure it choses the correct admin
           username automatically.
-        
+
         * Document the --type option to mogdbsetup.
 
         * Introduce the Postgres Store implementation. The locking system might
