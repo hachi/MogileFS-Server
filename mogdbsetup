@@ -71,6 +71,9 @@ Options:
                                if you're running MogileFS, because MogileFS
                                assumes your network is closed.
 
+  --type=         MySQL        Which MogileFS::Store implementation to use.
+                               Available: MySQL, Postgres
+
   --yes                        Run without questions.
 
 USAGE

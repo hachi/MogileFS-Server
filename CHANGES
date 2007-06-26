@@ -1,3 +1,5 @@
+        * Document the --type option to mogdbsetup.
+
         * Introduce the Postgres Store implementation. The locking system might
           still have issues, beware of stale locks! Initial prototype by Radu
           Greab <rg@yx.ro>, and developed heavily by Robin H. Johnson
