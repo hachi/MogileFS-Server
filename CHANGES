@@ -1,3 +1,6 @@
+        * Document how to test MogileFS under doc/testing.txt. You really
+          should read this if you want to use MogileFS to store your data.
+
         * Add a safety check to ensure that Postgresql-8.2 or newer is used.
 
         * Update mogdbsetup usage, and ensure it choses the correct admin
