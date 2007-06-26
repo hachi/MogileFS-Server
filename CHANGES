@@ -1,3 +1,8 @@
+        * Introduce the Postgres Store implementation. The locking system might
+          still have issues, beware of stale locks! Initial prototype by Radu
+          Greab <rg@yx.ro>, and developed heavily by Robin H. Johnson
+          <robbat2@gentoo.org>.
+
         * start of support to make mogstored wrap Apache + web_dav
 
         * Remove duplicated [fsck] in log output of Fsck worker.

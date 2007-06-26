@@ -24,6 +24,7 @@ lib/MogileFS/ReplicationPolicy/MultipleHosts.pm
 lib/MogileFS/Server.pm
 lib/MogileFS/Store.pm
 lib/MogileFS/Store/MySQL.pm
+lib/MogileFS/Store/Postgres.pm
 lib/MogileFS/Store/SQLite.pm
 lib/MogileFS/Sys.pm
 lib/MogileFS/Util.pm
