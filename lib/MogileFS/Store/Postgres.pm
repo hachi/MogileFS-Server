@@ -458,32 +458,22 @@ sub add_fidid_to_devid {
 }
 
 # update the device count for a given fidid
-# TODO: replace this with
-# 1. BEGIN
-# 2. SELECT ... FROM file WHERE fid=? FOR UPDATE'
-# 3. UPDATE file SET devcount=(SELECT COUNT(devid) FROM file_on WHERE fid=?) WHERE fid=?
-# 4. COMMIT
-# This will avoid the need for the other lock structure
 sub update_devcount_atomic {
     my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid";
+    my $rv;
 
-    my $lock = eval { $self->get_lock($lockname, 10) };
-
-    # Check to make sure the lock didn't timeout, then we want to bail.
-    return 0 unless defined $lock && $lock == 1;
-
-    # Checking $@ is pointless for the time because we just want to plow ahead
-    # even if the get_lock trapped a recursion and threw a fatal error.
-
-    my $dbh = $self->dbh;
-
-    $self->update_devcount($fidid);
-
-    # Don't release the lock if we never got it.
-    $self->release_lock($lockname) if $lock;
-
-    return 1;
+    $self->dbh->begin_work;
+    $rv = $self->dbh->do("SELECT devcount FROM file WHERE fid=? FOR UPDATE", undef, $fidid);
+    $self->condthrow;
+    if($rv == 0) {
+        $self->dbh->rollback;
+        return 1;
+    }
+    $rv = $self->dbh->do("UPDATE file SET devcount=(SELECT COUNT(devid) FROM file_on WHERE fid=?) WHERE fid=?", undef, $fidid, $fidid);
+    $self->condthrow;
+    $self->dbh->commit;
+    $self->condthrow;
+    return $rv;
 }
 
 sub should_begin_replicating_fidid {
@@ -706,7 +696,7 @@ sub release_lock {
     debug("$$ Unlocking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
     #my $rv = $self->dbh->selectrow_array("SELECT pg_advisory_unlock(?)", undef, $lockid);
     my $rv = $self->dbh->do('DELETE FROM lock WHERE lockid=? AND pid=?', undef, $lockid, $$);
-    debug("Double-release of lock $lockname!") if $rv == 0 and $Mgd::DEBUG >= 2;
+    debug("Double-release of lock $lockname!") if $self->{lock_depth} != 0 and $rv == 0 and $Mgd::DEBUG >= 2;
     $self->condthrow;
     $self->{lock_depth} = 0;
     return $rv;
