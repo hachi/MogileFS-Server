@@ -21,7 +21,6 @@ sub pre_exec_init {
     $ENV{MOG_DOCROOT} = Perlbal->service('mogstored')->{docroot};
 }
 
-my $docroot;
 sub run {
     $docroot = $ENV{MOG_DOCROOT};
     die "\$ENV{MOG_DOCROOT} not set"                unless $docroot;
