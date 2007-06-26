@@ -10,7 +10,7 @@ $0 = $_ = $0;
 my %args = (
             dbhost => "localhost",
             dbname => "mogilefs",
-            dbrootuser => "root",
+            dbrootuser => undef,
             dbrootpass => "",
             dbuser => "mogile",
             dbpass => "",
@@ -41,6 +41,12 @@ usage()
 
 usage() if $opt_help;
 
+# Be nice about what the default admin user is called.
+if(!defined($args{dbrootuser})) {
+    $args{dbrootuser} = 'root' if $dbtype =~ /MySQL/i;
+    $args{dbrootuser} = 'postgres' if $dbtype =~ /Postgres/i;
+}
+
 sub usage {
     die <<USAGE;
 Usage: mogdbsetup [opts]
@@ -51,22 +57,22 @@ Options:
                   ============ ===========================================
  --verbose        <off>        Be verbose about what\'s happening.
 
- --dbhost=        localhost    hostname or IP to MySQL server
+ --dbhost=        localhost    hostname or IP to database server.
 
- --dbname=        mogilefs     database name to create/upgrade
+ --dbname=        mogilefs     database name to create/upgrade.
 
- --dbrootuser=    root         MySQL administrator username.  Only needed
-                               for initial setup, not subsequent upgrades
+ --dbrootuser=    root         Database administrator username.  Only needed
+                               for initial setup, not subsequent upgrades.
 
- --dbrootpass=    <blank>      MySQL administrator password.  Only needed
-                               for initial setup, not subsequent upgrades
+ --dbrootpass=    <blank>      Database administrator password.  Only needed
+                               for initial setup, not subsequent upgrades.
 
- --dbuser=        mogile       Regular MySQL user to create and/or use
+ --dbuser=        mogile       Regular database user to create and/or use
                                for MogileFS database.  This is what the
                                mogilefsd trackers connect as.
 
  --dbpass=        <blank>      You should change this, especially if your
-                               MySQL servers are accessible to other users
+                               database servers are accessible to other users
                                on the network.  But they shouldn't be
                                if you're running MogileFS, because MogileFS
                                assumes your network is closed.
