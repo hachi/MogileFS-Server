@@ -1,3 +1,6 @@
+        * make fsck log over-replicated files as policy violations.  it
+          won't delete over-replicated files, though, just log
+
         * Document how to test MogileFS under doc/testing.txt. You really
           should read this if you want to use MogileFS to store your data.
 

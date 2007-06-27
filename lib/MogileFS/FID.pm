@@ -204,7 +204,7 @@ sub devids_meet_policy {
                     min       => $cls->mindevcount,
                     );
     my $rr = rr_upgrade($policy_class->replicate_to(%rep_args));
-    return $rr->is_happy;
+    return $rr->is_happy && ! $rr->too_happy;
 }
 
 sub fsck_log {
