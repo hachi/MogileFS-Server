@@ -1005,7 +1005,13 @@ sub cmd_stats {
     # if they want replication counts, or didn't specify what they wanted
     if ($args->{replication} || $args->{all}) {
         # replication stats
-        my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, devcount, COUNT(devcount) FROM file GROUP BY 1, 2, 3');
+        #This is the old version that used devcount:
+        #my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, devcount, COUNT(devcount) FROM file GROUP BY 1, 2, 3');
+        my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, t1.devcount, COUNT(t1.devcount) '.
+                                             'FROM file JOIN ('.
+                                                'SELECT fid, COUNT(devid) AS devcount FROM file_on GROUP BY fid'.
+                                             ') t1 USING (fid) '.
+                                             'GROUP BY 1, 2, 3');
         my $count = 0;
         foreach my $stat (@$stats) {
             $count++;
