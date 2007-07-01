@@ -859,13 +859,22 @@ sub file_row_from_dmid_key {
 }
 
 # return hashref of row containing columns "fid, dmid, dkey, length,
-# classid, devcount" provided a $dmid and $key (dkey).  or undef if no
-# row.
+# classid, devcount" provided a $fidid or undef if no row.
 sub file_row_from_fidid {
     my ($self, $fidid) = @_;
     return $self->dbh->selectrow_hashref("SELECT fid, dmid, dkey, length, classid, devcount ".
                                          "FROM file WHERE fid=?",
                                          undef, $fidid);
+}
+
+# return an arrayref of rows containing columns "fid, dmid, dkey, length,
+# classid, devcount" provided a pair of $fidid or undef if no rows.
+sub file_row_from_fidid_range {
+    my ($self, $fromfid, $tofid) = @_;
+	my $sth = $self->dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
+								  "FROM file WHERE fid BETWEEN ? AND ?");
+    $sth->execute($fromfid,$tofid);
+    return $sth->fetchall_arrayref({});
 }
 
 # return array of devids that a fidid is on

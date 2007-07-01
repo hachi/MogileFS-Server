@@ -437,14 +437,14 @@ sub cmd_list_fids {
     my $args = shift;
 
     # validate parameters
-    my $fromfid = $args->{from}+0;
-    my $tofid = $args->{to}+0;
+    my $fromfid = ($args->{from} || 0)+0;
+    my $tofid = ($args->{to} || 0)+0;
     $tofid ||= ($fromfid + 100);
     $tofid = ($fromfid + 100)
         if $tofid > $fromfid + 100 ||
            $tofid < $fromfid;
 
-    my $rows = Mgd::get_store()->file_row_from_fid_range($fromfid, $tofid);
+    my $rows = Mgd::get_store()->file_row_from_fidid_range($fromfid, $tofid);
     return $self->err_line('failure') unless $rows;
     return $self->ok_line({ fid_count => 0 }) unless @$rows;
 
