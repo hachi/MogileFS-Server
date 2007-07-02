@@ -825,6 +825,11 @@ sub cmd_get_paths {
     my $dmid = $args->{dmid};
     my $key = $args->{key} or return $self->err_line("no_key");
 
+    # We default to returning two possible paths.
+    # but the client may ask for more if they want.
+    my $pathcount = $args->{pathcount} || 2;
+    $pathcount = 2 if $pathcount < 2;
+
     # get DB handle
     my $fid;
     my $need_fid_in_memcache = 0;
@@ -919,7 +924,7 @@ sub cmd_get_paths {
 
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;
-        last if $n == 2;   # one verified, one likely seems enough for now.  time will tell.
+        last if $n == $pathcount;   # one verified, one likely seems enough for now.  time will tell.
     }
 
     # use our backup path if all else fails

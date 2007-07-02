@@ -1,3 +1,7 @@
+        * get_paths command now takes a pathcount option, defaulting to
+          2, instead of having a hardcoded constant of 2. This allows
+          requesting more than 2 paths to a file.
+
         * make fsck log over-replicated files as policy violations.  it
           won't delete over-replicated files, though, just log
 
