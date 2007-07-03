@@ -1465,6 +1465,18 @@ sub random_fids_on_device {
     return @some_fids;
 }
 
+# return array of { dmid => ..., classid => ..., devcount => ..., count => ... }
+sub get_stats_files_per_devcount {
+    my ($self) = @_;
+    my $dbh = $self->dbh;
+    my @ret;
+    my $sth = $dbh->prepare('SELECT dmid, classid, devcount, COUNT(devcount) AS "count" FROM file GROUP BY 1, 2, 3');
+    $sth->execute;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @ret, $row;
+    }
+    return @ret;
+}
 
 1;
 

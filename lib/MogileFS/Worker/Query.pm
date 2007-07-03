@@ -975,6 +975,8 @@ sub cmd_set_state {
     return $self->ok_line;
 }
 
+# FIXME: this whole thing is gross, duplicative, dependendent on $dbh, and doesn't scale.
+# stats needs total overhaul to not suck.
 sub cmd_stats {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
@@ -1010,26 +1012,22 @@ sub cmd_stats {
     # if they want replication counts, or didn't specify what they wanted
     if ($args->{replication} || $args->{all}) {
         # replication stats
-        #This is the old version that used devcount:
-        #my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, devcount, COUNT(devcount) FROM file GROUP BY 1, 2, 3');
-        my $stats = $dbh->selectall_arrayref('SELECT dmid, classid, t1.devcount, COUNT(t1.devcount) '.
-                                             'FROM file JOIN ('.
-                                                'SELECT fid, COUNT(devid) AS devcount FROM file_on GROUP BY fid'.
-                                             ') t1 USING (fid) '.
-                                             'GROUP BY 1, 2, 3');
+        # This is the old version that used devcount:
+        my @stats = $sto->get_stats_files_per_devcount;
+
         my $count = 0;
-        foreach my $stat (@$stats) {
+        foreach my $stat (@stats) {
             $count++;
-            $ret->{"replication${count}domain"} = $classes{$stat->[0]}->{name};
-            $ret->{"replication${count}class"} = $classes{$stat->[0]}->{classes}->{$stat->[1]};
-            $ret->{"replication${count}devcount"} = $stat->[2];
-            $ret->{"replication${count}files"} = $stat->[3];
+            $ret->{"replication${count}domain"} = $classes{$stat->{dmid}}->{name};
+            $ret->{"replication${count}class"} = $classes{$stat->{dmid}}->{classes}->{$stat->{classid}};
+            $ret->{"replication${count}devcount"} = $stat->{devcount};
+            $ret->{"replication${count}files"} = $stat->{count};
         }
         $ret->{"replicationcount"} = $count;
 
         # now we want to do the "new" replication stats
         my $db_time = $dbh->selectrow_array('SELECT '.$sto->unix_timestamp);
-        $stats = $dbh->selectall_arrayref('SELECT nexttry, COUNT(*) FROM file_to_replicate GROUP BY 1');
+        my $stats = $dbh->selectall_arrayref('SELECT nexttry, COUNT(*) FROM file_to_replicate GROUP BY 1');
         foreach my $stat (@$stats) {
             if ($stat->[0] < 1000) {
                 # anything under 1000 is a specific state, so let's define those.  here's the list

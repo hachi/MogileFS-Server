@@ -702,6 +702,22 @@ sub release_lock {
     return $rv;
 }
 
+# return array of { dmid => ..., classid => ..., devcount => ..., count => ... }
+sub get_stats_files_per_devcount {
+    my ($self) = @_;
+    my $dbh = $self->dbh;
+    my @ret;
+    my $sth = $dbh->prepare('SELECT dmid, classid, t1.devcount, COUNT(t1.devcount) AS "count" '.
+                            'FROM file JOIN ('.
+                            'SELECT fid, COUNT(devid) AS devcount FROM file_on GROUP BY fid'.
+                            ') t1 USING (fid) '.
+                            'GROUP BY 1, 2, 3');
+    $sth->execute;
+    while (my $row = $sth->fetchrow_hashref) {
+        push @ret, $row;
+    }
+    return @ret;
+}
 
 1;
 
