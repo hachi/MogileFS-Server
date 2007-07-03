@@ -1,3 +1,5 @@
+2007-07-03: Release version 2.17
+
         * get_paths command now takes a pathcount option, defaulting to
           2, instead of having a hardcoded constant of 2. This allows
           requesting more than 2 paths to a file.
