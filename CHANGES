@@ -1,3 +1,11 @@
+        * make mogstored and mogilefsd use the now-bundled dependency
+          Perl modules as a last resort, unless MOGILE_NO_BUILTIN_DEPS
+          environment variable is true.  this makes it easier for people
+          to use mogilefs, without dependency hell.  distros/packagers
+          are expected to ignore (or scoff at) this "feature".  but
+          easier for people working from tarball/svn releases.  bundled
+          dependencies will be updated over time, as needed.
+
 2007-07-03: Release version 2.17
 
         * get_paths command now takes a pathcount option, defaulting to
