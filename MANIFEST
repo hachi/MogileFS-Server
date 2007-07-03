@@ -5,6 +5,7 @@ Makefile.PL
 TODO
 doc/fsck-notes.txt
 doc/memcache-support.txt
+doc/testing.txt
 lib/MogileFS/Class.pm
 lib/MogileFS/Config.pm
 lib/MogileFS/Connection/Client.pm
@@ -67,3 +68,4 @@ lib/MogileFS/RebalancePolicy/DrainDevices.pm
 lib/MogileFS/ReplicationRequest.pm
 t/multiple-hosts-replpol.t
 t/util.t
+t/mogstored-shutdown.t

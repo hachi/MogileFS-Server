@@ -19,3 +19,4 @@ make-par.sh
 mogstored.pp
 pp.log
 trace
+MogileFS-Server.spec
