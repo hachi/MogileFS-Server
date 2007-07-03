@@ -23,8 +23,7 @@ WriteMakefile(
     EXE_FILES               => $exefiles,
     PREREQ_PM               => {
         'Danga::Socket'    => '1.56',
-        'Perlbal'          => '1.53',  # Future: make Perlbal optional, for running mogstored
-                                       # in only-monitor/usage-writeout mode.
+        'Perlbal'          => '1.53',
         'Sys::Syslog'      => 0,
         'Sys::Syscall'     => '0.22',
         'Getopt::Long'     => 0,
