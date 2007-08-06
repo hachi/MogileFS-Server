@@ -6,6 +6,10 @@
           easier for people working from tarball/svn releases.  bundled
           dependencies will be updated over time, as needed.
 
+        * Bring the SQLite store up to date
+
+        * Increase the timeouts in the test suite
+
 2007-07-03: Release version 2.17
 
         * get_paths command now takes a pathcount option, defaulting to
