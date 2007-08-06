@@ -13,7 +13,7 @@ use File::Temp ();
 
 sub post_dbi_connect {
     my $self = shift;
-    $self->{dbh}->func(1000, 'busy_timeout');
+    $self->{dbh}->func(5000, 'busy_timeout');
 }
 
 sub want_raise_errors { 1 }
@@ -97,6 +97,22 @@ sub TABLE_file {
 )"
 }
 
+sub TABLE_device {
+    "CREATE TABLE device (
+    devid   MEDIUMINT UNSIGNED NOT NULL,
+    hostid     MEDIUMINT UNSIGNED NOT NULL,
+
+    status  ENUM('alive','dead','down','readonly','drain'),
+    weight  MEDIUMINT DEFAULT 100,
+
+    mb_total   MEDIUMINT UNSIGNED,
+    mb_used    MEDIUMINT UNSIGNED,
+    mb_asof    INT UNSIGNED,
+    PRIMARY KEY (devid),
+    INDEX   (status)
+    )"
+}
+
 sub TABLE_tempfile {
     "CREATE TABLE tempfile (
    fid          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,6 +144,16 @@ sub TABLE_file_on {
 )"
 }
 
+sub TABLE_fsck_log {
+    "CREATE TABLE fsck_log (
+    logid  INTEGER PRIMARY KEY AUTOINCREMENT,
+    utime  INT UNSIGNED NOT NULL,
+    fid    INT UNSIGNED NULL,
+    evcode CHAR(4),
+    devid  MEDIUMINT UNSIGNED
+    )"
+}
+
 sub INDEXES_file_on {
     ("CREATE INDEX devid ON file_on (devid)");
 }
@@ -142,6 +168,10 @@ sub INDEXES_file_to_replicate {
 
 sub INDEXES_file_to_delete_later {
     ("CREATE INDEX delafter ON file_to_delete_later (delafter)");
+}
+
+sub INDEXES_fsck_log {
+    ("CREATE INDEX utime ON fsck_log (utime)");
 }
 
 sub filter_create_sql {
@@ -166,6 +196,23 @@ sub update_devcount_atomic {
     my ($self, $fidid) = @_;
     $self->update_devcount($fidid);
 }
+
+# SQLite is just for testing, so don't upgrade
+sub upgrade_add_device_drain {
+    return 1;
+}
+
+# inefficient, but no warning and no locking
+sub should_begin_replicating_fidid {
+    my ($self, $fidid) = @_;
+    return 1;
+}
+
+# no locking
+sub note_done_replicating {
+    my ($self, $fidid) = @_;
+}
+
 
 1;
 
