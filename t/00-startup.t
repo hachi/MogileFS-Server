@@ -183,7 +183,7 @@ pass("Created a ton of files");
 
 # wait for replication to go down
 {
-    my $iters = 10;
+    my $iters = 30;
     my $to_repl_rows;
     while ($iters) {
         $iters--;
@@ -216,7 +216,7 @@ sleep(3);  # FIXME: make an explicit "rescan" or "remonitor" job to mogilefsd, j
 ok($tmptrack->mogadm("device", "mark", "hostB", 3, "dead"), "marked device B/3 dead");
 ok($tmptrack->mogadm("device", "mark", "hostB", 4, "dead"), "marked device B/4 dead");
 
-ok(try_for(30, sub {
+ok(try_for(40, sub {
     my %has;
     my $sth = $dbh->prepare("SELECT devid, COUNT(*) FROM file_on GROUP BY devid");
     $sth->execute;
@@ -238,7 +238,7 @@ for my $n (1..$n_files) {
 }
 pass("deleted all $n_files files");
 
-ok(try_for(20, sub {
+ok(try_for(25, sub {
     my @files;
     foreach my $hn (1, 3) {
         my @lfiles = `find $mogroot{$hn} -type f -name '*.fid'`;

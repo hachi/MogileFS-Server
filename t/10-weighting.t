@@ -99,7 +99,7 @@ ok(close($fh), "closed file");
 # wait for it to replicate
 my $tries = 1;
 my @urls;
-while ($tries++ < 30 && (@urls = $mogc->get_paths("file1")) < 2) {
+while ($tries++ < 40 && (@urls = $mogc->get_paths("file1")) < 2) {
     sleep .25;
 }
 is(scalar @urls, 2, "replicated to 2 paths");
