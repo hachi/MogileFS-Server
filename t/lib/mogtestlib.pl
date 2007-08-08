@@ -167,6 +167,8 @@ sub _mogadm_exe {
                      "$FindBin::Bin/../../../utils/mogadm",
                      "/usr/bin/mogadm",
                      "/usr/sbin/mogadm",
+                     "/usr/local/bin/mogadm",
+                     "/usr/local/sbin/mogadm",
                      ) {
         return $_mogadm_exe_cache = $exe if -x $exe;
     }

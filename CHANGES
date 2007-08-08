@@ -10,6 +10,9 @@
 
         * Increase the timeouts in the test suite
 
+        * In the test suite, also search for mogadm in /usr/local/bin/ and
+          /usr/local/sbin (spotted by Dean Wilson)
+
 2007-07-03: Release version 2.17
 
         * get_paths command now takes a pathcount option, defaulting to
