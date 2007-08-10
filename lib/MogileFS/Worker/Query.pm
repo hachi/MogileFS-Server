@@ -249,6 +249,8 @@ sub cmd_create_open {
             $_->not_on_hosts(map { $_->host } @dests)
         } weighted_list map {
             [$_, 100 * $_->percent_free]
+        } grep {
+            $_->exists
         } MogileFS::Device->devices;
 
         last unless $ddev;

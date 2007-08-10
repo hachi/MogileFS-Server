@@ -18,6 +18,11 @@
 
         * add start of a ReplicationPolicy::Union implementation
 
+        * fix crash in queryworker's create_open command, when a device
+          has its directory made on a mogile storage node (the host of
+          which is being monitored by the 'monitor' process), but the
+          device isn't registered in the devices table yet.
+
 2007-07-03: Release version 2.17
 
         * get_paths command now takes a pathcount option, defaulting to
