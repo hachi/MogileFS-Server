@@ -70,6 +70,7 @@ lib/MogileFS/RebalancePolicy/PercentFree.pm
 lib/MogileFS/RebalancePolicy/Random.pm
 lib/MogileFS/ReplicationPolicy.pm
 lib/MogileFS/ReplicationPolicy/MultipleHosts.pm
+lib/MogileFS/ReplicationPolicy/Union.pm
 lib/MogileFS/ReplicationRequest.pm
 lib/MogileFS/Server.pm
 lib/MogileFS/Store.pm
@@ -112,6 +113,7 @@ t/hosts-devices.t
 t/lib/mogtestlib.pl
 t/mogstored-shutdown.t
 t/multiple-hosts-replpol.t
+t/replpolicy-parsing.t
 t/store.t
 t/util.t
 TODO

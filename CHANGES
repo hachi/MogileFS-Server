@@ -13,6 +13,11 @@
         * In the test suite, also search for mogadm in /usr/local/bin/ and
           /usr/local/sbin (spotted by Dean Wilson)
 
+        * start of per-class pluggable replication policies.  it was always
+          abstract, but not easy to plugin your own alternatives.
+
+        * add start of a ReplicationPolicy::Union implementation
+
 2007-07-03: Release version 2.17
 
         * get_paths command now takes a pathcount option, defaulting to

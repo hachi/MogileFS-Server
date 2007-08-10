@@ -166,7 +166,26 @@ sub create_class {
 sub domainid     { $_[0]{dmid} }
 sub classid      { $_[0]{classid} }
 sub mindevcount  { $_[0]{mindevcount} }
-sub policy_class { $_[0]{replpolicy} || "MogileFS::ReplicationPolicy::MultipleHosts" }
+
+# TODO: die, remove this
+sub policy_class { "MogileFS::ReplicationPolicy::MultipleHosts" }
+
+# TODO: currently unused, just by testing code. remove callers of policy_class above.
+sub repl_policy_string {
+    my $self = shift;
+    return "MultipleHosts(" . ($self->{mindevcount} || MogileFS->config('default_mindevcount')) . ")";
+}
+
+# TODO: currently unused, just by testing code.  remove callers of policy_class above.
+sub repl_policy_obj {
+    my $self = shift;
+    return $self->{_repl_policy_obj} if $self->{_repl_policy_obj};
+    my $polstr = $self->repl_policy_string;
+    # parses it:
+    my $pol = MogileFS::ReplicationPolicy->new_from_policy_string($polstr);
+    return $self->{_repl_policy_obj} = $pol;
+}
+
 sub name         { $_[0]{name} }
 
 sub domain {

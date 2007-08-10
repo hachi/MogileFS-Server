@@ -4,14 +4,34 @@ use base 'MogileFS::ReplicationPolicy';
 use MogileFS::Util qw(weighted_list);
 use MogileFS::ReplicationRequest qw(ALL_GOOD TOO_GOOD TEMP_NO_ANSWER);
 
+sub new_from_policy_args {
+    my ($class, $argref) = @_;
+    $$argref =~ s/^\s* \( \s* (\d+) \s* \) \s*//x
+        or die "$class failed to parse args: $$argref";
+    return bless {
+        mindevcount => $1,
+    }, $class;
+}
+
+sub mindevcount { $_[0]{mindevcount} }
+
 sub replicate_to {
-    my ($class, %args) = @_;
+    my ($self, %args) = @_;
 
     my $fid      = delete $args{fid};      # fid scalar to copy
     my $on_devs  = delete $args{on_devs};  # arrayref of device objects
     my $all_devs = delete $args{all_devs}; # hashref of { devid => MogileFS::Device }
     my $failed   = delete $args{failed};   # hashref of { devid => 1 } of failed attempts this round
-    my $min      = delete $args{min};      # configured min devcount for this class
+
+    # FIXME: this code works with either old way or new way.  once old caller code is cleaned up,
+    # only $self-as-object needs to be supported...
+    my $min;     # configured min devcount for this class
+    # new way
+    if (ref $self) {
+        $min = $self->{mindevcount};
+    } else {
+        $min = delete $args{min};
+    }
 
     warn "Unknown parameters: " . join(", ", sort keys %args) if %args;
     die "Missing parameters" unless $on_devs && $all_devs && $failed && $fid;
