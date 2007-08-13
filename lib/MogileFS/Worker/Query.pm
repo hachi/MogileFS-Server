@@ -938,6 +938,161 @@ sub cmd_get_paths {
     return $self->ok_line($ret);
 }
 
+# ------------------------------------------------------------
+#
+# NOTE: cmd_edit_file is EXPERIMENTAL. Please see the documentation
+# for edit_file in L<MogileFS::Client>.
+# It is not recommended to use cmd_edit_file on production systems.
+#
+# cmd_edit_file is similar to cmd_get_paths, except we:
+# - take the device of the first path we would have returned
+# - get a tempfile with a new fid (pointing to nothing) on the same device
+#   the tempfile has the same key, so will replace the old contents on
+#   create_close
+# - detach the old fid from that device (leaving the file in place)
+# - attach the new fid to that device
+# - returns only the first path to the old fid and a path to new fid
+# (the client then DAV-renames the old path to the new path)
+#
+# TODO - what to do about situations where we would be reducing the
+# replica count to zero?
+# TODO - what to do about pending replications where we remove the source?
+# TODO - the current implementation of cmd_edit_file is based on a copy
+#   of cmd_get_paths. Once proven mature, consider factoring out common
+#   code from the two functions.
+# ------------------------------------------------------------
+sub cmd_edit_file {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+
+    my $memc = MogileFS::Config->memcache_client;
+
+    # validate domain for plugins
+    $args->{dmid} = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
+
+    # now invoke the plugin, abort if it tells us to
+    my $rv = MogileFS::run_global_hook('cmd_get_paths', $args);
+    return $self->err_line('plugin_aborted')
+        if defined $rv && ! $rv;
+
+    # validate parameters
+    my $dmid = $args->{dmid};
+    my $key = $args->{key} or return $self->err_line("no_key");
+
+    # get DB handle
+    my $fid;
+    my $need_fid_in_memcache = 0;
+    my $mogfid_memkey = "mogfid:$args->{dmid}:$key";
+    if (my $fidid = $memc->get($mogfid_memkey)) {
+        $fid = MogileFS::FID->new($fidid);
+    } else {
+        $need_fid_in_memcache = 1;
+    }
+    unless ($fid) {
+        Mgd::get_store()->slaves_ok(sub {
+            $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key);
+        });
+        $fid or return $self->err_line("unknown_key");
+    }
+
+    # add to memcache, if needed.  for an hour.
+    $memc->add($mogfid_memkey, $fid->id, 3600) if $need_fid_in_memcache;
+
+    my $dmap = MogileFS::Device->map;
+
+    my @devices_with_weights;
+
+    # find devids that FID is on in memcache or db.
+    my @fid_devids;
+    my $need_devids_in_memcache = 0;
+    my $devid_memkey = "mogdevids:" . $fid->id;
+    if (my $list = $memc->get($devid_memkey)) {
+        @fid_devids = @$list;
+    } else {
+        $need_devids_in_memcache = 1;
+    }
+    unless (@fid_devids) {
+        Mgd::get_store()->slaves_ok(sub {
+            @fid_devids = $fid->devids;
+        });
+        $memc->add($devid_memkey, \@fid_devids, 3600) if $need_devids_in_memcache;
+    }
+
+    # is this fid still owned by this key?
+    foreach my $devid (@fid_devids) {
+        my $weight;
+        my $dev = $dmap->{$devid};
+        my $util = $dev->observed_utilization;
+
+        if (defined($util) and $util =~ /\A\d+\Z/) {
+            $weight = 102 - $util;
+            $weight ||= 100;
+        } else {
+            $weight = $dev->weight;
+            $weight ||= 100;
+        }
+        push @devices_with_weights, [$devid, $weight];
+    }
+
+    # randomly weight the devices
+    # TODO - should we reverse the order, to leave the best
+    # one there for get_paths?
+    my @list = MogileFS::Util::weighted_list(@devices_with_weights);
+
+    # Filter out bad devs
+    @list = grep {
+        my $devid = $_;
+        my $dev = $dmap->{$devid};
+        my $host = $dev ? $dev->host : undef;
+
+        $dev
+        && $host
+        && $dev->can_read_from
+        && !($host->observed_unreachable || $dev->observed_unreachable);
+    } @list;
+
+    # Take first remaining device from list
+    my $devid = $list[0];
+
+    my $class = MogileFS::Class->of_fid($fid);
+    my $newfid = eval {
+        Mgd::get_store()->register_tempfile(
+            fid     => undef,   # undef => let the store pick a fid
+            dmid    => $dmid,
+            key     => $key,    # This tempfile will ultimately become this key
+            classid => $class->classid,
+            devids  => $devid,
+        );
+    };
+    unless ($newfid) {
+        my $errc = error_code($@);
+        return $self->err_line("fid_in_use") if $errc eq "dup";
+        warn "Error registering tempfile: $@\n";
+        return $self->err_line("db");
+    }
+    unless (Mgd::get_store()->remove_fidid_from_devid($fid->id, $devid)) {
+        warn "Error removing fidid from devid";
+        return $self->err_line("db");
+    }
+    unless (Mgd::get_store()->add_fidid_to_devid($newfid, $devid)) {
+        warn "Error removing fidid from devid";
+        return $self->err_line("db");
+    }
+
+    my @paths = map {
+        my $dfid = MogileFS::DevFID->new($devid, $_);
+        my $path = $dfid->get_url;
+    } ($fid, $newfid);
+    my $ret;
+    $ret->{oldpath} = $paths[0];
+    $ret->{newpath} = $paths[1];
+    $ret->{fid} = $newfid;
+    $ret->{devid} = $devid;
+    $ret->{class} = $class->classid;
+    return $self->ok_line($ret);
+}
+
 sub cmd_set_weight {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
