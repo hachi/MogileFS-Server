@@ -16,10 +16,14 @@
         * In the test suite, also search for mogadm in /usr/local/bin/ and
           /usr/local/sbin (spotted by Dean Wilson)
 
-        * start of per-class pluggable replication policies.  it was always
+        * SCHEMA VERSION 10:  'replpolicy' column on 'class' table.
+          it's safe to --ignore-schema-version and run this mogilefsd
+          against an older schema.  new column enables per-class
+          pluggable replication policies.  it was always
           abstract, but not easy to plugin your own alternatives.
+          see doc/pluggable-replication-policies.txt
 
-        * add start of a ReplicationPolicy::Union implementation
+        * add start of a MogileFS::ReplicationPolicy::Union implementation
 
         * fix crash in queryworker's create_open command, when a device
           has its directory made on a mogile storage node (the host of

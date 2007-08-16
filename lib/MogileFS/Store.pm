@@ -11,7 +11,8 @@ use List::Util ();
 #
 # 8: adds fsck_log table
 # 9: adds 'drain' state to enum in device table
-use constant SCHEMA_VERSION => 9;
+# 10: adds 'replpolicy' column to 'class' table
+use constant SCHEMA_VERSION => 10;
 
 sub new {
     my ($class) = @_;
@@ -384,8 +385,15 @@ sub setup_database {
     $sto->upgrade_add_device_weight;
     $sto->upgrade_add_device_readonly;
     $sto->upgrade_add_device_drain;
+    $sto->upgrade_add_class_replpolicy;
 
     return 1;
+}
+
+sub cached_schema_version {
+    my $self = shift;
+    return $self->{_cached_schema_version} ||=
+        $self->schema_version;
 }
 
 sub schema_version {
@@ -631,6 +639,13 @@ sub upgrade_add_device_asof { 1 }
 sub upgrade_add_device_weight { 1 }
 sub upgrade_add_device_readonly { 1 }
 sub upgrade_add_device_drain { die "Not implemented in $_[0]" }
+
+sub upgrade_add_class_replpolicy {
+    my ($self) = @_;
+    unless ($self->column_type("class", "replpolicy")) {
+        $self->dowell("ALTER TABLE class ADD COLUMN replpolicy VARCHAR(255)");
+    }
+}
 
 # return true if deleted, 0 if didn't exist, exception if error
 sub delete_host {
@@ -1009,7 +1024,13 @@ sub get_all_domains {
 sub get_all_classes {
     my ($self) = @_;
     my (@ret, $row);
-    my $sth = $self->dbh->prepare("SELECT dmid, classid, classname, mindevcount FROM class");
+
+    my $repl_col = "";
+    if ($self->cached_schema_version >= 10) {
+        $repl_col = ", replpolicy";
+    }
+
+    my $sth = $self->dbh->prepare("SELECT dmid, classid, classname, mindevcount $repl_col FROM class");
     $sth->execute;
     push @ret, $row while $row = $sth->fetchrow_hashref;
     return @ret;

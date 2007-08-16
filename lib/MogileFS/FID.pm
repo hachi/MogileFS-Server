@@ -186,14 +186,10 @@ sub devids_meet_policy {
     my $self = shift;
     my $cls  = $self->class;
 
-    my $policy_class = $cls->policy_class
-        or die "No policy class";
+    my $polobj = $cls->repl_policy_obj;
 
     my $alldev = MogileFS::Device->map
         or die "No global device map";
-
-    eval "use $policy_class; 1;";
-    die "Failed to load policy class: $policy_class: $@" if $@;
 
     my %rep_args = (
                     fid       => $self->id,
@@ -202,7 +198,7 @@ sub devids_meet_policy {
                     failed    => {},
                     min       => $cls->mindevcount,
                     );
-    my $rr = rr_upgrade($policy_class->replicate_to(%rep_args));
+    my $rr = rr_upgrade($polobj->replicate_to(%rep_args));
     return $rr->is_happy && ! $rr->too_happy;
 }
 

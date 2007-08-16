@@ -167,16 +167,14 @@ sub domainid     { $_[0]{dmid} }
 sub classid      { $_[0]{classid} }
 sub mindevcount  { $_[0]{mindevcount} }
 
-# TODO: die, remove this
-sub policy_class { "MogileFS::ReplicationPolicy::MultipleHosts" }
-
-# TODO: currently unused, just by testing code. remove callers of policy_class above.
 sub repl_policy_string {
     my $self = shift;
-    return "MultipleHosts(" . ($self->{mindevcount} || MogileFS->config('default_mindevcount')) . ")";
+    # if they've actually configured one, it gets used:
+    return $self->{replpolicy} if $self->{replpolicy};
+    # else, the historical default:
+    return "MultipleHosts()";
 }
 
-# TODO: currently unused, just by testing code.  remove callers of policy_class above.
 sub repl_policy_obj {
     my $self = shift;
     return $self->{_repl_policy_obj} if $self->{_repl_policy_obj};

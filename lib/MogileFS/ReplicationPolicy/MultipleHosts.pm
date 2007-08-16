@@ -4,13 +4,20 @@ use base 'MogileFS::ReplicationPolicy';
 use MogileFS::Util qw(weighted_list);
 use MogileFS::ReplicationRequest qw(ALL_GOOD TOO_GOOD TEMP_NO_ANSWER);
 
+sub new {
+    my ($class, $mindevcount) = @_;
+    return bless {
+        mindevcount => $mindevcount,
+    }, $class;
+}
+
 sub new_from_policy_args {
     my ($class, $argref) = @_;
-    $$argref =~ s/^\s* \( \s* (\d+) \s* \) \s*//x
+    # Note: "MultipleHosts()" is okay, in which case the 'mindevcount'
+    # on the class is used.  (see below)
+    $$argref =~ s/^\s* \( \s* (\d*) \s* \) \s*//x
         or die "$class failed to parse args: $$argref";
-    return bless {
-        mindevcount => $1,
-    }, $class;
+    return $class->new($1)
 }
 
 sub mindevcount { $_[0]{mindevcount} }
@@ -23,15 +30,12 @@ sub replicate_to {
     my $all_devs = delete $args{all_devs}; # hashref of { devid => MogileFS::Device }
     my $failed   = delete $args{failed};   # hashref of { devid => 1 } of failed attempts this round
 
-    # FIXME: this code works with either old way or new way.  once old caller code is cleaned up,
-    # only $self-as-object needs to be supported...
-    my $min;     # configured min devcount for this class
-    # new way
-    if (ref $self) {
-        $min = $self->{mindevcount};
-    } else {
-        $min = delete $args{min};
-    }
+    # this is the per-class mindevcount (the old way), which is passed in automatically
+    # from the replication worker.  but if we have our own configured mindevcount
+    # in class.replpolicy, like "MultipleHosts(3)", then we use the explciit one. otherwise,
+    # if blank, or zero, like "MultipleHosts()", then we use the builtin on
+    my $min      = delete $args{min};
+    $min         = $self->{mindevcount} || $min;
 
     warn "Unknown parameters: " . join(", ", sort keys %args) if %args;
     die "Missing parameters" unless $on_devs && $all_devs && $failed && $fid;

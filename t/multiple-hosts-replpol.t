@@ -108,7 +108,8 @@ sub rr {
     }
     $parse_error->() if $state =~ /\S/;
 
-    my $pol = "MogileFS::ReplicationPolicy::MultipleHosts";
+    my $polclass = "MogileFS::ReplicationPolicy::MultipleHosts";
+    my $pol = $polclass->new;
     my $rr = $pol->replicate_to(
                                 fid      => 1,
                                 on_devs  => $on_devs,

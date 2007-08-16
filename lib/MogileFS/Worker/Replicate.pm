@@ -256,7 +256,7 @@ sub replicate_using_devcounts {
     my $did_something = 0;
     MogileFS::Class->foreach(sub {
         my $mclass = shift;
-        my ($dmid, $classid, $min, $policy_class) = map { $mclass->$_ } qw(domainid classid mindevcount policy_class);
+        my ($dmid, $classid, $min) = map { $mclass->$_ } qw(domainid classid mindevcount);
 
         debug("Checking replication for dmid=$dmid, classid=$classid, min=$min") if $Mgd::DEBUG >= 2;
 
@@ -547,11 +547,7 @@ sub replicate {
     return $retunlock->("nofid") unless $fid->exists;
 
     my $cls = $fid->class;
-    my $policy_class = $cls->policy_class;
-    eval "use $policy_class; 1;";
-    if ($@) {
-        return error("Failed to load policy class: $policy_class: $@");
-    }
+    my $polobj = $cls->repl_policy_obj;
 
     # learn what this devices file is already on
     my @on_devs;         # all devices fid is on, reachable or not.
@@ -585,13 +581,13 @@ sub replicate {
 
     my $rr;  # MogileFS::ReplicationRequest
     while (1) {
-        $rr = rr_upgrade($policy_class->replicate_to(
-                                                     fid       => $fidid,
-                                                     on_devs   => \@on_devs_tellpol, # all device objects fid is on, dead or otherwise
-                                                     all_devs  => $devs,
-                                                     failed    => \%dest_failed,
-                                                     min       => $cls->mindevcount,
-                                                     ));
+        $rr = rr_upgrade($polobj->replicate_to(
+                                               fid       => $fidid,
+                                               on_devs   => \@on_devs_tellpol, # all device objects fid is on, dead or otherwise
+                                               all_devs  => $devs,
+                                               failed    => \%dest_failed,
+                                               min       => $cls->mindevcount,
+                                               ));
 
         last if $rr->is_happy;
 
