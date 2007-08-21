@@ -1,3 +1,6 @@
+        * Add Mogstored::HTTPServer::None to allow using mogstored
+        with unmanaged backend DAV servers.
+
         * Add experimental cmd_edit_file. Client requires DAV MOVE and
         partial PUT on the store to use it.
 

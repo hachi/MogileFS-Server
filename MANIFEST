@@ -96,6 +96,7 @@ lib/Mogstored/HTTPServer.pm
 lib/Mogstored/HTTPServer/Apache.pm
 lib/Mogstored/HTTPServer/Lighttpd.pm
 lib/Mogstored/HTTPServer/Perlbal.pm
+lib/Mogstored/HTTPServer/None.pm
 lib/Mogstored/SideChannelClient.pm
 lib/Mogstored/SideChannelListener.pm
 Makefile.PL
