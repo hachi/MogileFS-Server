@@ -7,57 +7,49 @@
 
 # This is the debhelper compatibility version to use.
 # export DH_COMPAT=4
+export PERL_MM_USE_DEFAULT=1
 
-ENV=/usr/bin/env
-PERL=/usr/bin/perl
+ifndef PERL
+PERL = /usr/bin/perl
+endif
 
-MOGILEFSD_PACKAGE=mogilefsd
-MOGSTORED_PACKAGE=mogstored
+TMP	=$(CURDIR)/debian/tmp
 
-MOGILEFSD_CONFDIR=$(CURDIR)/debian/$(MOGILEFSD_PACKAGE)/usr/share/$(MOGILEFSD_PACKAGE)
-MOGSTORED_CONFDIR=$(CURDIR)/debian/$(MOGSTORED_PACKAGE)/usr/share/$(MOGSTORED_PACKAGE)
-
-MOGILEFSDBLIB=blib.mogilefsd
-MOGSTOREDBLIB=blib.mogstored
-
-build:
+build:	build-stamp
+build-stamp:
 	dh_testdir
-	# Add here commands to compile the package.
-	$(ENV) DANGABUILD_MOGILEFSDONLY=1 perl Makefile.PL verbose INSTALLDIRS=vendor INST_SCRIPT=$(MOGILEFSDBLIB)
-	cp Makefile Makefile.mogilefsd
-	$(ENV) DANGABUILD_MOGSTOREDONLY=1 perl Makefile.PL verbose INSTALLDIRS=vendor INST_SCRIPT=$(MOGSTOREDBLIB)
-	cp Makefile Makefile.mogstored
+	$(PERL) Makefile.PL verbose INSTALLDIRS=vendor
+	$(MAKE)
+
+	touch build-stamp
+
 clean:
 	dh_testdir
 	dh_testroot
 
-	-$(MAKE) clean
-	rm -f Makefile.old Makefile.mogilefsd Makefile.mogstored
-	rm -rf $(MOGILEFSDBLIB) $(MOGSTOREDBLIB)
-	dh_clean
+	-$(MAKE) distclean
+	dh_clean build-stamp install-stamp
 
-install:
+install: build install-stamp
+install-stamp:
 	dh_testdir
 	dh_testroot
 	dh_clean -k
-	dh_installdirs
 
-	$(MAKE) -f Makefile.mogilefsd PREFIX=$(CURDIR)/debian/$(MOGILEFSD_PACKAGE)/usr OPTIMIZE="-O2 -g -Wall" test install
-	$(MAKE) -f Makefile.mogstored PREFIX=$(CURDIR)/debian/$(MOGSTORED_PACKAGE)/usr OPTIMIZE="-O2 -g -Wall" test install
+	dh_installdirs -A
 
-	#There is no test suite, so smoke-test here
-	perl -c $(CURDIR)/mogilefsd
-	perl -c $(CURDIR)/mogstored
+	$(MAKE) test
+	$(MAKE) pure_install DESTDIR=$(TMP) PREFIX=/usr
 
-	install -d $(MOGILEFSD_CONFDIR)
-	install -m 644 $(CURDIR)/conf/mogilefsd.conf $(MOGILEFSD_CONFDIR)/mogilefsd.conf.default
+	find $(TMP) -name .packlist -exec rm '{}' \;
+	find $(TMP) -depth -type d -empty -exec rmdir '{}' \;
 
-	install -d $(MOGSTORED_CONFDIR)
-	install -m 644 $(CURDIR)/conf/mogstored.conf $(MOGSTORED_CONFDIR)/mogstored.conf.default
+	dh_install --sourcedir=$(TMP)
 
-	-find $(CURDIR)/debian -type d | xargs rmdir -p --ignore-fail-on-non-empty
+	touch install-stamp
 
-binary-arch:;
+binary-arch:
+	# Nothing to do here, yet.
 binary-indep: build install
 	dh_testdir
 	dh_testroot
