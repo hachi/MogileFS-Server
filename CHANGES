@@ -1,8 +1,11 @@
+        * Fix state_change() bug that could make file_to_delete_later
+          grow unnecessarily (Radu Greab)
+
         * Add Mogstored::HTTPServer::None to allow using mogstored
-        with unmanaged backend DAV servers.
+          with unmanaged backend DAV servers.
 
         * Add experimental cmd_edit_file. Client requires DAV MOVE and
-        partial PUT on the store to use it.
+          partial PUT on the store to use it.
 
         * make mogstored and mogilefsd use the now-bundled dependency
           Perl modules as a last resort, unless MOGILE_NO_BUILTIN_DEPS
