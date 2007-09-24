@@ -11,13 +11,13 @@ use base 'MogileFS::Store';
 # --------------------------------------------------------------------------
 
 sub dsn_of_dbhost {
-    my ($class, $dbname, $host) = @_;
-    return "DBI:mysql:$dbname;host=$host";
+    my ($class, $dbname, $host, $port) = @_;
+    return "DBI:mysql:$dbname;host=$host" . ($port ? ";port=$port" : "");
 }
 
 sub dsn_of_root {
-    my ($class, $dbname, $host) = @_;
-    return "DBI:mysql:mysql";
+    my ($class, $dbname, $host, $port) = @_;
+    return $class->dsn_of_dbhost('mysql', $host, $port);
 }
 
 # --------------------------------------------------------------------------

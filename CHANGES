@@ -1,3 +1,5 @@
+        * add --dbport option to mogdbsetup (Ask Bjoern Hansen)
+
         * Fix state_change() bug that could make file_to_delete_later
           grow unnecessarily (Radu Greab)
 

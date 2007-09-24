@@ -14,13 +14,13 @@ use base 'MogileFS::Store';
 # --------------------------------------------------------------------------
 
 sub dsn_of_dbhost {
-    my ($class, $dbname, $host) = @_;
-    return "DBI:Pg:dbname=$dbname;host=$host";
+    my ($class, $dbname, $host, $port) = @_;
+    return "DBI:Pg:dbname=$dbname;host=$host" . ($port ? ";port=$port" : "");
 }
 
 sub dsn_of_root {
-    my ($class, $dbname, $host) = @_;
-    return "DBI:Pg:dbname=postgres;host=$host";
+    my ($class, $dbname, $host, $port) = @_;
+    return $class->dsn_of_dbhost('postgres', $host, $port);
 }
 
 # --------------------------------------------------------------------------

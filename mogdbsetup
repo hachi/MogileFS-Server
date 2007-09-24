@@ -9,6 +9,7 @@ $0 = $_ = $0;
 
 my %args = (
             dbhost => "localhost",
+            dbport => "3306",
             dbname => "mogilefs",
             dbrootuser => undef,
             dbrootpass => "",
@@ -26,6 +27,7 @@ my $plugins;
 usage()
     unless GetOptions(
                       "dbhost=s"         => \$args{dbhost},
+                      "dbport=s"         => \$args{dbport},
                       "dbname=s"         => \$args{dbname},
                       "dbrootuser=s"     => \$args{dbrootuser},
                       "dbrootpassword=s" => \$args{dbrootpass},
@@ -58,6 +60,8 @@ Options:
  --verbose        <off>        Be verbose about what\'s happening.
 
  --dbhost=        localhost    hostname or IP to database server.
+
+ --dbport=        dbd default  port number to database server.
 
  --dbname=        mogilefs     database name to create/upgrade.
 
@@ -99,7 +103,7 @@ $sclass->on_confirm(\&confirm);
 
 my $sto = $sclass->new_from_mogdbsetup(
                                        map { $_ => $args{$_} }
-                                       qw(dbhost dbname
+                                       qw(dbhost dbport dbname
                                           dbrootuser dbrootpass
                                           dbuser dbpass)
                                        );

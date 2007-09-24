@@ -57,8 +57,8 @@ sub want_raise_errors {
 
 sub new_from_mogdbsetup {
     my ($class, %args) = @_;
-    # where args is:  dbhost dbname dbrootuser dbrootpass dbuser dbpass
-    my $dsn = $class->dsn_of_dbhost($args{dbname}, $args{dbhost});
+    # where args is:  dbhost dbport dbname dbrootuser dbrootpass dbuser dbpass
+    my $dsn = $class->dsn_of_dbhost($args{dbname}, $args{dbhost}, $args{dbport});
 
     my $try_make_sto = sub {
         my $dbh = DBI->connect($dsn, $args{dbuser}, $args{dbpass}, {
@@ -75,11 +75,11 @@ sub new_from_mogdbsetup {
 
     # otherwise, we need to make the requested database, setup permissions, etc
     $class->status("couldn't connect to database as mogilefs user.  trying root...");
-    my $rootdsn = $class->dsn_of_root($args{dbname}, $args{dbhost});
+    my $rootdsn = $class->dsn_of_root($args{dbname}, $args{dbhost}, $args{dbport});
     my $rdbh = DBI->connect($rootdsn, $args{dbrootuser}, $args{dbrootpass}, {
         PrintError => 0,
     }) or
-        die "Failed to connect to $dsn as specified root user: " . DBI->errstr . "\n";
+        die "Failed to connect to $rootdsn as specified root user ($args{dbrootuser}): " . DBI->errstr . "\n";
     $class->status("connected to database as root user.");
 
     $class->confirm("Create database name '$args{dbname}'?");
