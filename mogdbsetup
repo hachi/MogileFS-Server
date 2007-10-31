@@ -9,7 +9,7 @@ $0 = $_ = $0;
 
 my %args = (
             dbhost => "localhost",
-            dbport => "3306",
+            dbport => undef,
             dbname => "mogilefs",
             dbrootuser => undef,
             dbrootpass => "",
@@ -47,6 +47,12 @@ usage() if $opt_help;
 if(!defined($args{dbrootuser})) {
     $args{dbrootuser} = 'root' if $dbtype =~ /MySQL/i;
     $args{dbrootuser} = 'postgres' if $dbtype =~ /Postgres/i;
+}
+# Saner port management.
+# This should default to the UNIX sockets on localhost
+if(!defined($args{dbport}) and $args{dbhost} != "localhost" and $args{dbhost} != "127.0.0.1") {
+    $args{dbport} = '3306' if $dbtype =~ /MySQL/i;
+    $args{dbport} = '5432' if $dbtype =~ /Postgres/i;
 }
 
 sub usage {
