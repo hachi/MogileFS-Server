@@ -1374,7 +1374,10 @@ sub cmd_fsck_reset {
     my $args = shift;
 
     my $sto = Mgd::get_store();
-    $sto->set_server_setting("fsck_opt_policy_only", ($args->{policy_only} ? "1" : undef));
+    $sto->set_server_setting("fsck_opt_policy_only",
+        ($args->{policy_only} ? "1" : undef));
+    $sto->set_server_setting("fsck_highest_fid_checked", 
+        ($args->{startpos} ? $args->{startpos} : "0"));
 
     $self->_do_fsck_reset or return $self->err_line;
     return $self->ok_line;
@@ -1383,7 +1386,6 @@ sub cmd_fsck_reset {
 sub _do_fsck_reset {
     my MogileFS::Worker::Query $self = shift;
     my $sto = Mgd::get_store();
-    $sto->set_server_setting("fsck_highest_fid_checked", "0");
     $sto->set_server_setting("fsck_start_time",       $sto->get_db_unixtime);
     $sto->set_server_setting("fsck_stop_time",        undef);
     $sto->set_server_setting("fsck_fids_checked",     0);
