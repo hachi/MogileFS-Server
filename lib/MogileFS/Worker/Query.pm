@@ -1386,7 +1386,7 @@ sub cmd_fsck_reset {
 sub _do_fsck_reset {
     my MogileFS::Worker::Query $self = shift;
     my $sto = Mgd::get_store();
-    $sto->set_server_setting("fsck_start_time",       $sto->get_db_unixtime);
+    $sto->set_server_setting("fsck_start_time",       undef);
     $sto->set_server_setting("fsck_stop_time",        undef);
     $sto->set_server_setting("fsck_fids_checked",     0);
     $sto->set_server_setting("fsck_fid_at_end",       $sto->max_fidid);
