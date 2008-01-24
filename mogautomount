@@ -6,10 +6,11 @@ use Getopt::Long;
 # Rename binary in process list to make init scripts saner
 $0 = $_ = $0;
 
-my ($help, $verbose);
+my ($help, $verbose, $chmod_mountpoints);
 usage(0) unless GetOptions(
                            'help' => \$help,
                            'verbose' => \$verbose,
+                           'chmod-mountpoints' => \$chmod_mountpoints,
                            );
 usage(0) if @ARGV;
 usage(2) if $help;
@@ -48,6 +49,12 @@ foreach my $bdev (@bdevs) {
     my $mnt = "$base/dev$devid";
     unless (-d $mnt) { mkdir $mnt or die "Failed to mkdir $mnt: $!"; }
     next if $mounted{$dev};
+
+    if ($chmod_mountpoints and ((stat($mnt))[2] & 0777) != 0) {
+        warn "Mountpoint on parent filesystem is writable, fixing.\n" if $verbose;
+        chmod 0, $mnt
+            or die "Unable to set mogile device mountpoint '$mnt' mode to 0 (no access)";
+    }
 
     if (system("mount", '-o', 'noatime', $dev, $mnt)) {
         warn "Failed to mount $dev at $mnt.\n";
@@ -92,6 +99,12 @@ this help
 =item --verbose | -verbose
 
 be verbose
+
+=item --chmod-mountpoints
+
+If a mogile device isn't mounted yet, check to make sure the underlying filesystem has the directory set
+to be not readable or writable at all (chmod 0). This could help prevent mogstored from accidentally writing
+to the underlying filesystem.
 
 =back
 
