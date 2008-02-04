@@ -1,3 +1,9 @@
+        * Fix MultipleHosts replication policy to no longer return desperate
+          devices after no longer being desperate, instead returning a state
+          which will queue for retries in the future till it can be truely
+          happy. This prevents files from being replicated to all writable
+          devs when there are two few writable hosts to satisfy the policy.
+
         * Add --chmod-mountpoints option to mogautomount, in an attempt to
           prevent mogstored machines from accidentally writing to their under-
           lying filesystem.
