@@ -53,6 +53,11 @@ sub too_happy {
     return $self->{too_good};
 }
 
+sub temp_fail {
+    my $self = shift;
+    return $self->{temp_fail};
+}
+
 # returns array of MogileFS::Device objs, in preferred order, one of
 # which (but not multiple) would satisify the replication policy
 # for its next step.  at which point the replication policy needs
