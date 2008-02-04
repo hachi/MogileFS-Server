@@ -83,7 +83,7 @@ sub replicate_to {
          ! $on_dev{$_->devid} &&
          ! $failed->{$_->devid} &&
          $_->should_get_replicated_files
-     } MogileFS::Device->devices;
+     } values %$all_devs;
 
     return TEMP_NO_ANSWER unless @all_dests;
 
