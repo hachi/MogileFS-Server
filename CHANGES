@@ -1,8 +1,8 @@
-        * Add --chmod-mountpoints option to mogautomount, in an attempt to 
-	  prevent mogstored machines from accidentally writing to their under-
-	  lying filesystem.
-	
-	* New optional argument 'startpos' to fsck_reset.
+        * Add --chmod-mountpoints option to mogautomount, in an attempt to
+          prevent mogstored machines from accidentally writing to their under-
+          lying filesystem.
+
+        * New optional argument 'startpos' to fsck_reset.
 
         * Use correct per-Store port, defaulting to UNIX sockets on localhost.
 
