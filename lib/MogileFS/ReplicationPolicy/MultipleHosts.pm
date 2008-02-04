@@ -89,6 +89,9 @@ sub replicate_to {
 
     my @ideal = grep { ! $skip_host{$_->hostid} } @all_dests;
     my @desp  = grep {   $skip_host{$_->hostid} } @all_dests;
+
+    return TEMP_NO_ANSWER if $already_on >= $min && @ideal == 0;
+
     return MogileFS::ReplicationRequest->new(
                                              ideal => \@ideal,
                                              desperate => \@desp,
