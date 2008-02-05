@@ -1,3 +1,7 @@
+        * Add server option 'rebalance_ignore_missing' in mogilefsd config
+          that allows the rebalance to ignore files that are already missing
+          when it tries to delete them.
+
         * Fix MultipleHosts replication policy to no longer return desperate
           devices after no longer being desperate, instead returning a state
           which will queue for retries in the future till it can be truely
