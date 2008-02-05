@@ -157,6 +157,7 @@ sub load_config {
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
     $old_repl_compat = choose_value( 'old_repl_compat', 1 );
+    choose_value( 'rebalance_ignore_missing', 0 );
 
     choose_value( 'no_schema_check', 0 );
 

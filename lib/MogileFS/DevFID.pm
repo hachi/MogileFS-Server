@@ -123,10 +123,17 @@ sub add_to_db {
 # accurate again.
 sub destroy {
     my $self = shift;
+    my %opts = @_;
+
     my $httpfile = MogileFS::HTTPFile->at($self->url)
         or die "Creation of HTTPFile object failed.";
 
-    $httpfile->delete
+    my %delete_opts;
+
+    $delete_opts{ignore_missing} = 1
+        if $opts{ignore_missing};
+
+    $httpfile->delete(%delete_opts)
         or die "Deletion of file via HTTP failed.";
 
     my $sto = Mgd::get_store();

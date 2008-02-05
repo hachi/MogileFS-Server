@@ -57,6 +57,7 @@ sub host {
 # returns true on success, dies on failure
 sub delete {
     my $self = shift;
+    my %opts = @_;
     my ($host, $port) = ($self->{host}, $self->{port});
 
     my $httpsock;
@@ -90,6 +91,10 @@ sub delete {
         if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
             my $rescode = $1;
             # make sure we get a good response
+            if ($rescode == 404 && $opts{ignore_missing}) {
+                $did_del = 1;
+                next;
+            }
             unless ($rescode == 204) {
                 delete $http_socket{"$host:$port"};
                 die "Bad response from $host:$port: [$line]";

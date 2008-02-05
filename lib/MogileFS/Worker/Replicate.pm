@@ -457,8 +457,13 @@ sub rebalance_devfid {
         $del_reason = "did_rebalance;ret=$ret";
     }
 
+    my %destroy_opts;
+
+    $destroy_opts{ignore_missing} = 1
+        if MogileFS::Config->config("rebalance_ignore_missing");
+
     if ($should_delete) {
-        eval { $devfid->destroy };
+        eval { $devfid->destroy(%destroy_opts) };
         if ($@) {
             return $fail->("HTTP delete (due to '$del_reason') failed: $@");
         }
