@@ -124,7 +124,8 @@ sub replicate_to {
     
     my @ideal         = grep { ! $skip_host{$_->hostid} } @all_dests;
     # wrong network is less desparate than wrong host
-    my @network_desp  = grep {   $skip_host{$_->hostid} eq AVOIDNETWORK } @all_dests;
+    my @network_desp  = grep {   $skip_host{$_->hostid} &&
+                                 $skip_host{$_->hostid} eq AVOIDNETWORK } @all_dests;
     my @host_desp     = grep {   $skip_host{$_->hostid} &&
                                  $skip_host{$_->hostid} ne AVOIDNETWORK } @all_dests;
 
