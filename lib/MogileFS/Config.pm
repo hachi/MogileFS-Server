@@ -301,11 +301,19 @@ sub server_setting_is_writable {
             die "Doesn't match acceptable format.";
         };
     };
-
+    my $valid_netmask = sub {
+        my $n = Net::Netmask->new2($_[0]);
+        die "Doesn't match an acceptable netmask" unless $n;
+    };
+        
     # let slave settings go through unmodified, for now.
     if ($key =~ /^slave_/) { return $del_if_blank };
     if ($key eq "enable_rebalance") { return $bool };
     if ($key eq "memcache_servers") { return $any  };
+
+    # ReplicationPolicy::MultipleNetworks
+    if ($key eq 'network_zones') { return $any };
+    if ($key =~ /^zone_/) { return $valid_netmask };
 
     if ($key eq "rebalance_policy") { return sub {
         my $v = shift;
