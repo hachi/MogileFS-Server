@@ -35,14 +35,14 @@ sub replicate_to {
     my $on_devs  = delete $args{on_devs};  # arrayref of device objects
     my $all_devs = delete $args{all_devs}; # hashref of { devid => MogileFS::Device }
     my $failed   = delete $args{failed};   # hashref of { devid => 1 } of failed attempts this round
-    
+
     # old-style
     my $min      = delete $args{min};
     $min         = $self->{mindevcount} || $min;
-    
+
     warn "Unknown parameters: " . join(", ", sort keys %args) if %args;
     die "Missing parameters" unless $on_devs && $all_devs && $failed && $fid;
-    
+
     # number of devices we currently live on
     my $already_on = @$on_devs;
 
@@ -51,7 +51,7 @@ sub replicate_to {
 
     # total disks available which are candidates for having files on them
     my $total_disks = scalar grep { $_->dstate->should_have_files } values %$all_devs;
-   
+
     # if we have two copies and that's all the disks there are
     # anywhere, be happy enough
     return ALL_GOOD if $already_on >= 2 && $already_on == $total_disks;
@@ -63,7 +63,7 @@ sub replicate_to {
     foreach my $dev (@$on_devs) {
         $on_host{$dev->hostid} = 1;
         $on_dev{$dev->id} = 1;
-        
+
         my $on_ip = $dev->host->ip;
         if ($on_ip) {
             my $network = network_for_ip($on_ip);
@@ -102,7 +102,7 @@ sub replicate_to {
             foreach my $device (values %$all_devs) {
                 next if ($seen_host{$device->host->id}++);
 
-                foreach my $disliked_network (@skip_network) {                    
+                foreach my $disliked_network (@skip_network) {
                     if (($disliked_network->match($device->host->ip)) and
                         (not $skip_host{$device->host->id})) {
                         $skip_host{$device->host->id} = AVOIDNETWORK;
@@ -121,7 +121,7 @@ sub replicate_to {
     } MogileFS::Device->devices;
 
     return TEMP_NO_ANSWER unless @all_dests;
-    
+
     my @ideal         = grep { ! $skip_host{$_->hostid} } @all_dests;
     # wrong network is less desparate than wrong host
     my @network_desp  = grep {   $skip_host{$_->hostid} &&
@@ -138,7 +138,7 @@ sub replicate_to {
 }
 
 # can't just scalar keys %cache to count networks
-# might include networks for which we have no hosts yet       
+# might include networks for which we have no hosts yet
 sub unique_hosts_and_networks {
     my ($devs) = @_;
 
@@ -147,7 +147,7 @@ sub unique_hosts_and_networks {
     foreach my $devid (keys %$devs) {
         my $dev = $devs->{$devid};
         next unless $dev->dstate->should_get_repl_files;
-           
+
         $host{$dev->hostid}++;
 
         my $ip = $dev->host->ip;
@@ -161,7 +161,7 @@ sub unique_hosts_and_networks {
 {
     my %cache; # '192.168.0.0/24' => Net::Netmask->new2('192.168.0.0/24');
     my $age;   # increments everytime we look
-    
+
     # turn a server ip into a network
     # defaults to /16 ranges
     # this can be overridden with a "zone_$location" setting per network "zone" and
@@ -190,13 +190,13 @@ sub unique_hosts_and_networks {
                 $network = $cache{$zone};
             }
         }
-        
+
         if (not $network) { 
             ($network) = ($ip =~ m/(\d+\.\d+)./);
             $network .= '/16'; # default
             $network = Net::Netmask->new2($network);
         }
-        
+
         return $network;
     }
 
@@ -204,7 +204,7 @@ sub unique_hosts_and_networks {
         undef %cache;
 
         my @zones = split(",",MogileFS::Config->server_setting("network_zones"));
-        
+
         foreach my $zone (@zones) {
             my $netmask = MogileFS::Config->server_setting("zone_".$zone);
 
@@ -212,13 +212,13 @@ sub unique_hosts_and_networks {
                 warn "couldn't find network_zone <<zone_".$zone.">> check your server settings";
                 next;
             }
-            
+
             if ($cache{$netmask}) {
                 warn "duplicate netmask <$netmask> in network zones. check your server settings";
             }
-            
+
             $cache{$netmask} = Net::Netmask->new2($netmask);
-            
+
             if (Net::Netmask::errstr()) {
                 warn "couldn't parse <$zone> as a netmask. error was <".Net::Netmask::errstr().
                      ">. check your server settings";
@@ -228,12 +228,12 @@ sub unique_hosts_and_networks {
 
     sub stuff_cache { # for testing, or it'll try the db
         my ($self, $ip, $netmask) = @_;
-        
+
         $cache{$ip} = $netmask;
         $age = 1;
-    }    
+    }
 }
-    
+
 1;
 
 # Local Variables:
