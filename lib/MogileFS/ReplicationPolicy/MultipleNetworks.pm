@@ -203,7 +203,7 @@ sub unique_hosts_and_networks {
     sub clear_and_build_cache {
         undef %cache;
 
-        my @zones = split("\s*,\s*",MogileFS::Config->server_setting("network_zones"));
+        my @zones = split(/\s*,\s*/,MogileFS::Config->server_setting("network_zones"));
 
         foreach my $zone (@zones) {
             my $netmask = MogileFS::Config->server_setting("zone_".$zone);
