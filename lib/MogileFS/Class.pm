@@ -73,6 +73,7 @@ sub reload_classes {
                  classid     => $row->{classid},
                  name        => $row->{classname},
                  mindevcount => $row->{mindevcount},
+                 replpolicy  => $row->{replpolicy}, 
              }, $pkg);
         $cl->{_loaded} = 1;
     }
