@@ -67,7 +67,7 @@ sub reload_classes {
 
     foreach my $row (Mgd::get_store()->get_all_classes) {
         my $cl =
-            ($singleton{$row->{dmid}}{$row->{classid}} ||=
+            ($singleton{$row->{dmid}}{$row->{classid}} =
              bless {
                  dmid        => $row->{dmid},
                  classid     => $row->{classid},
@@ -83,7 +83,7 @@ sub reload_classes {
     foreach my $dom (MogileFS::Domain->domains) {
         my $dmid = $dom->id;
         my $cl =
-            ($singleton{$dmid}{0} ||=
+            ($singleton{$dmid}{0} =
              bless {
                  dmid        => $dmid,
                  classid     => 0,
