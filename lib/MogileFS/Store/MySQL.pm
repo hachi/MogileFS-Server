@@ -118,6 +118,15 @@ sub release_lock {
     return $rv;
 }
 
+# clears everything from the fsck_log table
+# return 1 on success.  die otherwise.
+# Under MySQL 4.1+ this is actually fast.
+sub clear_fsck_log {
+    my $self = shift;
+    $self->dbh->do("TRUNCATE TABLE fsck_log");
+    return 1;
+}
+
 # --------------------------------------------------------------------------
 # Functions specific to Store::MySQL subclass.  Not in parent.
 # --------------------------------------------------------------------------
