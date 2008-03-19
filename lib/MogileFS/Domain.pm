@@ -64,9 +64,9 @@ sub reload_domains {
         $id2name{$v} = $k;
     }
 
-    foreach my $dmid (keys %singleton) {
-        delete $singleton{$dmid} unless $id2name{$dmid};
-    }
+    # Blow singleton cache on reload. Otherwise a *change* in data may not be
+    # reflected.
+    %singleton = ();
 
     $last_load = $now;
 }
