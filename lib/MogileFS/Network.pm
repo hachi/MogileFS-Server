@@ -16,7 +16,7 @@ sub zone_for_ip {
     return unless $ip;
 
     # clear the cache occasionally
-    if (($age == 0) or ($age++ > 500)) {
+    if ((!defined $age) or ($age == 0) or ($age++ > 500)) {
         clear_and_build_cache();
         $age = 1;
     }
