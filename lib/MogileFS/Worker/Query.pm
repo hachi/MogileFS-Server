@@ -156,10 +156,12 @@ sub check_domain {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    return $self->err_line("no_domain") unless length($args->{domain});
+    my $domain = $args->{domain};
+
+    return $self->err_line("no_domain") unless defined $domain && length $domain;
 
     # validate domain
-    my $dmid = MogileFS::Domain->id_of_name($args->{domain}) or
+    my $dmid = MogileFS::Domain->id_of_name($domain) or
         return $self->err_line("unreg_domain");
 
     return $dmid;
