@@ -45,7 +45,7 @@ foreach (sort { $a <=> $b } keys %$dev2host) {
 my $ms1 = create_mogstored("127.0.1.1", $mogroot{1});
 ok($ms1, "got mogstored1");
 my $ms2 = create_mogstored("127.0.1.2", $mogroot{2});
-ok($ms1, "got mogstored2");
+ok($ms2, "got mogstored2");
 
 while (! -e "$mogroot{1}/dev1/usage" &&
        ! -e "$mogroot{2}/dev4/usage") {
