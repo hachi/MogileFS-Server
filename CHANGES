@@ -1,3 +1,7 @@
+        * RFC 2518 says we "should" use a trailing slash when calling
+          MKCOL. Some servers (nginx) appears to require it. (Spotted by
+          Timu Eren).
+
         * Add server option 'rebalance_ignore_missing' in mogilefsd config
           that allows the rebalance to ignore files that are already missing
           when it tries to delete them.

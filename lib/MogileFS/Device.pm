@@ -349,6 +349,11 @@ my $dir_made_lastclean = 0;
 sub create_directory {
     my ($self, $uri) = @_;
     return 1 if $self->doesnt_know_mkcol;
+
+    # rfc2518 says we "should" use a trailing slash. Some servers
+    # (nginx) appears to require it.
+    $uri .= '/' unless $uri =~ m!/$!;
+
     return 1 if $dir_made{$uri};
 
     my $hostid = $self->hostid;
