@@ -79,6 +79,7 @@ lib/MogileFS/Store/MySQL.pm
 lib/MogileFS/Store/Postgres.pm
 lib/MogileFS/Store/SQLite.pm
 lib/MogileFS/Sys.pm
+lib/MogileFS/Test.pm
 lib/MogileFS/Util.pm
 lib/MogileFS/Worker.pm
 lib/MogileFS/Worker/Delete.pm
@@ -112,7 +113,6 @@ t/20-filepaths.t
 t/domains-classes.t
 t/fid-stat.t
 t/hosts-devices.t
-t/lib/mogtestlib.pl
 t/mogstored-shutdown.t
 t/multiple-hosts-replpol.t
 t/replpolicy-parsing.t
