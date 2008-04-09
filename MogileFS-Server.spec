@@ -13,7 +13,7 @@ autoreq:   no
 requires:  MogileFS-Server-mogilefsd, MogileFS-Server-mogstored
 
 # Build requires for mogilefsd
-buildrequires: perl(DBI), perl(DBD::mysql)
+buildrequires: perl(DBI), perl(DBD::mysql), perl(MogileFS::Client), MogileFS-utils, mysql
 # Build requires for mogstored
 buildrequires: perl(Gearman::Client::Async) >= 0.93, perl(Gearman::Server) >= 1.08, perl(Perlbal) >= 1.53
 
@@ -28,13 +28,16 @@ rm -rf "%{buildroot}"
 %build
 %{__perl} Makefile.PL PREFIX=%{buildroot}%{_prefix}
 make all
-#make test
+make test
 
 %install
 make pure_install
 
 [ -x /usr/lib/rpm/brp-compress ] && /usr/lib/rpm/brp-compress
 
+# remove mogdeps and related files
+rm -rf %{buildroot}/usr/lib/perl5/site_perl/*/mogdeps
+rm -f %{buildroot}/usr/share/man/man3/mogdeps::*
 
 # remove special files
 find %{buildroot} \(                    \
