@@ -7,8 +7,8 @@ use FindBin qw($Bin);
 
 use MogileFS::Server;
 use MogileFS::Util qw(error_code);
+use MogileFS::Test;
 
-require 't/lib/mogtestlib.pl';
 find_mogclient_or_skip();
 
 # use mogadm to init it,

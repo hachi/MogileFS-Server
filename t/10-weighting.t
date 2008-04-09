@@ -14,7 +14,7 @@ BEGIN {
     $ENV{T_FAKE_IO_DEV2} = 5;  # Simulating low device load (shoudld get more requests).
 }
 
-require 't/lib/mogtestlib.pl';
+use MogileFS::Test;
 find_mogclient_or_skip();
 
 # create temp mysql db,

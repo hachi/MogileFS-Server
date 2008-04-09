@@ -8,7 +8,7 @@ use FindBin qw($Bin);
 use MogileFS::Server;
 use MogileFS::Util qw(error_code);
 use MogileFS::ReplicationPolicy::MultipleHosts;
-require "$Bin/lib/mogtestlib.pl";
+use MogileFS::Test;
 
 plan tests => 13;
 

@@ -8,7 +8,7 @@ use Data::Dumper;
 
 use MogileFS::Server;
 use MogileFS::Util qw(error_code);
-require "$Bin/lib/mogtestlib.pl";
+use MogileFS::Test;
 
 plan tests => 31;
 

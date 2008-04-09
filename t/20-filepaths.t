@@ -12,7 +12,7 @@ BEGIN {
     $ENV{TESTING} = 1;
 }
 
-require 't/lib/mogtestlib.pl';
+use MogileFS::Test;
 find_mogclient_or_skip();
 
 # create temp mysql db,
