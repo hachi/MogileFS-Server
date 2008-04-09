@@ -861,8 +861,6 @@ sub cmd_get_paths {
         paths => 0,
     };
 
-    my @devices_with_weights;
-
     # find devids that FID is on in memcache or db.
     my @fid_devids;
     my $need_devids_in_memcache = 0;
@@ -881,10 +879,13 @@ sub cmd_get_paths {
         $memc->add($devid_memkey, \@fid_devids, 3600) if $need_devids_in_memcache;
     }
 
+    my @devices = map { $dmap->{$_} } @fid_devids;
+
+    my @devices_with_weights;
+
     # is this fid still owned by this key?
-    foreach my $devid (@fid_devids) {
+    foreach my $dev (@devices) {
         my $weight;
-        my $dev = $dmap->{$devid};
         my $util = $dev->observed_utilization;
 
         if (defined($util) and $util =~ /\A\d+\Z/) {
@@ -894,7 +895,7 @@ sub cmd_get_paths {
             $weight = $dev->weight;
             $weight ||= 100;
         }
-        push @devices_with_weights, [$devid, $weight];
+        push @devices_with_weights, [$dev, $weight];
     }
 
     # randomly weight the devices
@@ -904,8 +905,7 @@ sub cmd_get_paths {
     my $backup_path;
 
     # construct result paths
-    foreach my $devid (@list) {
-        my $dev = $dmap->{$devid};
+    foreach my $dev (@list) {
         next unless $dev && ($dev->can_read_from);
 
         my $host = $dev->host;
