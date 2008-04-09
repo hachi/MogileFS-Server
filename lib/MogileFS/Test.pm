@@ -1,3 +1,5 @@
+package MogileFS::Test;
+
 use strict;
 use warnings;
 use DBI;
@@ -5,6 +7,9 @@ use DBI;
 use FindBin qw($Bin);
 use IO::Socket::INET;
 use MogileFS::Server;
+use base 'Exporter';
+
+our @EXPORT = qw(&find_mogclient_or_skip &temp_store &create_mogstored &create_temp_tracker);
 
 sub find_mogclient_or_skip {
 
