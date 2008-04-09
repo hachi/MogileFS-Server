@@ -241,21 +241,24 @@ sub cmd_create_open {
     $profstart->("wait_monitor");
     $self->wait_for_monitor;
 
+    $profstart->("find_deviceid");
+
+    my @devices;
+
+    unless (MogileFS::run_global_hook('cmd_create_open_order_devices', [MogileFS::Device->devices], \@devices)) {
+        @devices = sort_devs_by_freespace(MogileFS::Device->devices);
+    }
+
     # find suitable device(s) to put this file on.
     my @dests; # MogileFS::Device objects which are suitabke
 
-    $profstart->("find_deviceid");
     while (scalar(@dests) < ($multi ? 3 : 1)) {
-        my $ddev = first {
-            $_->should_get_new_files &&
-            $_->not_on_hosts(map { $_->host } @dests)
-        } weighted_list map {
-            [$_, 100 * $_->percent_free]
-        } grep {
-            $_->exists
-        } MogileFS::Device->devices;
+        my $ddev = shift @devices;
 
         last unless $ddev;
+        next unless $ddev->should_get_new_files;
+        next unless $ddev->not_on_hosts(map { $_->host } @dests);
+
         push @dests, $ddev;
     }
     return $self->err_line("no_devices") unless @dests;
@@ -317,6 +320,21 @@ sub cmd_create_open {
     }
 
     return $self->ok_line($res);
+}
+
+sub sort_devs_by_freespace {
+    my @devices_with_weights;
+
+    foreach my $dev (@_) {
+        next unless $dev->exists;
+
+        my $weight = 100 * $dev->percent_free;
+        push @devices_with_weights, [$dev, $weight];
+    }
+
+    my @list = MogileFS::Util::weighted_list(@devices_with_weights);
+
+    return @list;
 }
 
 sub cmd_create_close {
