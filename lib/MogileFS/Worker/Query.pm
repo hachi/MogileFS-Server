@@ -881,31 +881,13 @@ sub cmd_get_paths {
 
     my @devices = map { $dmap->{$_} } @fid_devids;
 
-    my @devices_with_weights;
-
-    # is this fid still owned by this key?
-    foreach my $dev (@devices) {
-        my $weight;
-        my $util = $dev->observed_utilization;
-
-        if (defined($util) and $util =~ /\A\d+\Z/) {
-            $weight = 102 - $util;
-            $weight ||= 100;
-        } else {
-            $weight = $dev->weight;
-            $weight ||= 100;
-        }
-        push @devices_with_weights, [$dev, $weight];
-    }
-
-    # randomly weight the devices
-    my @list = MogileFS::Util::weighted_list(@devices_with_weights);
+    my @sorted_devs = sort_devs_by_utilization(@devices);
 
     # keep one partially-bogus path around just in case we have nothing else to send.
     my $backup_path;
 
     # construct result paths
-    foreach my $dev (@list) {
+    foreach my $dev (@sorted_devs) {
         next unless $dev && ($dev->can_read_from);
 
         my $host = $dev->host;
@@ -938,6 +920,30 @@ sub cmd_get_paths {
     }
 
     return $self->ok_line($ret);
+}
+
+sub sort_devs_by_utilization {
+    my @devices_with_weights;
+
+    # is this fid still owned by this key?
+    foreach my $dev (@_) {
+        my $weight;
+        my $util = $dev->observed_utilization;
+
+        if (defined($util) and $util =~ /\A\d+\Z/) {
+            $weight = 102 - $util;
+            $weight ||= 100;
+        } else {
+            $weight = $dev->weight;
+            $weight ||= 100;
+        }
+        push @devices_with_weights, [$dev, $weight];
+    }
+
+    # randomly weight the devices
+    my @list = MogileFS::Util::weighted_list(@devices_with_weights);
+
+    return @list;
 }
 
 # ------------------------------------------------------------
