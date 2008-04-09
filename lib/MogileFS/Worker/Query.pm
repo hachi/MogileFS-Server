@@ -881,7 +881,10 @@ sub cmd_get_paths {
 
     my @devices = map { $dmap->{$_} } @fid_devids;
 
-    my @sorted_devs = sort_devs_by_utilization(@devices);
+    my @sorted_devs;
+    unless (MogileFS::run_global_hook('cmd_get_paths_order_devices', \@devices, \@sorted_devs)) {
+        @sorted_devs = sort_devs_by_utilization(@devices);
+    }
 
     # keep one partially-bogus path around just in case we have nothing else to send.
     my $backup_path;
