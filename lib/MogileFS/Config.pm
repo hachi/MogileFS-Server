@@ -305,7 +305,13 @@ sub server_setting_is_writable {
         my $n = Net::Netmask->new2($_[0]);
         die "Doesn't match an acceptable netmask" unless $n;
     };
-        
+    my $valid_netmask_list = sub {
+        my @ns = split /[,\s]+/, $_[0];
+        foreach my $n (@ns) {
+            $valid_netmask->($n);
+        }
+    };
+
     # let slave settings go through unmodified, for now.
     if ($key =~ /^slave_/) { return $del_if_blank };
     if ($key eq "enable_rebalance") { return $bool };
@@ -313,7 +319,7 @@ sub server_setting_is_writable {
 
     # ReplicationPolicy::MultipleNetworks
     if ($key eq 'network_zones') { return $any };
-    if ($key =~ /^zone_/) { return $valid_netmask };
+    if ($key =~ /^zone_/) { return $valid_netmask_list };
 
     if ($key eq "rebalance_policy") { return sub {
         my $v = shift;
