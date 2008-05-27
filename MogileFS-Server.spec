@@ -13,7 +13,7 @@ autoreq:   no
 requires:  MogileFS-Server-mogilefsd, MogileFS-Server-mogstored
 
 # Build requires for mogilefsd
-buildrequires: perl(DBI), perl(DBD::mysql), perl(MogileFS::Client), MogileFS-utils, mysql
+buildrequires: perl(DBI), perl(DBD::mysql), perl(MogileFS::Client), MogileFS-Utils, mysql
 # Build requires for mogstored
 buildrequires: perl(Gearman::Client::Async) >= 0.93, perl(Gearman::Server) >= 1.08, perl(Perlbal) >= 1.53
 
