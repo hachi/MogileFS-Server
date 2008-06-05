@@ -4,6 +4,7 @@ use strict;
 use Digest::MD5 qw(md5); # Used for lockid
 use DBI;
 use DBD::Pg;
+use Sys::Hostname;
 use MogileFS::Util qw(throw debug error);
 use MogileFS::Server;
 use Carp;
@@ -660,7 +661,6 @@ sub lockid {
 # (hostname,pid).
 # returns 1 on success and 0 on timeout
 sub get_lock {
-    use Sys::Hostname;
     my ($self, $lockname, $timeout) = @_;
     my $lockid = lockid($lockname);
     die "Lock recursion detected (grabbing $lockname ($lockid), had $self->{last_lock} (".lockid($self->{last_lock}).").  Bailing out." if $self->{lock_depth};
