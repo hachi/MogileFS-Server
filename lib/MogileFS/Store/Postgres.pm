@@ -695,7 +695,7 @@ sub release_lock {
     my $lockid = lockid($lockname);
     debug("$$ Unlocking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
     #my $rv = $self->dbh->selectrow_array("SELECT pg_advisory_unlock(?)", undef, $lockid);
-    my $rv = $self->dbh->do('DELETE FROM lock WHERE lockid=? AND pid=?', undef, $lockid, $$);
+    my $rv = $self->dbh->do('DELETE FROM lock WHERE lockid=? AND pid=? AND hostname=?', undef, $lockid, $$, hostname);
     debug("Double-release of lock $lockname!") if $self->{lock_depth} != 0 and $rv == 0 and $Mgd::DEBUG >= 2;
     $self->condthrow;
     $self->{lock_depth} = 0;

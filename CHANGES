@@ -1,3 +1,6 @@
+        * Postgres locking routines did not include the hostname for the lock
+          release.
+
         * RFC 2518 says we "should" use a trailing slash when calling
           MKCOL. Some servers (nginx) appears to require it. (Spotted by
           Timu Eren).
