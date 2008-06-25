@@ -82,7 +82,7 @@ sub new_from_mogdbsetup {
         die "Failed to connect to $rootdsn as specified root user ($args{dbrootuser}): " . DBI->errstr . "\n";
     $class->status("connected to database as root user.");
 
-    $class->confirm("Create database name '$args{dbname}'?");
+    $class->confirm("Create/Upgrade database name '$args{dbname}'?");
     $class->create_db_if_not_exists($rdbh, $args{dbname});
     $class->confirm("Grant all privileges to user '$args{dbuser}', connecting from anywhere, to the mogilefs database '$args{dbname}'?");
     $class->grant_privileges($rdbh, $args{dbname}, $args{dbuser}, $args{dbpass});
