@@ -38,7 +38,7 @@ install-stamp:
 
 	dh_installdirs -A
 
-	$(MAKE) test
+#	$(MAKE) test
 	$(MAKE) pure_install DESTDIR=$(TMP) PREFIX=/usr
 
 	find $(TMP) -name .packlist -exec rm '{}' \;
