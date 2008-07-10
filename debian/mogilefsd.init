@@ -8,25 +8,18 @@
 # Short-Description: Start/Stop the mogilefsd daemon
 # Description:       Start/Stop the mogilefsd daemon.
 ### END INIT INFO
-#
-# skeleton	example file to build /etc/init.d/ scripts.
-#		This file should be used to construct scripts for /etc/init.d.
-#
-#		Written by Miquel van Smoorenburg <miquels@cistron.nl>.
-#		Modified for Debian 
-#		by Ian Murdock <imurdock@gnu.ai.mit.edu>.
-#
-# Version:	@(#)skeleton  1.9  26-Feb-2001  miquels@cistron.nl
-#
 
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/usr/bin/mogilefsd
 NAME=mogilefsd
 DESC=mogilefsd
 DEFAULTS=/etc/default/$NAME
 PIDFILE=/var/run/$NAME.pid
+SCRIPTNAME=/etc/init.d/$NAME
 
-test -x $DAEMON || exit 0
+# Exit if the package is not installed
+[ -x "$DAEMON" ] || exit 0
 
 if [ ! -e $DEFAULTS ]
   then
@@ -35,8 +28,11 @@ if [ ! -e $DEFAULTS ]
 	exit 0
 fi
 
-#Read defaults file
-[ -r $DEFAULTS ] && . $DEFAULTS
+# Read configuration variable file if it is present
+[ -r /etc/default/$NAME ] && . /etc/default/$NAME
+
+# Load the VERBOSE setting and other rcS variables
+. /lib/init/vars.sh
 
 if [ "$MOGILEFSD_RUNASUSER" == "" ]
   then
@@ -48,10 +44,11 @@ fi
 
 set -e
 
-case "$1" in
-  start)
-	echo -n "Starting $DESC: "
-
+#
+# Function that starts the daemon/service
+#
+do_start()
+{
 	if [ -e $PIDFILE ]
 		then
 		
@@ -67,13 +64,27 @@ case "$1" in
 	fi
 
 	start-stop-daemon --start --quiet --exec $DAEMON --pidfile $PIDFILE -b -m --name $NAME --chuid $MOGILEFSD_RUNASUSER
+}
+
+#
+# Function that stops the daemon/service
+#
+do_stop()
+{
+	start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE --name $NAME --user $MOGILEFSD_RUNASUSER
+	rm -f $PIDFILE
+}
+
+case "$1" in
+  start)
+	echo -n "Starting $DESC: "
+	do_start
 	echo "$NAME."
 	;;
   stop)
 	echo -n "Stopping $DESC: "
-	start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE --name $NAME --user $MOGILEFSD_RUNASUSER
+	do_stop
 	echo "$NAME."
-	rm -f $PIDFILE
 	;;
 
   restart|force-reload)
@@ -83,18 +94,16 @@ case "$1" in
 	#	just the same as "restart".
 	#
 	echo -n "Restarting $DESC: "
-	start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE --name $NAME --user $MOGILEFSD_RUNASUSER
-	rm -f $PIDFILE
+	do_stop
 	sleep 1
-	start-stop-daemon --start --quiet --exec $DAEMON --pidfile $PIDFILE -b -m --name $NAME --chuid $MOGILEFSD_RUNASUSER
+	do_start
 	echo "$NAME."
 	;;
   *)
-	N=/etc/init.d/$NAME
-	# echo "Usage: $N {start|stop|restart|reload|force-reload}" >&2
-	echo "Usage: $N {start|stop|restart|force-reload}" >&2
-	exit 1
+	#echo "Usage: $SCRIPTNAME {start|stop|restart|reload|force-reload}" >&2
+	echo "Usage: $SCRIPTNAME {start|stop|restart|force-reload}" >&2
+	exit 3
 	;;
 esac
 
-exit 0
+:
