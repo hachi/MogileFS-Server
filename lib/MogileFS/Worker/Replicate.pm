@@ -249,7 +249,7 @@ sub replicate_using_devcounts {
     my $sto = Mgd::get_store();
     return 0 unless $sto->isa("MogileFS::Store::MySQL");
 
-    # call this $mdbh to indiciate it's a MySQL dbh, and to help grepping
+    # call this $mdbh to indicate it's a MySQL dbh, and to help grepping
     # for old handles.  :)
     my $mdbh = $sto->dbh;
 
@@ -400,7 +400,7 @@ sub rebalance_devfid {
     # bail out early if this FID is no longer in the namespace (weird
     # case where file is in file_on because not yet deleted, but
     # has been replaced/deleted in 'file' table...).  not too harmful
-    # (just nosiy) if thise line didn't exist, but whatever... it
+    # (just noisy) if this line didn't exist, but whatever... it
     # makes stuff cleaner on my intentionally-corrupted-for-fsck-testing
     # dev machine...
     return 1 if ! $fid->exists;
@@ -433,7 +433,7 @@ sub rebalance_devfid {
         # lost the race because the replication policy said there's
         # nothing to do, even with this devfid masked away.
         # so let's figure it out... if this devfid still exists,
-        # we're overreplicated, else we just lost the race.
+        # we're over-replicated, else we just lost the race.
         if ($devfid->exists) {
             # over-replicated
 
@@ -596,7 +596,7 @@ sub replicate {
 
         last if $rr->is_happy;
 
-        my @ddevs;  # dest devs, in order of preferrence
+        my @ddevs;  # dest devs, in order of preference
         my $ddevid; # dest devid we've chosen to copy to
         if (@ddevs = $rr->copy_to_one_of_ideally) {
             if (my @not_masked_ids = (grep { ! $mask_devids->{$_} &&

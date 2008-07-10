@@ -1,7 +1,7 @@
--- if run out filedescriptors in mogilefsd, mogilefsd shouldn't crash.  it might
+-- if run out file descriptors in mogilefsd, mogilefsd shouldn't crash.  it might
    now.  needs a test.
 
--- change debug level at runtime from mgmt port, propogate to children.
+-- change debug level at runtime from mgmt port, propagate to children.
 
 -- MogileFS::Device ->make_directory on lighttpd isn't exactly right, as WebDAV
    spec says MKCOL on an existing directory should return 405 (Method Not Allowed),

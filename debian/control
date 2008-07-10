@@ -19,7 +19,7 @@ Depends: ${perl:Depends}, debhelper (>= 4.1.40), libdbd-mysql-perl, libdbi-perl,
 Suggests: mogilefs-utils
 Description: scalable distributed filesystem from Danga Interactive
  MogileFS is an open-source, application-level distributed filesystem. It
- creates a host-nuetral, filesystem-agnostic method of distributing files
+ creates a host-neutral, filesystem-agnostic method of distributing files
  that has many advantages over NFS and single-machine raid.  This set
  of utilities is very scalable and can handle Livejournal.com's load, for
  which it was designed.

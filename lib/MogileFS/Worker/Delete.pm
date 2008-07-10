@@ -6,7 +6,7 @@ use base 'MogileFS::Worker';
 use MogileFS::Util qw(error);
 
 # we select 1000 but only do a random 100 of them, to allow
-# for stateless paralleism
+# for stateless parallelism
 use constant LIMIT => 1000;
 use constant PER_BATCH => 100;
 
@@ -77,7 +77,7 @@ sub process_tempfiles {
 
     # BUT NOTE:
     #    the fids might exist on one of the devices in devids column if we assigned them those,
-    #    they wrote some to one of them, then they died or for wahtever reason didn't create_close
+    #    they wrote some to one of them, then they died or for whatever reason didn't create_close
     #    to use, so we shouldn't delete from tempfile before going on a hunt of the missing fid.
     #    perhaps we should just add to the file_on table for both devids, and let the regular delete
     #    process discover via 404 that they're not there.

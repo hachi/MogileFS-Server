@@ -1,5 +1,5 @@
 name:      MogileFS-Server
-summary:   MoilgeFS-Server - MogileFS Server daemons and utilities.
+summary:   MogileFS-Server - MogileFS Server daemons and utilities.
 version:   2.17
 release:   1
 vendor:    Brad Fitzpatrick <brad@danga.com>

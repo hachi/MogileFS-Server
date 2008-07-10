@@ -65,7 +65,7 @@ ok(!$alive, "gone");
 # dies when not able to find
 sub exist_pid {
     unless (`netstat -nap --inet` =~ m!127\.0\.1\.1:750[10].+LISTEN\s+(\d+)/!) {
-        die "Could't find pid of daemonized process.\n";
+        die "Couldn't find pid of daemonized process.\n";
     }
     return $1;
 }

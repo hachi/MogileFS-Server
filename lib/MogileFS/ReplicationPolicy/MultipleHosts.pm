@@ -32,7 +32,7 @@ sub replicate_to {
 
     # this is the per-class mindevcount (the old way), which is passed in automatically
     # from the replication worker.  but if we have our own configured mindevcount
-    # in class.replpolicy, like "MultipleHosts(3)", then we use the explciit one. otherwise,
+    # in class.replpolicy, like "MultipleHosts(3)", then we use the explicit one. otherwise,
     # if blank, or zero, like "MultipleHosts()", then we use the builtin on
     my $min      = delete $args{min};
     $min         = $self->{mindevcount} || $min;

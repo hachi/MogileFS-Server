@@ -1,6 +1,6 @@
 mogilefs-server (1.00-2) unstable; urgency=low
 
-  * fix dataloss bug when the 'tempfile' table is Innodb and the
+  * fix data loss bug when the 'tempfile' table is InnoDB and the
     server is restarted while the tempfile table is empty.
 
  -- Pavel Skaldin <pskaldin@sixapart.com>  Thu,  2 Mar 2006 17:12:51 -0800

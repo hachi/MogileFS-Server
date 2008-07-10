@@ -328,7 +328,7 @@ sub insert_ignore {
         if ($@ || $dbh->err) {
             return 1 if $self->was_duplicate_error;
             # This chunk is identical to condthrow, but we include it directly
-            # here as we know there is definetly an error, and we would like
+            # here as we know there is definitely an error, and we would like
             # the caller of this function.
             my ($pkg, $fn, $line) = caller;
             my $msg = "Database error from $pkg/$fn/$line: " . $dbh->errstr;
@@ -595,7 +595,7 @@ sub TABLE_file_to_replicate {
     # nexttry is time to try to replicate it next.
     #   0 means immediate.  it's only on one host.
     #   1 means lower priority.  it's on 2+ but isn't happy where it's at.
-    #   unixtimestamp means at/after that time.  some previous error occurred.
+    #   unix timestamp means at/after that time.  some previous error occurred.
     # fromdevid, if not null, means which devid we should replicate from.  perhaps it's the only non-corrupt one.  otherwise, wherever.
     # failcount.  how many times we've failed, just for doing backoff of nexttry.
     # flags.  reserved for future use.
@@ -1002,7 +1002,7 @@ sub rename_file {
                  undef, $to_key, $fidid);
     };
     if ($@ || $dbh->err) {
-        # first is mysql's error code for duplicates
+        # first is MySQL's error code for duplicates
         if ($self->was_duplicate_error) {
             return 0;
         } else {
@@ -1475,7 +1475,7 @@ sub random_fids_on_device {
     my $dbh = $self->dbh;
 
     # FIXME: this blows. not random.  and good chances these will
-    # eventually get to point where they're un-rebalanacable, and we
+    # eventually get to point where they're un-rebalance-able, and we
     # never move on past the first 5000
     my @some_fids = List::Util::shuffle(@{
         $dbh->selectcol_arrayref("SELECT fid FROM file_on WHERE devid=? LIMIT 5000",

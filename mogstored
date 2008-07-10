@@ -168,7 +168,7 @@ sub load_config_file {
     my ($conffile, $opts) = @_;
 
     # parse the mogstored config file, which is just lines of comments and
-    # "key = value" lines, where keys are just the same as commandline
+    # "key = value" lines, where keys are just the same as command line
     # options.
     die "Config file $opt_config doesn't exist.\n" unless -e $conffile;
     open my $fh, $conffile or die "Couldn't open config file for reading: $!";
@@ -213,7 +213,7 @@ sub start_fidsizes_worker {
         $class->exec;
     });
 
-    # old Gearman::Servers didn't return pid integegers
+    # old Gearman::Servers didn't return pid integers
     if ($pid =~ /^\d+$/) {
         Mogstored->on_pid_death($pid, \&start_fidsizes_worker);
     }

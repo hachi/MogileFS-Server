@@ -59,7 +59,7 @@ sub temp_fail {
 }
 
 # returns array of MogileFS::Device objs, in preferred order, one of
-# which (but not multiple) would satisify the replication policy
+# which (but not multiple) would satisfy the replication policy
 # for its next step.  at which point the replication policy needs
 # to be asked again what the next step is.
 sub copy_to_one_of_ideally {

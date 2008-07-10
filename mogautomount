@@ -112,7 +112,7 @@ to the underlying filesystem.
 
 0 on success or inaction because no action needed to happen.
 
-1 on partial failure (some mounts succeeed).
+1 on partial failure (some mounts succeed).
 
 2 on total failure (things had to be done, but nothing was).
 

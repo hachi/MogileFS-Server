@@ -20,7 +20,7 @@ is(rr("min=2  h1[d1=X d2=_] h2[d3=X d4=_]"),
 is(rr("min=2  h1[d1=X d2=_] h2[d3=_ d4=_]"),
    "ideal(3,4)", "need host2");
 
-# still needs to be on host2, even though 2 coies on host1
+# still needs to be on host2, even though 2 copies on host1
 is(rr("min=2  h1[d1=X d2=X] h2[d3=_ d4=_]"),
    "ideal(3,4)", "need host2, even though 2 on host1");
 

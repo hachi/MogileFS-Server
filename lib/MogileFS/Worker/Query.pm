@@ -250,7 +250,7 @@ sub cmd_create_open {
     }
 
     # find suitable device(s) to put this file on.
-    my @dests; # MogileFS::Device objects which are suitabke
+    my @dests; # MogileFS::Device objects which are suitable
 
     while (scalar(@dests) < ($multi ? 3 : 1)) {
         my $ddev = shift @devices;
@@ -737,7 +737,7 @@ sub cmd_create_host {
 
     my $host = MogileFS::Host->of_hostname($hostname);
 
-    # if we're createing a new host, require ip/port, and default to
+    # if we're creating a new host, require ip/port, and default to
     # host being down if client didn't specify
     if ($args->{update}) {
         return $self->err_line('host_not_found') unless $host;
@@ -1161,7 +1161,7 @@ sub cmd_set_state {
     return $self->ok_line;
 }
 
-# FIXME: this whole thing is gross, duplicative, dependendent on $dbh, and doesn't scale.
+# FIXME: this whole thing is gross, duplicative, dependent on $dbh, and doesn't scale.
 # stats needs total overhaul to not suck.
 sub cmd_stats {
     my MogileFS::Worker::Query $self = shift;
@@ -1266,7 +1266,7 @@ sub cmd_stats {
         $ret->{"devicescount"} = $count;
     }
 
-    # now fid statitics
+    # now fid statistics
     if ($args->{fids} || $args->{all}) {
         my $max = $dbh->selectrow_array('SELECT MAX(fid) FROM file');
         $ret->{"fidmax"} = $max;
@@ -1479,7 +1479,7 @@ sub cmd_fsck_status {
         $ret->{"num_$1"} += $ss->{$k};
     }
 
-    # add in any stats which might not've been summarized yet.,,
+    # add in any stats which might have not been summarized yet.,,
     my $max_logid = $sto->max_fsck_logid;
     my $min_logid = MogileFS::Util::max($intss->("fsck_start_maxlogid"),
                                         $max_logid - ($max_logid % $sto->fsck_log_summarize_every)) + 1;
@@ -1519,10 +1519,10 @@ sub err_line {
         'after_mismatch' => "Pattern does not match the after-value?",
         'bad_params' => "Invalid parameters to command; please see documentation",
         'class_exists' => "That class already exists in that domain",
-        'class_has_files' => "Class still has files, uanble to delete",
+        'class_has_files' => "Class still has files, unable to delete",
         'class_not_found' => "Class not found",
         'db' => "Database error",
-        'domain_has_files' => "Domain still has files, uanble to delete",
+        'domain_has_files' => "Domain still has files, unable to delete",
         'domain_exists' => "That domain already exists",
         'domain_not_empty' => "Domain still has classes, unable to delete",
         'domain_not_found' => "Domain not found",

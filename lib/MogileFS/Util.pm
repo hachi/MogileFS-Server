@@ -122,7 +122,7 @@ sub daemonize {
     croak "Cannot detach from controlling terminal"
         unless $sess_id = POSIX::setsid();
 
-    ## Prevent possibility of acquiring a controling terminal
+    ## Prevent possibility of acquiring a controlling terminal
     $SIG{'HUP'} = 'IGNORE';
     if ($pid = fork) { exit 0; }
 
@@ -139,7 +139,7 @@ sub daemonize {
     close(STDOUT);
     close(STDERR);
 
-    ## Reopen stderr, stdout, stdin to /dev/null
+    ## Reopen STDERR, STDOUT, STDIN to /dev/null
     if ( $MogileFS::DEBUG ) {
         open(STDIN,  "+>/tmp/mogilefsd.log");
     } else {

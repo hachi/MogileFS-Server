@@ -1,4 +1,6 @@
-        * Postgres locking routines did not include the hostname for the lock
+        * Many spelling errors corrected.
+
+        * PostGres locking routines did not include the hostname for the lock
           release.
 
         * RFC 2518 says we "should" use a trailing slash when calling
@@ -11,7 +13,7 @@
 
         * Fix MultipleHosts replication policy to no longer return desperate
           devices after no longer being desperate, instead returning a state
-          which will queue for retries in the future till it can be truely
+          which will queue for retries in the future till it can be truly
           happy. This prevents files from being replicated to all writable
           devs when there are two few writable hosts to satisfy the policy.
 
@@ -77,12 +79,12 @@
 
         * Add a safety check to ensure that Postgresql-8.2 or newer is used.
 
-        * Update mogdbsetup usage, and ensure it choses the correct admin
+        * Update mogdbsetup usage, and ensure it chooses the correct admin
           username automatically.
 
         * Document the --type option to mogdbsetup.
 
-        * Introduce the Postgres Store implementation. The locking system might
+        * Introduce the PostGres Store implementation. The locking system might
           still have issues, beware of stale locks! Initial prototype by Radu
           Greab <rg@yx.ro>, and developed heavily by Robin H. Johnson
           <robbat2@gentoo.org>.
@@ -99,13 +101,13 @@
           printf stuff works nicely.
 
         * The unix_timestamp function belongs to the Store, not other classes.
-          Need to add testcases for process_deletes and stats.
+          Need to add test cases for process_deletes and stats.
 
         * Using NULL during an INSERT for the AUTO_INCREMENT column does not
           work very well outside of MySQL. Pass the correct number of arguments
           to the INSERT instead.
 
-        * Clean up all raw usages of UNIX_TIMETAMP() function, in preparation
+        * Clean up all raw usages of UNIX_TIMESTAMP() function, in preparation
           for database independence. If you need the unix timestamp, include the output
           of $self->unix_timestamp directly into your query.
 
@@ -138,7 +140,7 @@
         * Fix get_paths to honor new device state of 'drain' via new
           DeviceStates interface.
 
-        * use signifigantly less CPU when re-broadcasting around
+        * use significantly less CPU when re-broadcasting around
           iostat device utilization% to child processes.  (future:
           don't rebroadcast at all and use shared memory)
 
@@ -279,7 +281,7 @@
           incomplete "Fsck" worker.
 
         * test cleanup/robustness improvements.  properly skips testing when
-          testin deps not found.  but searches harder for them now, too.
+          testing deps not found.  but searches harder for them now, too.
           tests run under "make disttest".
 
         * packaging cleanups, released using ShipIt.
@@ -300,7 +302,7 @@
         * mogilefsd: memcache support for get_paths (see doc/memcache-support.txt)
 
 2007-03-16:
-        * mogstored: make child processes be exec'ed (as as their own scripts, not inhertting
+        * mogstored: make child processes be exec'ed (as as their own scripts, not inheriting
           Perlbal, Linux::AIO/IO::AIO, etc baggage).  so they don't own listening
           sockets, pipes to child workers, signal handlers, etc.  just a lot
           cleaner now, and SIGTERM, SIGINT properly shut everything down now,
@@ -354,7 +356,7 @@
         * mogilefsd: major refactoring/cleanup/new features ("MogileFS 2.0")
 
 2006-03-01 (Brad)
-        * mogilefsd: fix dataloss bug when the 'tempfile' table is Innodb and the
+        * mogilefsd: fix dataloss bug when the 'tempfile' table is InnoDB and the
            server is restarted while the tempfile table is empty.
 
 2006-02-28 (Jr)

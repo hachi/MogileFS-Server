@@ -221,7 +221,7 @@ sub invalidate_meta {
 }
 
 # tries to parse generic (not job-specific) commands sent from parent
-# to child.  returns 1 on success, or 0 if comman given isn't generic,
+# to child.  returns 1 on success, or 0 if command given isn't generic,
 # and child should parse.
 # lineref doesn't have \r\n at end.
 sub process_generic_command {

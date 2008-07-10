@@ -5,7 +5,7 @@ load on the database.
 After years of saying it's stupid, I finally implemented it, but I
 still maintain it's (usually) stupid.
 
-Reall, you should cache get_paths requests in your application,
+Really, you should cache get_paths requests in your application,
 avoiding an extra round-trip to the trackers that could be avoided on
 a cache hit.
 
@@ -27,7 +27,7 @@ To use memcached support on get_paths requests, telnet to one of your trackers a
 
     set_server_setting key=memcache_servers&value=127.0.0.1:11211
 
-(where value is a comman-separated list, if you have multiple)
+(where value is a comma-separated list, if you have multiple)
 
 And then all future get_paths requests with noverify=1 (which now
 doubles as the "memcached is okay" flag) will use memcache.

@@ -11,7 +11,7 @@ use MogileFS::Server;
 BEGIN {
     $ENV{TESTING} = 1;
     $ENV{T_FAKE_IO_DEV1} = 95; # Simulating high device load (should get fewer requests).
-    $ENV{T_FAKE_IO_DEV2} = 5;  # Simulating low device load (shoudld get more requests).
+    $ENV{T_FAKE_IO_DEV2} = 5;  # Simulating low device load (should get more requests).
 }
 
 use MogileFS::Test;

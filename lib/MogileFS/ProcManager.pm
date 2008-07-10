@@ -8,7 +8,7 @@ use MogileFS::Connection::Client;
 use MogileFS::Connection::Worker;
 
 # This class handles keeping lists of workers and clients and
-# assigning them to eachother when things happen.  You don't actually
+# assigning them to each other when things happen.  You don't actually
 # instantiate a procmanager.  the class itself holds all state.
 
 # Mappings: fd => [ clientref, jobstring, starttime ]
@@ -531,7 +531,7 @@ Mogilefsd admin commands:
 
     !replication
                 (Deprecated/old)
-                See the replication status for unreplicated files.
+                See the replication status for un-replicated files.
                 Output format:
                 <domain> <class> <devcount> <files>
 
@@ -577,7 +577,7 @@ sub HandleChildRequest {
 
     } elsif ($cmd =~ /^:repl_unreachable (\d+)/) {
         # announce to the other replicators that this fid can't be reached, but note
-        # that we don't actually drain the queue to the requestor, as the replicator
+        # that we don't actually drain the queue to the requester, as the replicator
         # isn't in a place where it can accept a queue drain right now.
         MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_unreachable $1", $child);
 

@@ -23,7 +23,7 @@ sub set_config {
     shift if @_ == 3;
     my ($k, $v) = @_;
 
-    # if a child, propogate to parent
+    # if a child, propagate to parent
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->send_to_parent(":set_config_from_child $k $v");
     } else {
@@ -131,7 +131,7 @@ sub load_config {
     }
 
     # Fill in defaults for those values which were either loaded from config or
-    # specified on the command line. Command line takes precendence, then values in
+    # specified on the command line. Command line takes precedence, then values in
     # the config file, then the defaults.
     $daemonize      = choose_value( 'daemonize', 0 );
     $db_dsn         = choose_value( 'db_dsn', "DBI:mysql:mogilefs" );

@@ -124,7 +124,7 @@ sub size {
     my $self = shift;
     my ($host, $port, $uri, $path) = map { $self->{$_} } qw(host port uri url);
 
-    # don't sigpipe us
+    # don't SIGPIPE us
     my $flag_nosignal = MogileFS::Sys->flag_nosignal;
     local $SIG{'PIPE'} = "IGNORE" unless $flag_nosignal;
 

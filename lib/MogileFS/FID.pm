@@ -149,7 +149,7 @@ sub rename {
 
 # returns array of devids that this fid is on
 # NOTE: TODO: by default, this doesn't cache.  callers might be surprised from
-#   having an old version later on.  before caching is added, auditting needs
+#   having an old version later on.  before caching is added, auditing needs
 #   to be done.
 sub devids {
     my $self = shift;

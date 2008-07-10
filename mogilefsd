@@ -102,6 +102,6 @@ Same terms as Perl itself.  Artistic/GPLv2, at your choosing.
 
 =head1 SEE ALSO
 
-L<mogstored> -- MogilefS storage daemon
+L<mogstored> -- MogileFS storage daemon
 
 L<http://danga.com/mogilefs/>

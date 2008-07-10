@@ -25,7 +25,7 @@ $ psql -Upostgres
 
 Manual tests
 ============
-If you only want to run some part of the testsuite, or you want detailed
+If you only want to run some part of the test suite, or you want detailed
 output as to why a test failed, you can run as follows:
 $ MOGTEST_DBTYPE=<dbtype> perl -Ilib t/<foobar>.t
 Where dbtype is one of MySQL (default), PostGres.

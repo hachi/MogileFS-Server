@@ -93,7 +93,7 @@ sub event_read {
     }
 }
 
-# stop watching writability if we've nothing else to
+# stop watching writeability if we've nothing else to
 # write to them.  else just kick off more writes.
 sub event_write {
     my $self = shift;

@@ -38,11 +38,11 @@ __END__
 
 =head1 NAME
 
-MogileFS::ReplicationPolicy::Union -- satisify 2 or more replication policies
+MogileFS::ReplicationPolicy::Union -- satisfy 2 or more replication policies
 
 =head1 RULES
 
-Use this replication policy to satisify multiple replication policies.
+Use this replication policy to satisfy multiple replication policies.
 For instance:
 
     Union(MultipleHosts(3), OnDevice(7))

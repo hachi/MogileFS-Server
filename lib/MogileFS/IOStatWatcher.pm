@@ -26,7 +26,7 @@ sub new {
 Sets the list of hosts to connect to for collecting IOStat information. This call can block if you
 pass it hostnames instead of ip addresses.
 
-Upon successfull connection, the on_stats callback will be called each time the statistics are
+Upon successful connection, the on_stats callback will be called each time the statistics are
 collected. Error states (failed connections, etc.) will trigger retries on 60 second intervals, and
 disconnects will trigger an immediate reconnect.
 

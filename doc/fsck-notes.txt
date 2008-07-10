@@ -28,7 +28,7 @@ CREATE TABLE fsck (
 # todo:  replication policy saying "not quite happy" goes into "needs_replicate" table for to-be-fixed-later
 # todo: stat command to get count of rows in needs_replicate  (!repl replacement)
 
-# provide command to drop fsck table to force global reindexing
+# provide command to drop fsck table to force global re-indexing
 # interface from fsck job to replicate job.  or do it ourselves sharing code.  (probably sharing code)
 # perhaps command-line version is just running:
 #    mogilefsd --run-only-job=fsck --foreground --verbose
