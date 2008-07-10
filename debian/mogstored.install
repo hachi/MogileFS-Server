@@ -1,0 +1,5 @@
+usr/bin/mogautomount			/usr/bin
+usr/bin/mogstored			/usr/bin
+usr/share/man/man1/mogautomount.1p	/usr/share/man/man1
+usr/share/man/man1/mogstored.1p		/usr/share/man/man1
+usr/share/perl5/Mogstored		/usr/share/perl5
