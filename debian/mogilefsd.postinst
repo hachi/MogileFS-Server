@@ -15,7 +15,7 @@ case "$1" in
 	if [ ! -e /etc/mogilefs/mogilefsd.conf ]
 		then
 			mkdir -p /etc/mogilefs
-			cp /usr/share/mogilefsd/mogilefsd.conf.default /etc/mogilefs/mogilefsd.conf
+			cp /usr/share/doc/mogilefsd/examples/mogilefsd.conf /etc/mogilefs/mogilefsd.conf
 	fi
 
   ;;

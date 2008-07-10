@@ -13,7 +13,7 @@ case "$1" in
 	if [ ! -e /etc/mogilefs/mogstored.conf ]
 		then
 			mkdir -p /etc/mogilefs
-			cp /usr/share/mogstored/mogstored.conf.default /etc/mogilefs/mogstored.conf
+			cp /usr/share/doc/mogstored/examples/mogstored.conf /etc/mogilefs/mogstored.conf
 
 		db_get $PKG/docroot
 		MOGSTORED_DOCROOT=$RET
