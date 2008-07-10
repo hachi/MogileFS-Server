@@ -167,7 +167,7 @@ sub check_device {
     # function caches what it's already created.
     $dev->create_directory("/dev$devid/test-write");
 
-    my $num = int(rand 10000);  # this was "$$-$now" before, but we don't yet have a cleaner in mogstored for these files
+    my $num = int(rand 100);  # this was "$$-$now" before, but we don't yet have a cleaner in mogstored for these files
     my $puturl = "http://$hostip:$port/dev$devid/test-write/test-write-$num";
     my $content = "time=$now rand=$num";
     my $req = HTTP::Request->new(PUT => $puturl);
