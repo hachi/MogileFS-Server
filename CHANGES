@@ -1,3 +1,5 @@
+        * Specify username to run the mogstored daemon (Jonathan Share)
+
         * Many spelling errors corrected.
 
         * PostGres locking routines did not include the hostname for the lock

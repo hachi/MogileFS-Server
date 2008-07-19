@@ -14,6 +14,7 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 DAEMON=/usr/bin/mogstored
 NAME=mogstored
 DESC=mogstored
+DEFAULTS=/etc/default/$NAME
 PIDFILE=/var/run/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME
 
@@ -21,7 +22,20 @@ SCRIPTNAME=/etc/init.d/$NAME
 [ -x "$DAEMON" ] || exit 0
 
 # Read configuration variable file if it is present
-[ -r /etc/default/$NAME ] && . /etc/default/$NAME
+if [ -r $DEFAULTS ] ; then
+
+    . $DEFAULTS
+
+    if [ -z "$MOGSTORED_RUNASUSER" ]; then
+        echo "Cannot determine user to run as, even though defaults file ($DEFAULTS) exists."
+        echo "Please run dpkg-reconfigure $NAME to correct the problem."
+        exit 0
+    fi
+else
+    echo "Can't start $NAME. Defaults file ($DEFAULTS) doesn't exist."
+    echo "Please run dpkg-reconfigure $NAME to correct the problem."
+    exit 0
+fi
 
 # Load the VERBOSE setting and other rcS variables
 . /lib/init/vars.sh
@@ -35,7 +49,7 @@ do_start()
 {
 	if [ -e $PIDFILE ]
 		then
-		
+
 		if [ -d /proc/`cat $PIDFILE`/ ]
 		then
 
@@ -47,7 +61,7 @@ do_start()
 
 	fi
 
-	start-stop-daemon --start --quiet --exec $DAEMON --pidfile $PIDFILE -b -m --name $NAME
+	start-stop-daemon --start --quiet --exec $DAEMON --pidfile $PIDFILE -b -m --name $NAME --chuid $MOGSTORED_RUNASUSER
 }
 
 #
@@ -55,7 +69,7 @@ do_start()
 #
 do_stop()
 {
-	start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE --name $NAME
+	start-stop-daemon --stop --quiet --oknodo --pidfile $PIDFILE --name $NAME --user $MOGSTORED_RUNASUSER
 	rm -f $PIDFILE
 }
 

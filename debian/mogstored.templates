@@ -3,3 +3,11 @@ Type: string
 _Default: /var/mogdata
 _Description: Document root for mogstored:
  The mogstored daemon needs a directory for the root of its filetree.
+
+Template: mogstored/runasuser
+Type: string
+_Default: mogstored
+_Description: User to run mogstored as:
+ The mogstored storage daemon cannot be run as root. What user should it be
+ run as? This user will be created for you as a system user if it does not
+ yet exist.
