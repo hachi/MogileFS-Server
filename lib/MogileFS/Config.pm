@@ -64,6 +64,7 @@ our (
     $node_timeout,          # time in seconds to wait for storage node responses
     $old_repl_compat,
     $pidfile,
+    $repl_use_get_port,
    );
 
 my $default_mindevcount;
@@ -96,6 +97,7 @@ sub load_config {
                              'no_schema_check' => \$cmdline{no_schema_check},
                              'old_repl_compat=i' => \$cmdline{old_repl_compat},
                              'plugins=s@'        => \$cmdline{plugins},
+                             'repl_use_get_port=i' => \$cmdline{repl_use_get_port},
                              );
 
     # warn of old/deprecated options
@@ -158,6 +160,7 @@ sub load_config {
 
     $old_repl_compat = choose_value( 'old_repl_compat', 1 );
     choose_value( 'rebalance_ignore_missing', 0 );
+    $repl_use_get_port = choose_value( 'repl_use_get_port', 0 );
 
     choose_value( 'no_schema_check', 0 );
 

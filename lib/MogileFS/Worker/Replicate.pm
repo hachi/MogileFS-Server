@@ -778,6 +778,9 @@ sub http_copy {
     my ($shost, $dhost) = (map { $_->host     } ($sdev, $ddev));
 
     my ($shostip, $sport) = ($shost->ip, $shost->http_port);
+    if (MogileFS::Config->config("repl_use_get_port")) {
+        $sport = $shost->http_get_port;
+    }
     my ($dhostip, $dport) = ($dhost->ip, $dhost->http_port);
     unless (defined $spath && defined $dpath && defined $shostip && defined $dhostip && $sport && $dport) {
         # show detailed information to find out what's not configured right
