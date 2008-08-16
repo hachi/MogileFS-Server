@@ -1,3 +1,9 @@
+        * Add repl_use_get_port option (Brian Lynch)
+
+        * Remove tempfile data and rows on create_close (Chaos Wang)
+
+        * Don't delete files accidentally during tempfile table cleanup
+
         * Specify username to run the mogstored daemon (Jonathan Share)
 
         * Many spelling errors corrected.
