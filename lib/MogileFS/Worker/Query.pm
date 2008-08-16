@@ -371,6 +371,7 @@ sub cmd_create_close {
     # if a temp file is closed without a provided-key, that means to
     # delete it.
     unless (defined $key && length($key)) {
+        $dfid->add_to_db;
         $fid->delete;
         return $self->ok_line;
     }
