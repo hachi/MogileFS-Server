@@ -98,7 +98,17 @@ sub process_tempfiles {
     # now expunged (or soon to be) rows from tempfile
     my (@devfids, @fidids);
     foreach my $row (@$tempfiles) {
-        push @fidids, $row->[0];
+
+        # If FID is still loadable, we've arrived here due to a bug or race
+        # condition elsewhere. Remove the tempfile row but don't delete the
+        # file!
+        my $fidid = $row->[0];
+        my $fid = MogileFS::FID->new($fidid);
+        if ($fid->exists) {
+            $sto->delete_tempfile_row($fidid);
+            next;
+        }
+        push @fidids, $fidid;
 
         # sanity check the string column.
         my $devids = $row->[1];
@@ -110,6 +120,9 @@ sub process_tempfiles {
             push @devfids, MogileFS::DevFID->new($devid, $row->[0]);
         }
     }
+
+    # We might've done no work due to discovering the tempfiles are real.
+    return 0 unless @fidids;
 
     $sto->mass_insert_file_on(@devfids);
     $sto->enqueue_fids_to_delete(@fidids);
