@@ -1,6 +1,4 @@
-steps = FindVersion, ChangeVersion, ChangeRPMVersion, CheckChangeLog, DistTest, Commit, Tag, MakeDist, UploadCPAN, AddToSVNDir
+steps = FindVersion, ChangeVersion, ChangeRPMVersion, CheckChangeLog, DistTest, Commit, Tag, MakeDist, UploadCPAN
 
 svn.tagpattern = mogilefs-server-%v
-
-AddToSVNDir.dir = /home/lj/cvs/web-danga/dist/MogileFS/server
 
