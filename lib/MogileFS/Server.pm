@@ -2,7 +2,7 @@ package MogileFS::Server;
 use strict;
 use warnings;
 use vars qw($VERSION);
-$VERSION = "2.17";
+$VERSION = "2.18";
 
 =head1 NAME
 

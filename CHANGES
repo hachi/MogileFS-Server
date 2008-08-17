@@ -1,3 +1,5 @@
+2008-08-16: Release version 2.18
+
         * Add repl_use_get_port option (Brian Lynch)
 
         * Remove tempfile data and rows on create_close (Chaos Wang)
