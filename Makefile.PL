@@ -37,7 +37,7 @@ WriteMakefile(
     EXTRA_META              => <<'EXTRA',
 no_index:
     directory:
-        - mogdeps
+        - lib/mogdeps
     package:
         - ProcessHandle
         - TrackerHandle
