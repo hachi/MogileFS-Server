@@ -1,6 +1,6 @@
 name:      MogileFS-Server
 summary:   MogileFS-Server - MogileFS Server daemons and utilities.
-version:   2.19
+version:   2.20
 release:   1
 vendor:    Brad Fitzpatrick <brad@danga.com>
 packager:  Jonathan Steinert <hachi@cpan.org>
