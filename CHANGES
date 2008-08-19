@@ -1,3 +1,8 @@
+2008-08-18: Release version 2.19
+
+        * No changes except for META.yml fixes.
+          _should_ be able to upload releases without owning half of CPAN.
+
 2008-08-16: Release version 2.18
 
         * Add repl_use_get_port option (Brian Lynch)
