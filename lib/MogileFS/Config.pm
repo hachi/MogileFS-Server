@@ -313,6 +313,7 @@ sub server_setting_is_writable {
         foreach my $n (@ns) {
             $valid_netmask->($n);
         }
+        return $_[0];
     };
 
     # let slave settings go through unmodified, for now.
