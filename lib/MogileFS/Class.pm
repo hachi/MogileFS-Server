@@ -65,19 +65,6 @@ sub reload_classes {
         $cl->{_loaded} = 0;
     });
 
-    foreach my $row (Mgd::get_store()->get_all_classes) {
-        my $cl =
-            ($singleton{$row->{dmid}}{$row->{classid}} =
-             bless {
-                 dmid        => $row->{dmid},
-                 classid     => $row->{classid},
-                 name        => $row->{classname},
-                 mindevcount => $row->{mindevcount},
-                 replpolicy  => $row->{replpolicy}, 
-             }, $pkg);
-        $cl->{_loaded} = 1;
-    }
-
     # install the default classes (classid=0)
     my $default_min = MogileFS->config('default_mindevcount');
     foreach my $dom (MogileFS::Domain->domains) {
@@ -91,6 +78,19 @@ sub reload_classes {
                  mindevcount => $default_min,
              }, $pkg);
             $cl->{_loaded} = 1;
+    }
+
+    foreach my $row (Mgd::get_store()->get_all_classes) {
+        my $cl =
+            ($singleton{$row->{dmid}}{$row->{classid}} =
+             bless {
+                 dmid        => $row->{dmid},
+                 classid     => $row->{classid},
+                 name        => $row->{classname},
+                 mindevcount => $row->{mindevcount},
+                 replpolicy  => $row->{replpolicy}, 
+             }, $pkg);
+        $cl->{_loaded} = 1;
     }
 
     # delete any singletons that weren't just loaded
