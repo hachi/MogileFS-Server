@@ -115,6 +115,11 @@ sub WatchDog {
         my $healthy = $child->watchdog_check;
         next if $healthy;
 
+        # special $todie level of 2 means the watchdog tried to kill it.
+        # TODO: Should be a CONSTANT?
+        next if $todie{$pid} == 2;
+        note_pending_death($child->job, $pid, 2);
+
         error("Watchdog killing worker $pid (" . $child->job . ")");
         kill 9, $pid;
     }
@@ -134,30 +139,33 @@ sub PostEventLoopChecker {
         MogileFS::ProcManager->WatchDog;
 
         # see if anybody has died, but don't hang up on doing so
-        my $pid = waitpid -1, WNOHANG;
-        return 1 if $pid <= 0 && $allkidsup;
-        $allkidsup = 0; # know something died
+        while(my $pid = waitpid -1, WNOHANG) {
+            last unless $pid > 0;
+            $allkidsup = 0; # know something died
 
-        # when a child dies, figure out what it was doing
-        # and note that job has one less worker
-        my $jobconn;
-        if ($pid > -1 && ($jobconn = delete $child{$pid})) {
-            my $job = $jobconn->job;
-            my $extra = $todie{$pid} ? "expected" : "UNEXPECTED";
-            error("Child $pid ($job) died: $? ($extra)");
-            MogileFS::ProcManager->NoteDeadChild($pid);
-            $jobconn->close;
+            # when a child dies, figure out what it was doing
+            # and note that job has one less worker
+            my $jobconn;
+            if (($jobconn = delete $child{$pid})) {
+                my $job = $jobconn->job;
+                my $extra = $todie{$pid} ? "expected" : "UNEXPECTED";
+                error("Child $pid ($job) died: $? ($extra)");
+                MogileFS::ProcManager->NoteDeadChild($pid);
+                $jobconn->close;
 
-            if (my $jobstat = $jobs{$job}) {
-                # if the pid is in %todie, then we have asked it to shut down
-                # and have already decremented the jobstat counter and don't
-                # want to do it again
-                unless (my $true = delete $todie{$pid}) {
-                    # decrement the count of currently running jobs
-                    $jobstat->[1]--;
+                if (my $jobstat = $jobs{$job}) {
+                    # if the pid is in %todie, then we have asked it to shut down
+                    # and have already decremented the jobstat counter and don't
+                    # want to do it again
+                    unless (my $true = delete $todie{$pid}) {
+                        # decrement the count of currently running jobs
+                        $jobstat->[1]--;
+                    }
                 }
             }
         }
+
+        return 1 if $allkidsup;
 
         # foreach job, fork enough children
         while (my ($job, $jobstat) = each %jobs) {
@@ -693,14 +701,17 @@ sub NoteDeadWorkerConn {
 }
 
 # given (job, pid), record that this worker is about to die
+# $level is so we can tell if watchdog requested the death.
 sub note_pending_death {
-    my ($job, $pid) = @_;
+    my ($job, $pid, $level) = @_;
 
     die "$job not defined in call to note_pending_death.\n"
         unless defined $jobs{$job};
 
-    $todie{$pid} = 1;
-    $jobs{$job}->[1]--;
+    $level ||= 1;
+    # don't double decrement.
+    $jobs{$job}->[1]-- unless $todie{$pid};
+    $todie{$pid} = $level;
 }
 
 # see if we should reduce the number of active children
