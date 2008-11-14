@@ -117,7 +117,7 @@ sub WatchDog {
 
         # special $todie level of 2 means the watchdog tried to kill it.
         # TODO: Should be a CONSTANT?
-        next if $todie{$pid} == 2;
+        next if $todie{$pid} && $todie{$pid} == 2;
         note_pending_death($child->job, $pid, 2);
 
         error("Watchdog killing worker $pid (" . $child->job . ")");
