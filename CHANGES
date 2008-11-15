@@ -1,3 +1,9 @@
+        * Add hook for alternate replication sources. Obscure, but can be
+          nice.
+
+        * Add replicate_order_final_choices hook, so multidc replication may
+          pull from the local network if one copy already exists.
+
         * Fix subtle bugs in process management.
 
         * Allow overriding of default classes.
