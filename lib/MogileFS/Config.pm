@@ -65,6 +65,7 @@ our (
     $old_repl_compat,
     $pidfile,
     $repl_use_get_port,
+    $local_network,
    );
 
 my $default_mindevcount;
@@ -98,6 +99,7 @@ sub load_config {
                              'old_repl_compat=i' => \$cmdline{old_repl_compat},
                              'plugins=s@'        => \$cmdline{plugins},
                              'repl_use_get_port=i' => \$cmdline{repl_use_get_port},
+                             'local_network=s' => \$cmdline{local_network},
                              );
 
     # warn of old/deprecated options
@@ -161,6 +163,7 @@ sub load_config {
     $old_repl_compat = choose_value( 'old_repl_compat', 1 );
     choose_value( 'rebalance_ignore_missing', 0 );
     $repl_use_get_port = choose_value( 'repl_use_get_port', 0 );
+    $local_network  = choose_value( 'local_network', '' );
 
     choose_value( 'no_schema_check', 0 );
 

@@ -650,7 +650,9 @@ sub replicate {
             # TODO: use an observed good device+host as source to start.
             my @choices = grep { ! $source_failed{$_} } @on_up_devid;
             return $retunlock->(0, "source_down", "No devices available replicating $fidid") unless @choices;
-            $sdevid = @choices[int(rand(scalar @choices))];
+            @choices = List::Util::shuffle(@choices);
+            MogileFS::run_global_hook('replicate_order_final_choices', $devs, \@choices);
+            $sdevid = shift @choices;
         }
 
         my $worker = MogileFS::ProcManager->is_child or die;
@@ -686,6 +688,7 @@ sub replicate {
 
         push @on_devs, $devs->{$ddevid};
         push @on_devs_tellpol, $devs->{$ddevid};
+        push @on_up_devid, $devs->{$ddevid};
     }
 
     if ($rr->is_happy) {
