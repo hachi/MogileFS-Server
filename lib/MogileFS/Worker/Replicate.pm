@@ -660,6 +660,7 @@ sub replicate {
                            sdevid       => $sdevid,
                            ddevid       => $ddevid,
                            fid          => $fidid,
+                           rfid         => $fid,
                            expected_len => undef,  # FIXME: get this info to pass along
                            errref       => \$copy_err,
                            callback     => sub { $worker->still_alive; },
@@ -731,10 +732,11 @@ sub peer_is_replicating {
 # copies a file from one Perlbal to another utilizing HTTP
 sub http_copy {
     my %opts = @_;
-    my ($sdevid, $ddevid, $fid, $expected_clen, $intercopy_cb, $errref) =
+    my ($sdevid, $ddevid, $fid, $rfid, $expected_clen, $intercopy_cb, $errref) =
         map { delete $opts{$_} } qw(sdevid
                                     ddevid
                                     fid
+                                    rfid
                                     expected_len
                                     callback
                                     errref
@@ -799,10 +801,21 @@ sub http_copy {
     my $pipe_closed = 0;
     local $SIG{PIPE} = sub { $pipe_closed = 1; };
 
+    # call a hook for odd casing completely different source data
+    # for specific files.
+    my $shttphost;
+    MogileFS::run_global_hook('replicate_alternate_source',
+                              $rfid, \$shostip, \$sport, \$spath, \$shttphost);
+
     # okay, now get the file
     my $sock = IO::Socket::INET->new(PeerAddr => $shostip, PeerPort => $sport, Timeout => 2)
         or return $src_error->("Unable to create source socket to $shostip:$sport for $spath");
-    $sock->write("GET $spath HTTP/1.0\r\n\r\n");
+    unless ($shttphost) {
+        $sock->write("GET $spath HTTP/1.0\r\n\r\n");
+    } else {
+        # plugin set a custom host.
+        $sock->write("GET $spath HTTP/1.0\r\nHost: $shttphost\r\n\r\n");
+    }
     return error("Pipe closed retrieving $spath from $shostip:$sport")
         if $pipe_closed;
 
