@@ -689,7 +689,7 @@ sub replicate {
 
         push @on_devs, $devs->{$ddevid};
         push @on_devs_tellpol, $devs->{$ddevid};
-        push @on_up_devid, $devs->{$ddevid};
+        push @on_up_devid, $ddevid;
     }
 
     if ($rr->is_happy) {
