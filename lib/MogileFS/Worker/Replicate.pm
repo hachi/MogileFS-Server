@@ -94,17 +94,19 @@ sub work {
         # FIXME: uh, what is this even used for nowadays?  it made more sense in mogilefs 1.x,
         # so maybe we kinda need it for compatibility?  but maybe we could ditch it here and
         # instead use the file_to_replicate table's row sat ENDOFTIME as meaning the same?
-        my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
-        die $dbh->errstr if $dbh->err;
-        foreach my $r (@{$urfids || []}) {
-            my $nv = $r->[1] + 900;
-            unless ($fidfailure{$r->[0]} && $fidfailure{$r->[0]} < $nv) {
-                # given that we might have set it below to a time past the unreachable
-                # 15 minute timeout, we want to only overwrite %fidfailure's idea of
-                # the expiration time if we are extending it
-                $fidfailure{$r->[0]} = $nv;
+        unless (MogileFS::Config->config("no_unreachable_tracking")) {
+            my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
+            die $dbh->errstr if $dbh->err;
+            foreach my $r (@{$urfids || []}) {
+                my $nv = $r->[1] + 900;
+                unless ($fidfailure{$r->[0]} && $fidfailure{$r->[0]} < $nv) {
+                    # given that we might have set it below to a time past the unreachable
+                    # 15 minute timeout, we want to only overwrite %fidfailure's idea of
+                    # the expiration time if we are extending it
+                    $fidfailure{$r->[0]} = $nv;
+                }
+                $unreachable{$r->[0]} = 1;
             }
-            $unreachable{$r->[0]} = 1;
         }
 
         my $idle = 1;
@@ -749,9 +751,11 @@ sub http_copy {
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error_unreachable = sub {
         my $worker = MogileFS::ProcManager->is_child;
-        $worker->send_to_parent(":repl_unreachable $fid");
 
-        MogileFS::FID->new($fid)->mark_unreachable;
+        unless (MogileFS::Config->config('no_unreachable_tracking')) {
+            $worker->send_to_parent(":repl_unreachable $fid");
+            MogileFS::FID->new($fid)->mark_unreachable;
+        }
 
         $$errref = "src_error" if $errref;
         return error("Fid $fid unreachable while replicating: $_[0]");

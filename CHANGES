@@ -1,3 +1,6 @@
+        * Add 'no_unreachable_tracking' config. Disables more of the old
+          replication code. Use this if you have no 1.x trackers.
+
         * Add hook for alternate replication sources. Obscure, but can be
           nice.
 

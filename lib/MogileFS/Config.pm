@@ -66,6 +66,7 @@ our (
     $pidfile,
     $repl_use_get_port,
     $local_network,
+    $no_unreachable_tracking,
    );
 
 my $default_mindevcount;
@@ -100,6 +101,7 @@ sub load_config {
                              'plugins=s@'        => \$cmdline{plugins},
                              'repl_use_get_port=i' => \$cmdline{repl_use_get_port},
                              'local_network=s' => \$cmdline{local_network},
+                             'no_unreachable_tracking' => \$cmdline{no_unreachable_tracking},
                              );
 
     # warn of old/deprecated options
@@ -164,6 +166,7 @@ sub load_config {
     choose_value( 'rebalance_ignore_missing', 0 );
     $repl_use_get_port = choose_value( 'repl_use_get_port', 0 );
     $local_network  = choose_value( 'local_network', '' );
+    $no_unreachable_tracking = choose_value( 'no_unreachable_tracking', 0 );
 
     choose_value( 'no_schema_check', 0 );
 
