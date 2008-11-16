@@ -7,7 +7,7 @@ use warnings;
 use base 'MogileFS::Worker';
 use fields qw(querystarttime reqid);
 use MogileFS::Util qw(error error_code first weighted_list
-                      device_state);
+                      device_state eurl decode_url_args);
 
 sub new {
     my ($class, $psock) = @_;
@@ -1561,35 +1561,6 @@ sub err_line {
 
     $self->send_to_parent("${id}${delay}ERR $err_code " . eurl($err_text));
     return 0;
-}
-
-sub eurl
-{
-    my $a = defined $_[0] ? $_[0] : "";
-    $a =~ s/([^a-zA-Z0-9_\,\-.\/\\\: ])/uc sprintf("%%%02x",ord($1))/eg;
-    $a =~ tr/ /+/;
-    return $a;
-}
-
-sub decode_url_args
-{
-    my $a = shift;
-    my $buffer = ref $a ? $a : \$a;
-    my $ret = {};
-
-    my $pair;
-    my @pairs = grep { $_ } split(/&/, $$buffer);
-    my ($name, $value);
-    foreach $pair (@pairs)
-    {
-        ($name, $value) = split(/=/, $pair);
-        $value =~ tr/+/ /;
-        $value =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
-        $name =~ tr/+/ /;
-        $name =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
-        $ret->{$name} .= $ret->{$name} ? "\0$value" : $value;
-    }
-    return $ret;
 }
 
 1;
