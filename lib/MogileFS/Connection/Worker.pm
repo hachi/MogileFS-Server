@@ -13,6 +13,7 @@ use fields (
             'reqid',
             'last_alive',  # unixtime
             'known_state', # hashref of { "$what-$whatid" => $state }
+            'wants_todo',  # count of how many jobs worker wants.
             );
 
 sub new {
@@ -22,6 +23,7 @@ sub new {
 
     $self->{pid}         = 0;
     $self->{reqid}       = 0;
+    $self->{wants_todo} = 0;
     $self->{job}         = undef;
     $self->{last_alive}  = time();
     $self->{known_state} = {};
@@ -72,6 +74,12 @@ sub job {
     my MogileFS::Connection::Worker $self = shift;
     return $self->{job} unless @_;
     return $self->{job} = shift;
+}
+
+sub wants_todo {
+    my MogileFS::Connection::Worker $self = shift;
+    return $self->{wants_todo}-- unless @_;
+    return $self->{wants_todo} = shift;
 }
 
 sub worker_class {
