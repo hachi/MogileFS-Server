@@ -26,6 +26,9 @@ sub server_starttime { return $starttime }
 my @IdleQueryWorkers;  # workers that are idle, able to process commands  (MogileFS::Worker::Query, ...)
 my @PendingQueries;    # [ MogileFS::Connection::Client, "$ip $query" ]
 
+my %idle_workers = (); # 'job' -> {href of idle workers}
+my %pending_work = (); # 'job' -> [aref of pending work]
+
 $IsChild = 0;  # either false if we're the parent, or a MogileFS::Worker object
 
 # keep track of what all child pids are doing, and what jobs are being
@@ -265,7 +268,11 @@ sub QueriesInProgressCount {
     return scalar keys %Mappings;
 }
 
+# Toss in any queue depths.
 sub StatsHash {
+    for my $job (keys %pending_work) {
+        $Stats{'work_queue_for_' . $job} = @{$pending_work{$job}};
+    }
     return \%Stats;
 }
 
@@ -305,6 +312,9 @@ sub request_job_process {
     # try to clean out the queryworkers (if that's what we're doing?)
     MogileFS::ProcManager->CullQueryWorkers
         if $job eq 'queryworker';
+
+    # other workers listening off of a queue should be pinging parent
+    # frequently. shouldn't explicitly kill them.
 }
 
 
@@ -319,6 +329,8 @@ sub SetAsChild {
     %Mappings = ();
     $IsChild = $worker;
     %ErrorsTo = ();
+    %idle_workers = ();
+    %pending_work = ();
 
     # and now kill off our event loop so that we don't waste time
     Danga::Socket->SetPostLoopCallback(sub { return 0; });
@@ -483,6 +495,31 @@ sub HandleQueryWorkerResponse {
     MogileFS::ProcManager->NoteIdleQueryWorker($worker);
 }
 
+# new per-worker magic internal queue runner.
+# TODO: Since this fires only when a master asks or a worker reports
+# in bored, it should just operate on that *one* queue?
+sub process_worker_queues {
+    return if $IsChild;
+
+    JOB: while (my ($job, $queue) = each %pending_work) {
+        next JOB unless @$queue;
+        next JOB unless $idle_workers{$job} && keys %{$idle_workers{$job}};
+        WORKER: for my $worker_key (keys %{$idle_workers{$job}}) {
+            my MogileFS::Connection::Worker $worker = 
+                delete $idle_workers{$job}->{$worker_key};
+            if (!defined $worker || $worker->{closed}) {
+                next WORKER;
+            }
+
+            # allow workers to grab a linear range of work.
+            while (@$queue && $worker->wants_todo) {
+                $worker->write(":queue_todo " . shift(@$queue) . "\r\n");
+            }
+            next JOB unless @$queue;
+        }
+    }
+}
+
 # called from various spots to empty the queues of available pairs.
 sub ProcessQueues {
     return if $IsChild;
@@ -601,7 +638,33 @@ sub HandleChildRequest {
 
         # announce to the other replicators that this fid is starting to be replicated
         MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_starting $fidid", $child);
-
+    } elsif ($cmd =~ /^queue_depth (\w+)/) {
+        my $depth = 0;
+        my $job   = $1;
+        if ($pending_work{$job}) {
+            my $q = $pending_work{$job};
+            $depth = @$q;
+        }
+        $child->write(':queue_depth ' . $job . " $depth\r\n");
+        MogileFS::ProcManager->process_worker_queues;
+    } elsif ($cmd =~ /^queue_todo (\w+) (.+)/) {
+        my $job = $1;
+        unless (exists $pending_work{$job}) {
+            $pending_work{$job} = [];
+        }
+        push(@{$pending_work{$job}}, $2);
+        # Don't process queues immediately, to allow batch processing.
+    } elsif ($cmd =~ /^worker_bored (\d+)/) {
+        if (job_needs_reduction($child->job)) {
+            MogileFS::ProcManager->AskWorkerToDie($child);
+        } else {
+            unless (exists $idle_workers{$child->job}) {
+                $idle_workers{$child->job} = {};
+            }
+            $idle_workers{$child->job}->{$child} = $child;
+            $child->wants_todo($1);
+            MogileFS::ProcManager->process_worker_queues;
+        }
     } elsif ($cmd eq ":ping") {
 
         # warn sprintf("Job '%s' with pid %d is still alive at %d\n", $child->job, $child->pid, time());

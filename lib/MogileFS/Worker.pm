@@ -6,10 +6,12 @@ use fields ('psock',              # socket for parent/child communications
             'monitor_has_run',    # true once we've heard of the monitor job being alive
             'last_ping',          # time we last said we're alive
             'woken_up',           # bool: if we've been woken up
-            'last_wake'           # hashref: { $class -> time() } when we last woke up a certain job class
+            'last_wake',          # hashref: { $class -> time() } when we last woke up a certain job class
+            'queue_depth',        # depth of a queue we queried
+            'queue_todo',         # aref of hrefs of work sent from parent
             );
 
-use MogileFS::Util qw(error);
+use MogileFS::Util qw(error eurl decode_url_args);
 use MogileFS::Server;
 
 use vars (
@@ -27,6 +29,8 @@ sub new {
     $self->{monitor_has_run}  = 0;
     $self->{last_ping}        = 0;
     $self->{last_wake}        = {};
+    $self->{queue_depth}      = 0;
+    $self->{queue_todo}       = [];
 
     IO::Handle::blocking($psock, 0);
     return $self;
@@ -283,6 +287,17 @@ sub process_generic_command {
             my $dev = eval { MogileFS::Device->of_devid($devid) } or next;
             $dev->set_observed_utilization($util);
         }
+        return 1;
+    }
+
+    if ($$lineref =~ /^:queue_depth (\w+) (\d+)/) {
+        my $qname = $1; # not used yet.
+        $self->{queue_depth} = $2;
+        return 1;
+    }
+
+    if ($$lineref =~ /^:queue_todo (.+)/) {
+        push(@{$self->{queue_todo}}, decode_url_args(\$1));
         return 1;
     }
 
