@@ -77,8 +77,6 @@ sub work {
     my $warn_after = time() + 15;
 
     every(2.0, sub {
-        $self->parent_ping;
-
         # replication doesn't go well if the monitor job hasn't actively started
         # marking things as being available
         unless ($self->monitor_has_run) {
@@ -129,8 +127,6 @@ sub work {
     });
 }
 
-use constant REPLFETCH_LIMIT => 1000;
-
 # return 1 if we did something (or tried to do something), return 0 if
 # there was nothing to be done.
 sub replicate_using_torepl_table {
@@ -138,22 +134,18 @@ sub replicate_using_torepl_table {
 
     # find some fids to replicate, prioritize based on when they should be tried
     my $sto = Mgd::get_store();
-    my @to_repl = $sto->files_to_replicate(REPLFETCH_LIMIT)
-        or return 0;
+    unless (@{$self->{queue_todo}}) {
+        $self->send_to_parent("worker_bored 10");
+        $self->read_from_parent(1);
+    } else {
+        $self->parent_ping;
+    }
 
-    # get random list of hashref of things to do:
-    @to_repl = List::Util::shuffle(@to_repl);
-
-    # sort our priority list in terms of 0s (immediate, only 1 copy), 1s (immediate replicate,
-    # but we already have 2 copies), and big numbers (unixtimestamps) of things that failed.
-    # but because sort is stable, these are random within their 0/1/big classes.
-    @to_repl = sort {
-        ($a->{nexttry} < 1000 || $b->{nexttry} < 1000) ? ($a->{nexttry} <=> $b->{nexttry}) : 0
-    } @to_repl;
-
-    foreach my $todo (@to_repl) {
+    while (my $todo = shift @{$self->{queue_todo}}) {
+        next unless $todo->{_type} eq 'replicate';
         my $fid = $todo->{fid};
         next if $self->peer_is_replicating($fid);
+        $self->still_alive;
 
         my $errcode;
 
@@ -546,8 +538,6 @@ sub replicate {
 
     return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock for fid $fidid")
         unless $sto->should_begin_replicating_fidid($fidid);
-
-    MogileFS::Worker->send_to_parent("repl_starting $fidid");
 
     # if the fid doesn't even exist, consider our job done!  no point
     # replicating file contents of a file no longer in the namespace.
