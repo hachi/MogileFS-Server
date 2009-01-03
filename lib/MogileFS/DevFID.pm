@@ -82,7 +82,13 @@ sub uri_path {
     my $devid = $self->{devid};
     my $fidid = $self->{fidid};
 
-    my $nfid = sprintf '%010d', $fidid;
+    my $nfid;
+    my $len = length $fidid;
+    if ($len < 10) {
+        $nfid = '0' x (10 - $len) . $fidid;
+    } else {
+        $nfid = $fidid;
+    }
     my ( $b, $mmm, $ttt, $hto ) = ( $nfid =~ m{(\d)(\d{3})(\d{3})(\d{3})} );
 
     return "/dev$devid/$b/$mmm/$ttt/$nfid.fid";
