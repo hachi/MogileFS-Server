@@ -30,7 +30,7 @@ use POSIX ();
 
 my $nowish;  # approximate unixtime, updated once per loop.
 
-sub watchdog_timeout { 30 }
+sub watchdog_timeout { 120 }
 
 sub work {
     my $self = shift;
@@ -69,17 +69,10 @@ sub work {
     my $sto         = Mgd::get_store();
     my $max_checked = 0;
 
-    every(5.0, sub {
+    every(1.0, sub {
         my $sleep_set = shift;
-        $self->parent_ping;
         $nowish = time();
         local $Mgd::nowish = $nowish;
-
-        # see if we're even enabled for this host.
-        unless ($self->should_be_running) {
-            $max_checked = 0;  # uncache this
-            return;
-        }
 
         # checking doesn't go well if the monitor job hasn't actively started
         # marking things as being available
@@ -91,19 +84,26 @@ sub work {
             return;
         }
 
-        $max_checked ||= MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-        $self->{opt_nostat} = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
-        my @fids       = $sto->get_fids_above_id($max_checked, 5000);
 
-        unless (@fids) {
-            $sto->set_server_setting("fsck_host", undef);
-            $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
-            $self->set_max_checked($max_checked) if $max_checked;
-            $stop->();
-            return;
+        unless (@{$self->{queue_todo}}) {
+            $self->send_to_parent('worker_bored 50');
+            $self->read_from_parent(1);
+        } else {
+            $self->parent_ping;
         }
-        $start->();
 
+        my @fids = ();
+        while (my $todo = shift @{$self->{queue_todo}}) {
+            my $fid = MogileFS::FID->new($todo->{fid});
+            unless ($fid->exists) {
+                # FID stopped existing before being checked.
+                $sto->delete_fid_from_file_to_queue($fid->id);
+            }
+            push(@fids, $fid);
+        }
+        return unless @fids;
+
+        $self->{opt_nostat} = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
         MogileFS::FID->mass_load_devids(@fids);
 
         $self->init_size_checker(\@fids);
@@ -116,23 +116,16 @@ sub work {
         my $hit_problem = 0;
 
         foreach my $fid (@fids) {
-            last if $self->should_stop_running;
             if (!$self->check_fid($fid)) {
-                # some connectivity problem... abort checking more
-                # for now.
-                $hit_problem = 1;
-                last;
+                # some connectivity problem... retry this fid later.
+                # (don't dequeue it)
+                $self->still_alive;
+                sleep 5;
+                next;
             }
-            $max_checked = $fid->id;
-            $self->set_max_checked_lazy($max_checked);
+            $sto->delete_fid_from_file_to_queue($fid->id);
             $n_check++;
             $beat->();
-        }
-
-        # if we had connectivity problems, let's sleep a bit
-        if ($hit_problem) {
-            error("connectivity problems; stalling 5s");
-            sleep 5;
         }
     });
 }
@@ -417,7 +410,11 @@ sub init_size_checker {
 # else size of file on disk (after HTTP HEAD or mogstored stat)
 sub size_on_disk {
     my ($self, $dfid) = @_;
-    return $self->{size_checker}->($dfid);
+    return $dfid->size_on_disk;
+    # Mass checker is disabled for now... doesn't run on our production
+    # hosts due to massive gaps in the fids. Instead we make the process
+    # parallel and will rework it later.
+    #return $self->{size_checker}->($dfid);
 }
 
 1;
