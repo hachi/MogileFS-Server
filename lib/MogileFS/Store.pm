@@ -12,7 +12,8 @@ use List::Util ();
 # 8: adds fsck_log table
 # 9: adds 'drain' state to enum in device table
 # 10: adds 'replpolicy' column to 'class' table
-use constant SCHEMA_VERSION => 10;
+# 11: adds 'file_to_queue' table
+use constant SCHEMA_VERSION => 11;
 
 sub new {
     my ($class) = @_;
@@ -350,7 +351,7 @@ sub add_extra_tables {
 use constant TABLES => qw( domain class file tempfile file_to_delete
                             unreachable_fids file_on file_on_corrupt host
                             device server_settings file_to_replicate
-                            file_to_delete_later fsck_log);
+                            file_to_delete_later fsck_log file_to_queue );
 
 sub setup_database {
     my $sto = shift;
@@ -626,6 +627,18 @@ sub TABLE_fsck_log {
     evcode CHAR(4),
     devid  MEDIUMINT UNSIGNED,
     INDEX(utime)
+    )"
+}
+
+sub TABLE_file_to_queue {
+    "CREATE TABLE file_to_queue (
+    fid       INT UNSIGNED NOT NULL PRIMARY KEY,
+    devid     INT UNSIGNED,
+    type      TINYINT UNSIGNED NOT NULL,
+    nexttry   INT UNSIGNED NOT NULL,
+    failcount TINYINT UNSIGNED NOT NULL default '0',
+    flags     SMALLINT UNSIGNED NOT NULL default '0',
+    INDEX type_nexttry (type,nexttry)
     )"
 }
 
@@ -1115,6 +1128,38 @@ sub enqueue_for_replication {
                          "VALUES (?,?,$nexttry)", undef, $fidid, $from_devid);
 }
 
+# enqueue a fidid for work
+sub enqueue_for_todo {
+    my ($self, $fidid, $type, $in) = @_;
+
+    my $nexttry = 0;
+    if ($in) {
+        $nexttry = $self->unix_timestamp . " + " . int($in);
+    }
+
+    $self->insert_ignore("INTO file_to_queue (fid, type, nexttry) ".
+                         "VALUES (?,?,$nexttry)", undef, $fidid, $type);
+}
+
+# return 1 on success.  die otherwise.
+sub enqueue_many_for_todo {
+    my ($self, $fidids, $type, $in) = @_;
+    if (@$fidids > 1 && ! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
+        $self->enqueue_for_todo($_->{fid}, $type, $in) foreach @$fidids;
+        return 1;
+    }
+    my $nexttry = 0;
+    if ($in) {
+        $nexttry = $self->unix_timestamp . " + " . int($in);
+    }
+
+    # TODO: convert to prepared statement?
+    $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
+    nexttry) VALUES " .
+                   join(",", map { "(" . int($_->{fid}) . ", $type, $nexttry)" } @$fidids))
+        or die "file_to_queue insert failed";
+}
+
 # reschedule all deferred replication, return number rescheduled
 sub replicate_now {
     my ($self) = @_;
@@ -1212,6 +1257,28 @@ sub files_to_replicate {
     return values %$to_repl_map;
 }
 
+sub grab_files_to_queued {
+    my ($self, $type, $limit) = @_;
+    my $dbh = $self->dbh;
+    $dbh->begin_work;
+    my $ut = $self->unix_timestamp;
+    my $todo_map = $dbh->selectall_hashref(qq{
+        SELECT fid, type, failcount, flags, nexttry
+        FROM file_to_queue
+        WHERE type = $type
+        AND nexttry <= $ut
+        ORDER BY nexttry
+        LIMIT $limit
+        FOR UPDATE
+    }, 'fid');
+    unless (keys %$todo_map) { $dbh->commit; return (); }
+    my $fidlist = join(', ', keys %$todo_map);
+    $dbh->do(qq{UPDATE file_to_queue SET nexttry = $ut + 1000
+        WHERE fid IN ($fidlist)});
+    $dbh->commit;
+    return values %$todo_map;
+}
+
 # although it's safe to have multiple tracker hosts and/or processes
 # replicating the same file, around, it's inefficient CPU/time-wise,
 # and it's also possible they pick different places and waste disk.
@@ -1240,6 +1307,11 @@ sub note_done_replicating {
 sub delete_fid_from_file_to_replicate {
     my ($self, $fidid) = @_;
     $self->dbh->do("DELETE FROM file_to_replicate WHERE fid=?", undef, $fidid);
+}
+
+sub delete_fid_from_file_to_queue {
+    my ($self, $fidid) = @_;
+    $self->dbh->do("DELETE FROM file_to_queue WHERE fid=?", undef, $fidid);
 }
 
 sub reschedule_file_to_replicate_absolute {

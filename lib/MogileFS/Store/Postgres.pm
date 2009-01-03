@@ -209,6 +209,10 @@ sub INDEXES_fsck_log {
     "CREATE INDEX fsck_log_utime ON fsck_log (utime)"
 }
 
+sub INDEXES_file_to_queue {
+    "CREATE INDEX type_nexttry ON file_to_queue (type,nexttry)"
+}
+
 # Extra table
 sub TABLE_lock {
     "CREATE TABLE lock (
