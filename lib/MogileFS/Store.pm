@@ -1198,6 +1198,25 @@ sub get_fids_above_id {
     return @ret;
 }
 
+# Same as above, but returns unblessed hashref.
+sub get_fid_hrefs_above_id {
+    my ($self, $fidid, $limit) = @_;
+    $limit ||= 1000;
+    $limit = int($limit);
+
+    my @ret;
+    my $dbh = $self->dbh;
+    my $sth = $dbh->prepare("SELECT fid, dmid, dkey, length, classid ".
+                            "FROM   file ".
+                            "WHERE  fid > ? ".
+                            "ORDER BY fid LIMIT $limit");
+    $sth->execute($fidid);
+    while (my $row = $sth->fetchrow_hashref) {
+        push @ret, $row;
+    }
+    return @ret;
+}
+
 # creates a new domain, given a domain namespace string.  return the dmid on success,
 # throw 'dup' on duplicate name.
 # override if you want a less racy version.
@@ -1254,6 +1273,31 @@ sub files_to_replicate {
         ORDER BY nexttry
         LIMIT $limit
     }, "fid") or return ();
+    return values %$to_repl_map;
+}
+
+# "new" style queue consumption code.
+# from within a transaction, fetch a limit of fids,
+# then update each fid's nexttry to be off in the future,
+# giving local workers some time to dequeue the items.
+sub grab_files_to_replicate {
+    my ($self, $limit) = @_;
+    my $dbh = $self->dbh;
+    $dbh->begin_work;
+    my $ut = $self->unix_timestamp;
+    my $to_repl_map = $dbh->selectall_hashref(qq{
+        SELECT fid, fromdevid, failcount, flags, nexttry
+        FROM file_to_replicate
+        WHERE nexttry <= $ut
+        ORDER BY nexttry
+        LIMIT $limit
+        FOR UPDATE
+    }, 'fid');
+    unless (keys %$to_repl_map) { $dbh->commit; return (); }
+    my $fidlist = join(', ', keys %$to_repl_map);
+    $dbh->do(qq{UPDATE file_to_replicate SET nexttry = $ut + 1000
+        WHERE fid IN ($fidlist)});
+    $dbh->commit;
     return values %$to_repl_map;
 }
 

@@ -62,6 +62,7 @@ use MogileFS::Worker::Replicate;
 use MogileFS::Worker::Reaper;
 use MogileFS::Worker::Monitor;
 use MogileFS::Worker::Fsck;
+use MogileFS::Worker::JobMaster;
 
 use MogileFS::HTTPFile;
 use MogileFS::Class;
@@ -104,6 +105,7 @@ sub run {
     MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
     MogileFS::ProcManager->set_min_workers('monitor'     => MogileFS->config('monitor_jobs'));
     MogileFS::ProcManager->set_min_workers('fsck'        => 1);
+    MogileFS::ProcManager->set_min_workers('job_master'  => 1);
 
     # open up our log
     Sys::Syslog::openlog('mogilefsd', 'pid', 'daemon');

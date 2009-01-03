@@ -99,6 +99,7 @@ sub job_to_class_suffix {
         replicate   => "Replicate",
         reaper      => "Reaper",
         monitor     => "Monitor",
+        job_master  => "JobMaster",
     }->{$job};
 }
 
@@ -305,6 +306,7 @@ sub valid_jobs {
 sub request_job_process {
     my ($class, $job, $n) = @_;
     return 0 unless $class->is_valid_job($job);
+    return 0 if $job eq 'job_master' && $n > 1; # ghetto special case
 
     $jobs{$job}->[0] = $n;
     $allkidsup = 0;
