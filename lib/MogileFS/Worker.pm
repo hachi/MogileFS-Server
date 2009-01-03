@@ -123,11 +123,13 @@ sub process_line {
 }
 
 sub read_from_parent {
-    my $self = shift;
+    my $self    = shift;
+    my $timeout = shift || 0;
     my $psock = $self->{psock};
 
     # while things are immediately available,
-    while (MogileFS::Util::wait_for_readability(fileno($psock), 0)) {
+    # (or optionally sleep a bit)
+    while (MogileFS::Util::wait_for_readability(fileno($psock), $timeout)) {
         my $buf;
         my $rv = sysread($psock, $buf, 1024);
         if (!$rv) {
