@@ -162,11 +162,11 @@ sub load_config {
     choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
-    $old_repl_compat = choose_value( 'old_repl_compat', 1 );
+    $old_repl_compat = choose_value( 'old_repl_compat', 0 );
     choose_value( 'rebalance_ignore_missing', 0 );
     $repl_use_get_port = choose_value( 'repl_use_get_port', 0 );
     $local_network  = choose_value( 'local_network', '' );
-    $no_unreachable_tracking = choose_value( 'no_unreachable_tracking', 0 );
+    $no_unreachable_tracking = choose_value( 'no_unreachable_tracking', 1 );
 
     choose_value( 'no_schema_check', 0 );
 
