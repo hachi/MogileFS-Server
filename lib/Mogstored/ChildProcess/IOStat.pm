@@ -147,6 +147,9 @@ sub mog_sysid_map {
                 # Skip if we can't map it back to a device number
                 my $newnum = $name_to_number{$newname} or next;
                 $map->{$mogdevid} = $newnum;
+            } elsif (my ($newname, undef) = $devname =~ m/^(cciss\/c\d+d\d+)(\w+)?$/) {
+                my $newnum = $name_to_number{$newname} or next;
+                $map->{$mogdevid} = $newnum;
             }
         }
     }
