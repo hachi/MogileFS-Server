@@ -68,7 +68,7 @@ sub process_line {
 }
 
 # replicator wants
-sub watchdog_timeout { 30; }
+sub watchdog_timeout { 90; }
 
 sub work {
     my $self = shift;
@@ -107,23 +107,19 @@ sub work {
             }
         }
 
-        my $idle = 1;
-
         # this finds stuff to replicate based on its record in the needs_replication table
-        $idle = 0 if $self->replicate_using_torepl_table;
+        $self->replicate_using_torepl_table;
 
         # this finds stuff to replicate based on the devcounts.  (old style)
         if (MogileFS::Config->config("old_repl_compat")) {
-            $idle = 0 if $self->replicate_using_devcounts;
+            if $self->replicate_using_devcounts;
         }
 
         # if replicators are otherwise idle, use them to make the world
         # better, rebalancing things (if enabled), and draining devices (if
         # any are marked drain)
-        if ($idle) {
-            $self->rebalance_devices;
-            $self->drain_devices;
-        }
+        $self->rebalance_devices;
+        $self->drain_devices;
     });
 }
 
