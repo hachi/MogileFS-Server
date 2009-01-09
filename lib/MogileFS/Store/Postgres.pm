@@ -82,7 +82,7 @@ sub was_duplicate_error {
     my $self = shift;
     my $dbh = $self->dbh;
     return 0 unless $dbh->err;
-    return 1 if $dbh->state == '23505' || $dbh->errstr =~ /duplicate/i;
+    return 1 if $dbh->state eq '23505' || $dbh->errstr =~ /duplicate/i;
 }
 
 sub table_exists {
