@@ -21,6 +21,9 @@ use File::Temp;
 my $dir = File::Temp::tempdir( CLEANUP => 1 );
 my $ms = eval { create_mogstored("127.0.1.1", $dir, "--daemonize") };
 unless (ok($ms, "started daemonized mogstored")) {
+    # Must wait a moment on startup
+    select undef, undef, undef, 0.5;
+    # Now safe
     my $exist = eval { exist_pid() };
     warn "exist = $exist\n";
     if ($exist) {
