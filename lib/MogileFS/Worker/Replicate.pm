@@ -112,7 +112,7 @@ sub work {
 
         # this finds stuff to replicate based on the devcounts.  (old style)
         if (MogileFS::Config->config("old_repl_compat")) {
-            if $self->replicate_using_devcounts;
+            $self->replicate_using_devcounts;
         }
 
         # if replicators are otherwise idle, use them to make the world
