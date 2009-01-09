@@ -209,6 +209,17 @@ sub INDEXES_fsck_log {
     "CREATE INDEX fsck_log_utime ON fsck_log (utime)"
 }
 
+sub TABLE_file_to_queue {
+    "CREATE TABLE file_to_queue (
+    fid       INT UNSIGNED NOT NULL PRIMARY KEY,
+    devid     INT UNSIGNED,
+    type      TINYINT UNSIGNED NOT NULL,
+    nexttry   INT UNSIGNED NOT NULL,
+    failcount TINYINT UNSIGNED NOT NULL default '0',
+    flags     SMALLINT UNSIGNED NOT NULL default '0',
+    )"
+}
+
 sub INDEXES_file_to_queue {
     "CREATE INDEX type_nexttry ON file_to_queue (type,nexttry)"
 }
