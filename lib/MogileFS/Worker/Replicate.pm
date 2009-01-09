@@ -140,6 +140,7 @@ sub replicate_using_torepl_table {
     } else {
         $self->parent_ping;
     }
+    return 0 unless @{$self->{queue_todo}};
 
     while (my $todo = shift @{$self->{queue_todo}}) {
         next unless $todo->{_type} eq 'replicate';
