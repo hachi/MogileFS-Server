@@ -109,8 +109,9 @@ sub filter_create_sql {
 
     my ($table) = $sql =~ /create\s+table\s+(\S+)/i;
     die "didn't find table" unless $table;
-    if ($self->can("INDEXES_$table")) {
-        $sql =~ s!,\s+INDEX\s*\(.+?\)!!mg;
+    my $index = sprintf 'INDEXES_%s', $table;
+    if ($self->can($index)) {
+        $sql =~ s!,\s*INDEX\s*(\w+)?\s*\(.+?\)!!mgi;
     }
 
     return $sql;
