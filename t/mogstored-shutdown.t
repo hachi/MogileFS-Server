@@ -15,11 +15,13 @@ unless ((`netstat -nap --inet` || "") =~ m!PID/Program!) {
 
 plan tests => 4;
 
+my $TEST_IP = '127.0.1.1';
+
 my $rv;
 
 use File::Temp;
 my $dir = File::Temp::tempdir( CLEANUP => 1 );
-my $ms = eval { create_mogstored("127.0.1.1", $dir, "--daemonize") };
+my $ms = eval { create_mogstored($TEST_IP, $dir, "--daemonize") };
 unless (ok($ms, "started daemonized mogstored")) {
     # Must wait a moment on startup
     select undef, undef, undef, 0.5;
@@ -39,7 +41,7 @@ my $real_pid = exist_pid();
 warn "real_pid = $real_pid\n";
 #scalar <STDIN>;
 
-my $sock = try(5, 0.5, sub { IO::Socket::INET->new(PeerAddr => "127.0.1.1:7501",
+my $sock = try(5, 0.5, sub { IO::Socket::INET->new(PeerAddr => "$TEST_IP:7501",
                                                    Timeout  => 3) });
 ok($sock, "got mgmt connection") or die;
 
@@ -67,7 +69,10 @@ ok(!$alive, "gone");
 
 # dies when not able to find
 sub exist_pid {
-    unless (`netstat -nap --inet` =~ m!127\.0\.1\.1:750[10].+LISTEN\s+(\d+)/!) {
+    my $netstat = `netstat -nap --inet`;
+    my $ip = $TEST_IP;
+    $ip =~ s/\./\\./g;
+    unless ($netstat =~ m!${ip}:750[10].+LISTEN\s+(\d+)/!) {
         die "Couldn't find pid of daemonized process.\n";
     }
     return $1;
