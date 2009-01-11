@@ -42,6 +42,11 @@ sub find_mogclient_or_skip {
 
 sub temp_store {
     my $type = $ENV{MOGTEST_DBTYPE};
+    my $host = $ENV{MOGTEST_DBHOST} || '';
+    my $port = $ENV{MOGTEST_DBPORT} || '';
+    my $user = $ENV{MOGTEST_DBUSER} || '';
+    my $pass = $ENV{MOGTEST_DBPASS} || '';
+    my $name = $ENV{MOGTEST_DBNAME} || '';
 
     # default to mysql, but make sure DBD::MySQL is installed
     unless ($type) {
@@ -56,7 +61,8 @@ sub temp_store {
     if ($@) {
         die "Failed to load $store: $@\n";
     }
-    my $sto = $store->new_temp;
+    my $sto = $store->new_temp(dbhost => $host, dbport => $port,
+        dbuser => $user, dbpass => $pass, dbname => $name);
     Mgd::set_store($sto);
     return $sto;
 }

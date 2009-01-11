@@ -170,35 +170,43 @@ sub column_type {
 # --------------------------------------------------------------------------
 
 sub new_temp {
-    my $dbname = "tmp_mogiletest";
-    _create_mysql_db($dbname);
+    my $self = shift;
+    my %args = @_;
+    my $dbname = $args{dbname} || "tmp_mogiletest";
+    my $host = $args{dbhost} || 'localhost';
+    my $port = $args{dbport} || 3306;
+    my $user = $args{dbuser} || 'root';
+    my $pass = $args{dbpass} || '';
+    my $sto =
+    MogileFS::Store->new_from_dsn_user_pass("DBI:mysql:database=$dbname;host=$host;port=$port",
+        $user, $pass);
+
+    my $dbh = $sto->dbh;
+    _create_mysql_db($dbh, $dbname);
 
     # allow MyISAM in the test suite.
     $ENV{USE_UNSAFE_MYSQL} = 1 unless defined $ENV{USE_UNSAFE_MYSQL};
 
-    system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname")
+    system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname",
+        "--dbhost=$host", "--dbport=$port", "--dbrootuser=$user",
+        "--dbrootpass=$pass", "--dbuser=$user", "--dbpass=$pass")
         and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
 
-    return MogileFS::Store->new_from_dsn_user_pass("DBI:mysql:$dbname",
-                                                   "root",
-                                                   "");
-}
-
-my $rootdbh;
-sub _root_dbh {
-    return $rootdbh ||= DBI->connect("DBI:mysql:mysql", "root", "", { RaiseError => 1 })
-        or die "Couldn't connect to local MySQL database a root";
+    $dbh->do("use $dbname");
+    return $sto;
 }
 
 sub _create_mysql_db {
+    my $dbh    = shift;
     my $dbname = shift;
-    _drop_mysql_db($dbname);
-    _root_dbh()->do("CREATE DATABASE $dbname");
+    _drop_mysql_db($dbh, $dbname);
+    $dbh->do("CREATE DATABASE $dbname");
 }
 
 sub _drop_mysql_db {
+    my $dbh    = shift;
     my $dbname = shift;
-    _root_dbh()->do("DROP DATABASE IF EXISTS $dbname");
+    $dbh->do("DROP DATABASE IF EXISTS $dbname");
 }
 
 # --------------------------------------------------------------------------
