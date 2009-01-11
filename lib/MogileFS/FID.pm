@@ -79,6 +79,12 @@ sub length {
     return $self->{length};
 }
 
+sub devcount {
+    my $self = shift;
+    $self->_load;
+    return $self->{devcount};
+}
+
 sub id { $_[0]{fidid} }
 
 # force loading, or die.
@@ -94,7 +100,7 @@ sub _tryload {
     my $self = shift;
     my $row = Mgd::get_store()->file_row_from_fidid($self->{fidid})
         or return 0;
-    $self->{$_} = $row->{$_} foreach qw(dmid dkey length classid);
+    $self->{$_} = $row->{$_} foreach qw(dmid dkey length classid devcount);
     $self->{_loaded} = 1;
     return 1;
 }
@@ -179,6 +185,12 @@ sub class {
     return MogileFS::Class->of_fid($self);
 }
 
+# Get reloaded the next time we're bothered.
+sub want_reload {
+    my $self = shift;
+    $self->{_loaded} = 0;
+}
+
 # returns bool: if fid's presumed-to-be-on devids meet the file class'
 # replication policy rules.  dies on failure to load class, world
 # info, etc.
@@ -191,9 +203,16 @@ sub devids_meet_policy {
     my $alldev = MogileFS::Device->map
         or die "No global device map";
 
+    my @devs = $self->devs;
+    # This is a little heavy handed just to fix the 'devcount' cache, but
+    # doing it here ensures we get the error logged.
+    if (@devs != $self->devcount) {
+        return 0;
+    }
+
     my %rep_args = (
                     fid       => $self->id,
-                    on_devs   => [$self->devs],
+                    on_devs   => [@devs],
                     all_devs  => $alldev,
                     failed    => {},
                     min       => $cls->mindevcount,

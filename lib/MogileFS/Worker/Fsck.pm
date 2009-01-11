@@ -255,6 +255,9 @@ sub fix_fid {
     my ($self, $fid) = @_;
     error(sprintf("Fixing FID %d\n", $fid->id));
 
+    # This should happen first, since the fid gets awkwardly reloaded...
+    $fid->update_devcount;
+
     # make devfid objects from the devids that this fid is on,
     my @dfids = map { MogileFS::DevFID->new($_, $fid) } $fid->devids;
 
@@ -327,6 +330,9 @@ sub fix_fid {
         error("removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
         $fid->forget_about_device($bdev);
     }
+
+    # in case the devcount or similar was fixed.
+    $fid->want_reload;
 
     # Note: this will reload devids, if they called 'note_on_device'
     # or 'forget_about_device'
