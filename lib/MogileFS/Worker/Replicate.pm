@@ -305,6 +305,7 @@ sub replicate_using_devcounts {
                     # replicated this file), or 2 (success, but someone else replicated it).
                     # so if it's 2, we just want to go to the next fid.  this file is done.
                     next if $status eq "lost_race";
+                    next if $status eq "would_worsen";
 
                     # if it was no longer reachable, mark it reachable
                     if (delete $unreachable{$fid}) {
@@ -443,6 +444,12 @@ sub rebalance_devfid {
             # lost race
             $should_delete = 0;  # no-op
         }
+    } elsif ($ret eq "would_worsen") {
+        # replication has indicated we would be making ruining this fid's day
+        # if we delete an existing copy, so lets not do that.
+        # this indicates a condition where there're no suitable devices to
+        # copy new data onto, so lets be loud about it.
+        return $fail->("no suitable destination devices available");
     } else {
         $should_delete = 1;
         $del_reason = "did_rebalance;ret=$ret";
@@ -606,8 +613,12 @@ sub replicate {
                 # so instead, when masking is in effect, we don't
                 # use non-ideal placement, just bailing out.
 
-                # saying we lost a race is a bit of a lie.. but eh.
-                return $retunlock->("lost_race");
+                # this used to return "lost_race" as a lie, but rebalance was
+                # happily deleting the masked fid if at least one other fid
+                # existed... because it assumed it was over replicated.
+                # now we tell rebalance that touching this fid would be
+                # stupid.
+                return $retunlock->("would_worsen");
             }
         } elsif (@ddevs = $rr->copy_to_one_of_desperate) {
             # TODO: reschedule a replication for 'n' minutes in future, or
