@@ -1,3 +1,11 @@
+        * Support 0 byte files.
+
+        * Fix a bug where rebalance would accidentally delete copies of a fid.
+
+        * Create new internal queue management system, with new job
+          'JobMaster'. This greatly reduces database load and increases
+          throughput for workers using the new system.
+
         * Add 'no_unreachable_tracking' config. Disables more of the old
           replication code. Use this if you have no 1.x trackers.
 
