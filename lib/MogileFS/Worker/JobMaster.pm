@@ -123,12 +123,16 @@ sub _inject_fsck_queues {
 
 # takes the current queue depth and fetch limit
 # returns whether or not to fetch, and new fetch limit.
+# TODO: make the limit cap configurable.
+# TODO: separate a fetch limit from a queue limit...
+# so we don't hammer the DB with giant transactions, but loop
+# fast trying to keep the queue full.
 sub queue_depth_check {
     my ($depth, $limit) = @_;
     if ($depth == 0) {
-        $limit += 50;
+        $limit += 50 unless $limit >= 1000;
         return (1, $limit);
-    } elsif ($depth / $limit < 0.30) {
+    } elsif ($depth / $limit < 0.70) {
         return (1, $limit);
     }
     return (0, $limit);
