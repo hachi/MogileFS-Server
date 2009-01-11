@@ -23,7 +23,7 @@ sub new {
 
     $self->{pid}         = 0;
     $self->{reqid}       = 0;
-    $self->{wants_todo} = 0;
+    $self->{wants_todo}  = {};
     $self->{job}         = undef;
     $self->{last_alive}  = time();
     $self->{known_state} = {};
@@ -78,8 +78,9 @@ sub job {
 
 sub wants_todo {
     my MogileFS::Connection::Worker $self = shift;
-    return $self->{wants_todo}-- unless @_;
-    return $self->{wants_todo} = shift;
+    my $type = shift;
+    return $self->{wants_todo}->{$type}-- unless @_;
+    return $self->{wants_todo}->{$type} = shift;
 }
 
 sub worker_class {

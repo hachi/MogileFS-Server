@@ -37,8 +37,10 @@ sub work {
     $self->{repl_queue_limit} = 100;
 
     every(1, sub {
-        $self->parent_ping;
+        # 'pings' parent and populates all queues.
+        $self->send_to_parent("queue_depth all");
         my $sto = Mgd::get_store();
+        $self->read_from_parent(1);
         $self->_check_replicate_queues($sto);
         $self->_check_fsck_queues($sto);
     });
@@ -56,15 +58,13 @@ sub work {
 sub _check_replicate_queues {
     my $self = shift;
     my $sto  = shift;
-    $self->send_to_parent("queue_depth replicate");
-    $self->read_from_parent(1);
-    my ($need_fetch, $new_limit) = queue_depth_check($self->{queue_depth},
+    my ($need_fetch, $new_limit) =
+        queue_depth_check($self->queue_depth('replicate'),
         $self->{repl_queue_limit});
     return unless $need_fetch;
     my @to_repl = $sto->grab_files_to_replicate($new_limit);
     $self->{repl_queue_limit} = @to_repl ? $new_limit : 100;
     return unless @to_repl;
-    $self->{queue_depth} = @to_repl;
     # don't need to shuffle or sort, since we're the only tracker to get this
     # list.
     for my $todo (@to_repl) {
@@ -84,22 +84,18 @@ sub _check_fsck_queues {
         $self->_inject_fsck_queues($sto);
     }
 
-    # Otherwise, do the normal internal queue check.
-    $self->send_to_parent("queue_depth fsck");
-    $self->read_from_parent(1);
-
     # Queue depth algorithm:
     # if internal queue is less than 30% full, fetch more.
     # if internal queue bottomed out, increase fetch limit by 50.
     # fetch more work
     # if no work fetched, reset limit to 100 (default)
-    my ($need_fetch, $new_limit) = queue_depth_check($self->{queue_depth},
+    my ($need_fetch, $new_limit) =
+        queue_depth_check($self->queue_depth('fsck'),
         $self->{fsck_queue_limit});
     return unless $need_fetch;
     my @to_fsck = $sto->grab_files_to_queued(FSCK_QUEUE, $new_limit);
     $self->{fsck_queue_limit} = @to_fsck ? $new_limit : 100;
     return unless @to_fsck;
-    $self->{queue_depth} = @to_fsck;
     for my $todo (@to_fsck) {
         $self->send_to_parent("queue_todo fsck " . _eurl_encode_args($todo));
     }

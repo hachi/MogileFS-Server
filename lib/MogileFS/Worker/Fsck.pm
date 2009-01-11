@@ -84,16 +84,16 @@ sub work {
             return;
         }
 
-
-        unless (@{$self->{queue_todo}}) {
-            $self->send_to_parent('worker_bored 50');
+        my $queue_todo = $self->queue_todo('fsck');
+        unless (@{$queue_todo}) {
+            $self->send_to_parent('worker_bored 50 fsck');
             $self->read_from_parent(1);
         } else {
             $self->parent_ping;
         }
 
         my @fids = ();
-        while (my $todo = shift @{$self->{queue_todo}}) {
+        while (my $todo = shift @{$queue_todo}) {
             my $fid = MogileFS::FID->new($todo->{fid});
             unless ($fid->exists) {
                 # FID stopped existing before being checked.

@@ -107,6 +107,8 @@ sub work {
             }
         }
 
+        $self->send_to_parent("worker_bored 100 replicate drain rebalance");
+        $self->read_from_parent(1);
         # this finds stuff to replicate based on its record in the needs_replication table
         $self->replicate_using_torepl_table;
 
@@ -130,15 +132,13 @@ sub replicate_using_torepl_table {
 
     # find some fids to replicate, prioritize based on when they should be tried
     my $sto = Mgd::get_store();
-    unless (@{$self->{queue_todo}}) {
-        $self->send_to_parent("worker_bored 10");
-        $self->read_from_parent(1);
-    } else {
+    my $queue_todo = $self->queue_todo('replicate');
+    unless (@$queue_todo) {
         $self->parent_ping;
+        return 0;
     }
-    return 0 unless @{$self->{queue_todo}};
 
-    while (my $todo = shift @{$self->{queue_todo}}) {
+    while (my $todo = shift @$queue_todo) {
         next unless $todo->{_type} eq 'replicate';
         my $fid = $todo->{fid};
         next if $self->peer_is_replicating($fid);

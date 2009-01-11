@@ -29,8 +29,8 @@ sub new {
     $self->{monitor_has_run}  = 0;
     $self->{last_ping}        = 0;
     $self->{last_wake}        = {};
-    $self->{queue_depth}      = 0;
-    $self->{queue_todo}       = [];
+    $self->{queue_depth}      = {};
+    $self->{queue_todo}       = {};
 
     IO::Handle::blocking($psock, 0);
     return $self;
@@ -290,20 +290,38 @@ sub process_generic_command {
         return 1;
     }
 
+    # queue_name depth
     if ($$lineref =~ /^:queue_depth (\w+) (\d+)/) {
-        my $qname = $1; # not used yet.
-        $self->{queue_depth} = $2;
+        $self->queue_depth($1, $2);
         return 1;
     }
 
-    if ($$lineref =~ /^:queue_todo (.+)/) {
-        push(@{$self->{queue_todo}}, decode_url_args(\$1));
+    # queue_name encoded_item
+    if ($$lineref =~ /^:queue_todo (\w+) (.+)/) {
+        # TODO: Use the accessor.
+        push(@{$self->{queue_todo}->{$1}}, decode_url_args(\$2));
         return 1;
     }
 
     # TODO: warn on unknown commands?
 
     return 0;
+}
+
+sub queue_depth {
+    my MogileFS::Worker $self = shift;
+    my $type = shift;
+    $self->{queue_depth}->{$type} ||= 0;
+    return $self->{queue_depth}->{$type} unless @_;
+    return $self->{queue_depth}->{$type} = shift;
+}
+
+sub queue_todo {
+    my MogileFS::Worker $self = shift;
+    my $type = shift;
+    $self->{queue_todo}->{$type} ||= [];
+    push(@{$self->{queue_todo}->{$type}}, @_) if @_;
+    return $self->{queue_todo}->{$type};
 }
 
 sub was_woken_up {

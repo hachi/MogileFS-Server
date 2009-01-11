@@ -500,6 +500,9 @@ sub HandleQueryWorkerResponse {
 # new per-worker magic internal queue runner.
 # TODO: Since this fires only when a master asks or a worker reports
 # in bored, it should just operate on that *one* queue?
+#
+# new change: if worker in $job, but not in _bored, do not send work.
+# if work is received, only delete from _bored
 sub process_worker_queues {
     return if $IsChild;
 
@@ -508,14 +511,15 @@ sub process_worker_queues {
         next JOB unless $idle_workers{$job} && keys %{$idle_workers{$job}};
         WORKER: for my $worker_key (keys %{$idle_workers{$job}}) {
             my MogileFS::Connection::Worker $worker = 
-                delete $idle_workers{$job}->{$worker_key};
+                delete $idle_workers{_bored}->{$worker_key};
             if (!defined $worker || $worker->{closed}) {
+                delete $idle_workers{$job}->{$worker_key};
                 next WORKER;
             }
 
             # allow workers to grab a linear range of work.
-            while (@$queue && $worker->wants_todo) {
-                $worker->write(":queue_todo " . shift(@$queue) . "\r\n");
+            while (@$queue && $worker->wants_todo($job)) {
+                $worker->write(":queue_todo $job " . shift(@$queue) . "\r\n");
             }
             next JOB unless @$queue;
         }
@@ -641,30 +645,41 @@ sub HandleChildRequest {
         # announce to the other replicators that this fid is starting to be replicated
         MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_starting $fidid", $child);
     } elsif ($cmd =~ /^queue_depth (\w+)/) {
-        my $depth = 0;
         my $job   = $1;
-        if ($pending_work{$job}) {
-            my $q = $pending_work{$job};
-            $depth = @$q;
+        if ($job eq 'all') {
+            for my $qname (keys %pending_work) {
+                my $depth = @{$pending_work{$qname}};
+                $child->write(":queue_depth $qname $depth\r\n");
+            }
+        } else {
+            my $depth = 0;
+            if ($pending_work{$job}) {
+                $depth = @{$pending_work{$job}};
+            }
+            $child->write(":queue_depth $job $depth\r\n");
         }
-        $child->write(':queue_depth ' . $job . " $depth\r\n");
         MogileFS::ProcManager->process_worker_queues;
     } elsif ($cmd =~ /^queue_todo (\w+) (.+)/) {
         my $job = $1;
-        unless (exists $pending_work{$job}) {
-            $pending_work{$job} = [];
-        }
+        $pending_work{$job} ||= [];
         push(@{$pending_work{$job}}, $2);
         # Don't process queues immediately, to allow batch processing.
-    } elsif ($cmd =~ /^worker_bored (\d+)/) {
+    } elsif ($cmd =~ /^worker_bored (\d+) (.+)/) {
+        my $batch = $1;
+        my $types = $2;
         if (job_needs_reduction($child->job)) {
             MogileFS::ProcManager->AskWorkerToDie($child);
         } else {
             unless (exists $idle_workers{$child->job}) {
                 $idle_workers{$child->job} = {};
             }
-            $idle_workers{$child->job}->{$child} = $child;
-            $child->wants_todo($1);
+            $idle_workers{_bored} ||= {};
+            $idle_workers{_bored}->{$child} = $child;
+            for my $type (split(/\s+/, $types)) {
+                $idle_workers{$type} ||= {};
+                $idle_workers{$type}->{$child}++;
+                $child->wants_todo($type, $batch);
+            }
             MogileFS::ProcManager->process_worker_queues;
         }
     } elsif ($cmd eq ":ping") {
