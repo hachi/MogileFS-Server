@@ -630,6 +630,9 @@ sub TABLE_fsck_log {
     )"
 }
 
+# generic queue table, designed to be used for workers/jobs which aren't
+# constantly in use, and are async to the user.
+# ie; fsck, drain, rebalance.
 sub TABLE_file_to_queue {
     "CREATE TABLE file_to_queue (
     fid       INT UNSIGNED NOT NULL PRIMARY KEY,
