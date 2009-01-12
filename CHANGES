@@ -1,3 +1,5 @@
+2009-01-12: Release version 2.30
+
         * fsck will now fix broken 'devcount' cols.
 
         * schema version bump to 12, and new delete worker code to use the new
