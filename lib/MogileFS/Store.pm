@@ -641,7 +641,7 @@ sub TABLE_file_to_queue {
     nexttry   INT UNSIGNED NOT NULL,
     failcount TINYINT UNSIGNED NOT NULL default '0',
     flags     SMALLINT UNSIGNED NOT NULL default '0',
-    PRIMARY KEY (fid, type)
+    PRIMARY KEY (fid, type),
     INDEX type_nexttry (type,nexttry)
     )"
 }
