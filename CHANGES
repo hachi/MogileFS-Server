@@ -1,3 +1,12 @@
+        * fsck will now fix broken 'devcount' cols.
+
+        * schema version bump to 12, and new delete worker code to use the new
+          queue system. delete should be faster and more scalable.
+
+        * add server setting queue_rate_for_fsck to allow rate limiting how
+          fast the new distributed fsck creates jobs. the original default of
+          10k could utterly defeat wimpy databases.
+
         * Support 0 byte files.
 
         * Fix a bug where rebalance would accidentally delete copies of a fid.
