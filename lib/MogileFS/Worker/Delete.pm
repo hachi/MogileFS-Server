@@ -20,13 +20,16 @@ sub new {
     return $self;
 }
 
-sub watchdog_timeout { 60 }
+sub watchdog_timeout { 120 }
 
 sub work {
     my $self = shift;
 
     my $sleep_for = 0; # we sleep longer and longer until we hit max_sleep
     my $sleep_max = 5; # max sleep when there's nothing to do.
+    
+    my $old_queue_check   = 0; # next time to check the old queue.
+    my $old_queue_backoff = 0; # backoff index
 
     # wait for one pass of the monitor
     $self->wait_for_monitor;
@@ -48,8 +51,19 @@ sub work {
             #    RETVAL = 0; I think I am done working for now
             #    RETVAL = 1; I have more work to do
             my $tempres = $self->process_tempfiles;
-            $self->reenqueue_delayed_deletes;
-            my $delres = $self->process_deletes;
+            my $delres;
+            if (time() > $old_queue_check) {
+                $self->reenqueue_delayed_deletes;
+                $delres = $self->process_deletes;
+                # if we did no work, crawl the backoff.
+                if ($delres) {
+                    $old_queue_backoff = 0;
+                    $old_queue_check   = 0;
+                } else {
+                    $old_queue_check = time() + $old_queue_backoff;
+                    $old_queue_backoff++ unless $old_queue_backoff > 1800;
+                }
+            }
 
             # unless someone did some work, let's sleep
             unless ($tempres || $delres) {
