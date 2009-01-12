@@ -125,7 +125,9 @@ sub _inject_fsck_queues {
     my $sto  = shift;
 
     my $max_checked = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
-    my @fids        = $sto->get_fid_hrefs_above_id($max_checked, 10000);
+    my $to_inject   =
+        MogileFS::Config->server_setting_cached('queue_rate_for_fsck', 30) || 1000;
+    my @fids        = $sto->get_fid_hrefs_above_id($max_checked, $to_inject);
     unless (@fids) {
         $sto->set_server_setting("fsck_host", undef);
         $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);

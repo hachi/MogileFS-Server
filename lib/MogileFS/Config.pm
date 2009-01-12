@@ -257,6 +257,10 @@ sub server_setting {
     return Mgd::get_store()->server_setting($key);
 }
 
+sub server_setting_cached {
+    my ($class, $key, $timeout) = @_;
+    return Mgd::get_store()->server_setting_cached($key, $timeout);
+}
 
 my $memc;
 my $last_memc_server_fetch = 0;
@@ -339,6 +343,9 @@ sub server_setting_is_writable {
             $v =~ /^[\w:\-]+$/;
         return $v;
     }}
+
+    # should probably restrict to (\d+)
+    if ($key =~ /^queue_/) { return $any };
 
     return 0;
 }
