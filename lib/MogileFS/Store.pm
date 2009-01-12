@@ -635,12 +635,13 @@ sub TABLE_fsck_log {
 # ie; fsck, drain, rebalance.
 sub TABLE_file_to_queue {
     "CREATE TABLE file_to_queue (
-    fid       INT UNSIGNED NOT NULL PRIMARY KEY,
+    fid       INT UNSIGNED NOT NULL,
     devid     INT UNSIGNED,
     type      TINYINT UNSIGNED NOT NULL,
     nexttry   INT UNSIGNED NOT NULL,
     failcount TINYINT UNSIGNED NOT NULL default '0',
     flags     SMALLINT UNSIGNED NOT NULL default '0',
+    PRIMARY KEY (fid, type)
     INDEX type_nexttry (type,nexttry)
     )"
 }
