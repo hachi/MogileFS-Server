@@ -88,6 +88,7 @@ lib/MogileFS/Worker/Monitor.pm
 lib/MogileFS/Worker/Query.pm
 lib/MogileFS/Worker/Reaper.pm
 lib/MogileFS/Worker/Replicate.pm
+lib/MogileFS/Worker/JobMaster.pm
 lib/Mogstored/ChildProcess.pm
 lib/Mogstored/ChildProcess/DiskUsage.pm
 lib/Mogstored/ChildProcess/FIDSizes.pm
