@@ -13,7 +13,8 @@ use List::Util ();
 # 9: adds 'drain' state to enum in device table
 # 10: adds 'replpolicy' column to 'class' table
 # 11: adds 'file_to_queue' table
-use constant SCHEMA_VERSION => 11;
+# 12: adds 'file_to_delete2' table
+use constant SCHEMA_VERSION => 12;
 
 sub new {
     my ($class) = @_;
@@ -351,7 +352,8 @@ sub add_extra_tables {
 use constant TABLES => qw( domain class file tempfile file_to_delete
                             unreachable_fids file_on file_on_corrupt host
                             device server_settings file_to_replicate
-                            file_to_delete_later fsck_log file_to_queue );
+                            file_to_delete_later fsck_log file_to_queue
+                            file_to_delete2 );
 
 sub setup_database {
     my $sto = shift;
@@ -643,6 +645,18 @@ sub TABLE_file_to_queue {
     flags     SMALLINT UNSIGNED NOT NULL default '0',
     PRIMARY KEY (fid, type),
     INDEX type_nexttry (type,nexttry)
+    )"
+}
+
+# new style async delete table.
+# this is separate from file_to_queue since deletes are more actively used,
+# and partitioning on 'type' doesn't always work so well.
+sub TABLE_file_to_delete2 {
+    "CREATE TABLE file_to_delete2 (
+    fid INT UNSIGNED NOT NULL PRIMARY KEY,
+    nexttry INT UNSIGNED NOT NULL,
+    failcount TINYINT UNSIGNED NOT NULL default '0',
+    INDEX nexttry (nexttry)
     )"
 }
 
@@ -988,7 +1002,7 @@ sub delete_fidid {
     $self->condthrow;
     $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
     $self->condthrow;
-    $self->dbh->do($self->ignore_replace . " INTO file_to_delete (fid) VALUES (?)", undef, $fidid);
+    $self->enqueue_for_delete2($fidid, 0);
     $self->condthrow;
 }
 
@@ -1130,6 +1144,22 @@ sub enqueue_for_replication {
 
     $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
                          "VALUES (?,?,$nexttry)", undef, $fidid, $from_devid);
+}
+
+# enqueue a fidid for delete
+# note: if we get one more "independent" queue like this, the
+# code should be collapsable? I tried once and it looked too ugly, so we have
+# some redundancy.
+sub enqueue_for_delete2 {
+    my ($self, $fidid, $in) = @_;
+
+    my $nexttry = 0;
+    if ($in) {
+        $nexttry = $self->unix_timestamp . " + " . int($in);
+    }
+
+    $self->insert_ignore("INTO file_to_delete2 (fid, nexttry) ".
+                         "VALUES (?,$nexttry)", undef, $fidid);
 }
 
 # enqueue a fidid for work
@@ -1305,6 +1335,28 @@ sub grab_files_to_replicate {
     return values %$to_repl_map;
 }
 
+# Crap I wish this was less ugly to de-dupe. 
+sub grab_files_to_delete2 {
+    my ($self, $limit) = @_;
+    my $dbh = $self->dbh;
+    $dbh->begin_work;
+    my $ut = $self->unix_timestamp;
+    my $to_del_map = $dbh->selectall_hashref(qq{
+        SELECT *
+        FROM file_to_delete2
+        WHERE nexttry <= $ut
+        ORDER BY nexttry
+        LIMIT $limit
+        FOR UPDATE
+    }, 'fid');
+    unless (keys %$to_del_map) { $dbh->commit; return (); }
+    my $fidlist = join(', ', keys %$to_del_map);
+    $dbh->do(qq{UPDATE file_to_delete2 SET nexttry = $ut + 1000
+        WHERE fid IN ($fidlist)});
+    $dbh->commit;
+    return values %$to_del_map;
+}
+
 sub grab_files_to_queued {
     my ($self, $type, $limit) = @_;
     my $dbh = $self->dbh;
@@ -1362,6 +1414,11 @@ sub delete_fid_from_file_to_queue {
     $self->dbh->do("DELETE FROM file_to_queue WHERE fid=?", undef, $fidid);
 }
 
+sub delete_fid_from_file_to_delete2 {
+    my ($self, $fidid) = @_;
+    $self->dbh->do("DELETE FROM file_to_delete2 WHERE fid=?", undef, $fidid);
+}
+
 sub reschedule_file_to_replicate_absolute {
     my ($self, $fid, $abstime) = @_;
     $self->dbh->do("UPDATE file_to_replicate SET nexttry = ?, failcount = failcount + 1 WHERE fid = ?",
@@ -1371,6 +1428,19 @@ sub reschedule_file_to_replicate_absolute {
 sub reschedule_file_to_replicate_relative {
     my ($self, $fid, $in_n_secs) = @_;
     $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp . " + ?, " .
+                   "failcount = failcount + 1 WHERE fid = ?",
+                   undef, $in_n_secs, $fid);
+}
+
+sub reschedule_file_to_delete2_absolute {
+    my ($self, $fid, $abstime) = @_;
+    $self->dbh->do("UPDATE file_to_delete2 SET nexttry = ?, failcount = failcount + 1 WHERE fid = ?",
+                   undef, $abstime, $fid);
+}
+
+sub reschedule_file_to_delete2_relative {
+    my ($self, $fid, $in_n_secs) = @_;
+    $self->dbh->do("UPDATE file_to_delete2 SET nexttry = " . $self->unix_timestamp . " + ?, " .
                    "failcount = failcount + 1 WHERE fid = ?",
                    undef, $in_n_secs, $fid);
 }

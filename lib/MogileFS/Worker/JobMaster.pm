@@ -9,6 +9,7 @@ use base 'MogileFS::Worker';
 use fields (
             'fsck_queue_limit',
             'repl_queue_limit',
+            'dele_queue_limit',
             );
 use MogileFS::Util qw(every error debug eurl);
 
@@ -35,6 +36,7 @@ sub work {
 
     $self->{fsck_queue_limit} = 100;
     $self->{repl_queue_limit} = 100;
+    $self->{dele_queue_limit} = 100;
 
     every(1, sub {
         # 'pings' parent and populates all queues.
@@ -42,8 +44,25 @@ sub work {
         my $sto = Mgd::get_store();
         $self->read_from_parent(1);
         $self->_check_replicate_queues($sto);
+        $self->_check_delete_queues($sto);
         $self->_check_fsck_queues($sto);
     });
+}
+
+sub _check_delete_queues {
+    my $self = shift;
+    my $sto  = shift;
+    my ($need_fetch, $new_limit) =
+        queue_depth_check($self->queue_depth('delete'),
+        $self->{dele_queue_limit});
+    return unless $need_fetch;
+    my @to_del = $sto->grab_files_to_delete2($new_limit);
+    $self->{dele_queue_limit} = @to_del ? $new_limit : 100;
+    return unless @to_del;
+    for my $todo (@to_del) {
+        $self->send_to_parent("queue_todo delete " .
+            _eurl_encode_args($todo));
+    }
 }
 
 # NOTE: we only maintain one queue per worker, but we can easily

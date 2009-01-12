@@ -34,45 +34,38 @@ sub work {
     # wait for one pass of the monitor
     $self->wait_for_monitor;
 
-  PASS:
     while (1) {
-        $self->parent_ping;
+        $self->send_to_parent("worker_bored 50 delete");
+        $self->read_from_parent(1);
         $self->validate_dbh;
 
-        # see if we have anything from the parent
-        my $start_time = time();
-        my $end_time   = $start_time + 5;
-
-        while (1) {
-            # report in to parent periodically
-            next PASS if time() >= $end_time;
-
-            # call our workers, and have them do things
-            #    RETVAL = 0; I think I am done working for now
-            #    RETVAL = 1; I have more work to do
-            my $tempres = $self->process_tempfiles;
-            my $delres;
-            if (time() > $old_queue_check) {
-                $self->reenqueue_delayed_deletes;
-                $delres = $self->process_deletes;
-                # if we did no work, crawl the backoff.
-                if ($delres) {
-                    $old_queue_backoff = 0;
-                    $old_queue_check   = 0;
-                } else {
-                    $old_queue_check = time() + $old_queue_backoff;
-                    $old_queue_backoff++ unless $old_queue_backoff > 1800;
-                }
+        # call our workers, and have them do things
+        #    RETVAL = 0; I think I am done working for now
+        #    RETVAL = 1; I have more work to do
+        my $tempres = $self->process_tempfiles;
+        my $delres;
+        if (time() > $old_queue_check) {
+            $self->reenqueue_delayed_deletes;
+            $delres = $self->process_deletes;
+            # if we did no work, crawl the backoff.
+            if ($delres) {
+                $old_queue_backoff = 0;
+                $old_queue_check   = 0;
+            } else {
+                $old_queue_check = time() + $old_queue_backoff
+                    if $old_queue_backoff > 360;
+                $old_queue_backoff++ unless $old_queue_backoff > 1800;
             }
-
-            # unless someone did some work, let's sleep
-            unless ($tempres || $delres) {
-                $sleep_for++ if $sleep_for < $sleep_max;
-                sleep $sleep_for;
-                next PASS;
-            }
-            $sleep_for = 0;
         }
+
+        my $delres2 = $self->process_deletes2;
+
+        # unless someone did some work, let's sleep
+        unless ($tempres || $delres || $delres2) {
+            $sleep_for++ if $sleep_for < $sleep_max;
+            sleep $sleep_for;
+        }
+        $sleep_for = 0;
     }
 
 }
@@ -141,6 +134,116 @@ sub process_tempfiles {
     $sto->mass_insert_file_on(@devfids);
     $sto->enqueue_fids_to_delete(@fidids);
     $sto->dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fidids) . ")");
+    return 1;
+}
+
+# new style delete queueing. I'm not putting a lot of effort into commonizing
+# code between the old one and the new one. Feel free to send a patch!
+sub process_deletes2 {
+    my $self = shift;
+
+    my $sto = Mgd::get_store();
+
+    my $queue_todo = $self->queue_todo('delete');
+    unless (@$queue_todo) {
+        # No work.
+        return 0;
+    }
+
+    while (my $todo = shift @$queue_todo) {
+        $self->still_alive;
+        $self->read_from_parent;
+
+        # load all the devids related to this fid, and delete.
+        my $fid    = MogileFS::FID->new($todo->{fid});
+        my $fidid  = $fid->id;
+        my @devids = $fid->devids;
+
+        # fid has no pants.
+        unless (@devids) {
+            $sto->delete_fid_from_file_to_delete2($fidid);
+            next;
+        }
+
+        for my $devid (@devids) {
+            my $dev = $devid ? MogileFS::Device->of_devid($devid) : undef;
+            error("deleting fid $fidid, on devid ".($devid || 'NULL')."...") if $Mgd::DEBUG >= 2;
+            unless ($dev && $dev->exists) {
+                next;
+            }
+            if ($dev->dstate->is_perm_dead) {
+                $sto->remove_fidid_from_devid($fidid, $devid);
+                next;
+            }
+            # devid is observed down/readonly: delay for at least
+            # 10 minutes.
+            unless ($dev->observed_writeable) {
+                $sto->reschedule_file_to_delete2_relative($fidid,
+                    60 * (10 + $todo->{failcount}));
+                next;
+            }
+            # devid is marked readonly/down/etc: delay for 
+            # at least 1 hour.
+            unless ($dev->can_delete_from) {
+                $sto->reschedule_file_to_delete2_relative($fidid,
+                    60 * 60 * (1 + $todo->{failcount}));
+                next;
+            }
+
+            my $dfid = MogileFS::DevFID->new($dev, $fidid);
+            my $path = $dfid->url;
+
+            # dormando: "There are cases where url can return undefined,
+            # Mogile appears to try to replicate to bogus devices
+            # sometimes?"
+            unless ($path) {
+                error("in deleter, url(devid=$devid, fid=$fidid) returned nothing");
+                next;
+            }
+
+            my $urlparts = MogileFS::Util::url_parts($path);
+
+            # hit up the server and delete it
+            # TODO: (optimization) use MogileFS->get_observed_state and don't 
+            # try to delete things known to be down/etc
+            my $sock = IO::Socket::INET->new(PeerAddr => $urlparts->[0],
+                                             PeerPort => $urlparts->[1],
+                                             Timeout => 2);
+            # this used to mark the device as down for the whole tracker.
+            # if the device is actually down, we can struggle until the
+            # monitor job figures it out... otherwise an occasional timeout
+            # due to high load will prevent delete from working at all.
+            unless ($sock) {
+                $sto->reschedule_file_to_delete2_relative($fidid,
+                    60 * 60 * (1 + $todo->{failcount}));
+                next;
+            }
+
+            # send delete request
+            error("Sending delete for $path") if $Mgd::DEBUG >= 2;
+
+            $sock->write("DELETE $urlparts->[2] HTTP/1.0\r\n\r\n");
+            my $response = <$sock>;
+            if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
+                if (($1 >= 200 && $1 <= 299) || $1 == 404) {
+                    # effectively means all went well
+                    $sto->remove_fidid_from_devid($fidid, $devid);
+                } else {
+                    # remote file system error?  mark node as down
+                    my $httpcode = $1;
+                    error("Error: unlink failure: $path: HTTP code $httpcode");
+
+                    $sto->reschedule_file_to_delete2_relative($fidid,
+                        60 * 30 * (1 + $todo->{failcount}));
+                    next;
+                }
+            } else {
+                error("Error: unknown response line deleting $path: $response");
+            }
+        }
+    }
+
+    # did work.
     return 1;
 }
 

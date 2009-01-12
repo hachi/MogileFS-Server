@@ -202,6 +202,10 @@ sub INDEXES_file_to_replicate {
     "CREATE INDEX file_to_replicate_nexttry ON file_to_replicate (nexttry)"
 }
 
+sub INDEXES_file_to_delete2 {
+    "CREATE INDEX file_to_delete2_nexttry ON file_to_delete2 (nexttry)"
+}
+
 sub INDEXES_file_to_delete_later {
     "CREATE INDEX file_to_delete_later_delafter ON file_to_delete_later (delafter)"
 }
