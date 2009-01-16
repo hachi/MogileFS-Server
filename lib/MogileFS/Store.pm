@@ -933,8 +933,8 @@ sub file_row_from_fidid {
 # classid, devcount" provided a pair of $fidid or undef if no rows.
 sub file_row_from_fidid_range {
     my ($self, $fromfid, $tofid) = @_;
-	my $sth = $self->dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
-								  "FROM file WHERE fid BETWEEN ? AND ?");
+    my $sth = $self->dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
+                                  "FROM file WHERE fid BETWEEN ? AND ?");
     $sth->execute($fromfid,$tofid);
     return $sth->fetchall_arrayref({});
 }
@@ -1237,7 +1237,7 @@ sub get_fids_above_id {
 
     my @ret;
     my $dbh = $self->dbh;
-    my $sth = $dbh->prepare("SELECT fid, dmid, dkey, length, classid ".
+    my $sth = $dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
                             "FROM   file ".
                             "WHERE  fid > ? ".
                             "ORDER BY fid LIMIT $limit");

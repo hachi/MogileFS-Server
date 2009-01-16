@@ -1,3 +1,6 @@
+        * New FSCK work and error for BCNT for bad devcount values (they would
+          not otherwise be caught unless the triggered another fix).
+
 2009-01-12: Release version 2.30
 
         * fsck will now fix broken 'devcount' cols.

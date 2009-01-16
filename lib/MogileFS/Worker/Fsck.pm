@@ -25,6 +25,7 @@ use constant EV_CANT_FIX         => "GONE";
 use constant EV_START_SEARCH     => "SRCH";
 use constant EV_FOUND_FID        => "FOND";
 use constant EV_RE_REPLICATE     => "REPL";
+use constant EV_BAD_COUNT        => "BCNT";
 
 use POSIX ();
 
@@ -200,6 +201,16 @@ sub check_fid {
         return $fix->();
     }
 
+    # This is a simple fixup case
+    unless (scalar($fid->devids) == $fid->devcount) {
+        # log a bad count
+        $fid->fsck_log(EV_BAD_COUNT);
+
+        # TODO: We could fix this without a complete fix pass
+        # $fid->update_devcount();
+        return $fix->();
+    }
+
     # in the fast case, do nothing else (don't check if assumed file
     # locations are actually there).  in the fast case, all we do is
     # check the replication policy, which is already done, so finish.
@@ -340,6 +351,12 @@ sub fix_fid {
         $fid->enqueue_for_replication;
         $fid->fsck_log(EV_RE_REPLICATE);
         return HANDLED;
+    }
+    
+    # Clean up the device count if it's wrong
+    unless(scalar($fid->devids) == $fid->devcount) {
+        $fid->update_devcount();
+        $fid->fsck_log(EV_BAD_COUNT);
     }
 
     return HANDLED;

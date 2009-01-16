@@ -14,6 +14,7 @@ sub new {
         dkey     => undef,
         length   => undef,
         classid  => undef,
+        devcount => undef,
         _loaded  => 0,
         _devids  => undef,   # undef, or pre-loaded arrayref devid list
     }, $class;

@@ -93,8 +93,5 @@
 :: [replicate(12648)] Copier failed replicating 15693848
 ......
 
--- fsck should catch weird state where file exists in 'file' table with
-   devcount>0 but does not exist in file_on. Or count does not match.
-
 -- fsck for case where row from file_to_replicate(fid,fromdevid) does not exist
    in file_on(fid,devid). This is a byproduct of a failed inject.
