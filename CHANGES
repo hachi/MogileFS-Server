@@ -1,3 +1,5 @@
+        * mogstored: pidfile support
+
         * New FSCK work and error for BCNT for bad devcount values (they would
           not otherwise be caught unless the triggered another fix).
 
