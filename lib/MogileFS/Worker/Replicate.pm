@@ -835,8 +835,6 @@ sub http_copy {
         next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
         $clen = $1;
     }
-    return $error_unreachable->("File $spath has a content-length of 0; unable to replicate")
-        unless $clen;
     return $error_unreachable->("File $spath has unexpected content-length of $clen, not $expected_clen")
         if defined $expected_clen && $clen != $expected_clen;
 
@@ -854,21 +852,26 @@ sub http_copy {
     $bytes_to_read = $remain if $remain < $bytes_to_read;
     my $finished_read = 0;
 
-    while (!$pipe_closed && (my $bytes = $sock->read($data, $bytes_to_read))) {
-        # now we've read in $bytes bytes
-        $remain -= $bytes;
-        $bytes_to_read = $remain if $remain < $bytes_to_read;
+    if ($bytes_to_read) {
+        while (!$pipe_closed && (my $bytes = $sock->read($data, $bytes_to_read))) {
+            # now we've read in $bytes bytes
+            $remain -= $bytes;
+            $bytes_to_read = $remain if $remain < $bytes_to_read;
 
-        my $wbytes = $dsock->send($data);
-        $written  += $wbytes;
-        return $dest_error->("Error: wrote $wbytes; expected to write $bytes; failed putting to $dpath")
-            unless $wbytes == $bytes;
-        $intercopy_cb->();
+            my $wbytes = $dsock->send($data);
+            $written  += $wbytes;
+            return $dest_error->("Error: wrote $wbytes; expected to write $bytes; failed putting to $dpath")
+                unless $wbytes == $bytes;
+            $intercopy_cb->();
 
-        die if $bytes_to_read < 0;
-        next if $bytes_to_read;
+            die if $bytes_to_read < 0;
+            next if $bytes_to_read;
+            $finished_read = 1;
+            last;
+        }
+    } else {
+        # 0 byte file copy.
         $finished_read = 1;
-        last;
     }
     return $dest_error->("closed pipe writing to destination")     if $pipe_closed;
     return $src_error->("error reading midway through source: $!") unless $finished_read;

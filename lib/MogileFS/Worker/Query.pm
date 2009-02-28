@@ -8,6 +8,7 @@ use base 'MogileFS::Worker';
 use fields qw(querystarttime reqid);
 use MogileFS::Util qw(error error_code first weighted_list
                       device_state eurl decode_url_args);
+use MogileFS::HTTPFile;
 
 sub new {
     my ($class, $psock) = @_;
@@ -385,8 +386,8 @@ sub cmd_create_close {
     # get size of file and verify that it matches what we were given, if anything
     my $size = MogileFS::HTTPFile->at($path)->size;
 
-    if ($args->{size} > 0 && ! $size) {
-        # size is either: 0 (file doesn't exist) or undef (host unreachable)
+    if ($args->{size} >= 0 && (!defined($size) || $size == MogileFS::HTTPFile::FILE_MISSING)) {
+        # size check has been requested and that storage node is unreachable or the file is missing
         my $type    = defined $size ? "missing" : "cantreach";
         my $lasterr = MogileFS::Util::last_error();
         return $self->err_line("size_verify_error", "Expected: $args->{size}; actual: 0 ($type); path: $path; error: $lasterr")
@@ -396,7 +397,6 @@ sub cmd_create_close {
         if $args->{size} && ($args->{size} != $size);
 
     # TODO: check for EIO?
-    return $self->err_line("empty_file") unless $size;
 
     # insert file_on row
     $dfid->add_to_db;

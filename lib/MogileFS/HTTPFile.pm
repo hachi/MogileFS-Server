@@ -119,7 +119,7 @@ sub delete {
 # returns size of file, (doing a HEAD request and looking at content-length, or side-channel to mogstored)
 # returns 0 on file missing (404 or -1 from sidechannel),
 # returns undef on connectivity error
-use constant FILE_MISSING => 0;
+use constant FILE_MISSING => -1;
 sub size {
     my $self = shift;
     my ($host, $port, $uri, $path) = map { $self->{$_} } qw(host port uri url);

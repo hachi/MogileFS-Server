@@ -71,8 +71,10 @@ sub size_on_disk {
 sub size_matches {
     my $self = shift;
     my $fid = $self->fid;
-    my $disk_size = $self->size_on_disk
-        or return 0;
+    my $disk_size = $self->size_on_disk;
+
+    return 0 if $disk_size == MogileFS::HTTPFile::FILE_MISSING;
+
     return $disk_size == $fid->length;
 }
 
