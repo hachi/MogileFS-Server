@@ -158,12 +158,8 @@ sub process_deletes2 {
         my $fid    = MogileFS::FID->new($todo->{fid});
         my $fidid  = $fid->id;
         my @devids = $fid->devids;
+        my %devids = map { $_ => 1 } @devids;
 
-        # fid has no pants.
-        unless (@devids) {
-            $sto->delete_fid_from_file_to_delete2($fidid);
-            next;
-        }
 
         for my $devid (@devids) {
             my $dev = $devid ? MogileFS::Device->of_devid($devid) : undef;
@@ -173,6 +169,7 @@ sub process_deletes2 {
             }
             if ($dev->dstate->is_perm_dead) {
                 $sto->remove_fidid_from_devid($fidid, $devid);
+                delete $devids{$devid};
                 next;
             }
             # devid is observed down/readonly: delay for at least
@@ -228,6 +225,7 @@ sub process_deletes2 {
                 if (($1 >= 200 && $1 <= 299) || $1 == 404) {
                     # effectively means all went well
                     $sto->remove_fidid_from_devid($fidid, $devid);
+                    delete $devids{$devid};
                 } else {
                     # remote file system error?  mark node as down
                     my $httpcode = $1;
@@ -240,6 +238,12 @@ sub process_deletes2 {
             } else {
                 error("Error: unknown response line deleting $path: $response");
             }
+        }
+
+        # fid has no pants.
+        unless (@devids) {
+            $sto->delete_fid_from_file_to_delete2($fidid);
+            next;
         }
     }
 
