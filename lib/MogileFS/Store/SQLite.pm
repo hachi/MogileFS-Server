@@ -187,6 +187,13 @@ sub INDEXES_fsck_log {
     ("CREATE INDEX utime ON fsck_log (utime)");
 }
 
+sub INDEXES_file_to_queue {
+    ("CREATE INDEX type_nexttry ON file_to_queue (type,nexttry)");
+}
+sub INDEXES_file_to_delete2 {
+    ("CREATE INDEX file_to_delete2_nexttry ON file_to_delete2 (nexttry)");
+}
+
 sub filter_create_sql {
     my ($self, $sql) = @_;
     $sql =~ s/\bENUM\(.+?\)/TEXT/g;
