@@ -47,6 +47,10 @@ sub column_type {
     return undef;
 }
 
+# Implement these for native database locking
+# sub get_lock {}
+# sub release_lock {}
+
 # --------------------------------------------------------------------------
 # Store-related things we override
 # --------------------------------------------------------------------------
