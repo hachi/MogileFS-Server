@@ -32,6 +32,19 @@ sub can_replace { 1 }
 sub can_insertignore { 0 }
 sub unix_timestamp { "strftime('%s','now')" }
 
+sub column_type {
+    my ($self, $table, $col) = @_;
+    my $sth = $self->dbh->prepare("PRAGMA table_info($table)");
+    $sth->execute;
+    while (my $rec = $sth->fetchrow_arrayref) {
+        if ($rec->[1] eq $col) {
+            $sth->finish;
+            return $rec->[2];
+        }
+    }
+    return undef;
+}
+
 # --------------------------------------------------------------------------
 # Store-related things we override
 # --------------------------------------------------------------------------
