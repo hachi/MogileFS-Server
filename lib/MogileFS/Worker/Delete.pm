@@ -241,7 +241,7 @@ sub process_deletes2 {
         }
 
         # fid has no pants.
-        unless (@devids) {
+        unless (keys %devids) {
             $sto->delete_fid_from_file_to_delete2($fidid);
             next;
         }
