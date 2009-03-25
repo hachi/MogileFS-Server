@@ -194,7 +194,7 @@ sub filter_create_sql {
     my ($table) = $sql =~ /create\s+table\s+(\S+)/i;
     die "didn't find table" unless $table;
     if ($self->can("INDEXES_$table")) {
-        $sql =~ s!,\s+INDEX\s+\(.+?\)!!mg;
+        $sql =~ s!,\s+INDEX\s+(\w+\s+)?\(.+?\)!!mg;
     }
 
     return $sql;
