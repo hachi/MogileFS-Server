@@ -129,10 +129,6 @@ sub enqueue_for_replication {
     croak("Unknown options to enqueue_for_replication") if %opts;
     my $from_devid = (ref $from_dev ? $from_dev->id : $from_dev) || undef;
     Mgd::get_store()->enqueue_for_replication($self->id, $from_devid, $in);
-
-    # wake up a replicator, to reduce replication latency (will happen
-    # on its own otherwise, polling)
-    MogileFS::ProcManager->wake_a("replicate");
 }
 
 sub mark_unreachable {
