@@ -1178,11 +1178,12 @@ sub cmd_stats {
     my %classes;
     my $rows;
 
-    $rows = $dbh->selectall_arrayref('SELECT class.dmid, namespace, classid, classname ' .
-                                     'FROM domain, class WHERE class.dmid = domain.dmid');
+    $rows = $dbh->selectall_arrayref('SELECT d.dmid, d.namespace, c.classid, c.classname ' .
+                                     'FROM domain d LEFT JOIN class c ON c.dmid=d.dmid');
+
     foreach my $row (@$rows) {
         $classes{$row->[0]}->{name} = $row->[1];
-        $classes{$row->[0]}->{classes}->{$row->[2]} = $row->[3];
+        $classes{$row->[0]}->{classes}->{$row->[2] || 0} = $row->[3] || 'default';
     }
     $classes{$_}->{classes}->{0} = 'default'
         foreach keys %classes;

@@ -1,3 +1,6 @@
+        * Fix showing domain and class in mogadm output when there's only the
+          default class in the domain (Mark Imbriaco)
+
         * mogstored: pidfile support
 
         * New FSCK work and error for BCNT for bad devcount values (they would
