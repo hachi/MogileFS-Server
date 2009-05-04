@@ -749,8 +749,10 @@ sub cmd_create_host {
         $args->{status} ||= 'down';
     }
 
-    return $self->err_line('unknown_state')
-        unless MogileFS::Host->valid_initial_state($args->{status});
+    if ($args->{status}) {
+        return $self->err_line('unknown_state')
+            unless MogileFS::Host->valid_initial_state($args->{status});
+    }
 
     # arguments all good, let's do it.
 
