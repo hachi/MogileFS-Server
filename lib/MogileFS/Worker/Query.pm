@@ -790,7 +790,7 @@ sub cmd_delete_host {
 
     foreach my $dev (MogileFS::Device->devices) {
         return $self->err_line('host_not_empty')
-            if $dev->hostid == $hostid && $dev->status ne "dead";
+            if $dev->hostid == $hostid;
     }
 
     $host->delete;
