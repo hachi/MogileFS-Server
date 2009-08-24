@@ -371,7 +371,7 @@ sub create_directory {
     my $ans = <$sock>;
 
     # if they don't support this method, remember that
-    if ($ans && $ans =~ m!HTTP/1\.[01] (400|405|501)!) {
+    if ($ans && $ans =~ m!HTTP/1\.[01] (400|501)!) {
         $self->{no_mkcol} = 1;
         # TODO: move this into method on device, which propagates to parent
         # and also receive from parent.  so all query workers share this knowledge
