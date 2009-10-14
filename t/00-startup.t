@@ -20,7 +20,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 64;
+    plan tests => 63;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -259,7 +259,9 @@ ok(try_for(40, sub {
 }), "files replicated to hostC from hostB");
 
 # kill hostB now
-ok($tmptrack->mogadm("host", "delete", "hostB"), "killed hostB");
+# hosts are no longer able to be nuked even if they have deleted devices.
+# this saves us from some subtle bugs.
+#ok($tmptrack->mogadm("host", "delete", "hostB"), "killed hostB");
 
 # delete them all, see if they go away.
 for my $n (1..$n_files) {
