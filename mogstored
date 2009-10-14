@@ -35,7 +35,7 @@ BEGIN {
 
 use IO::Socket::INET;
 use POSIX qw(WNOHANG);
-use Perlbal 1.53;
+use Perlbal 1.73;
 use FindBin qw($Bin $RealScript);
 use Gearman::Server 1.08;
 use Gearman::Client::Async 0.93;
