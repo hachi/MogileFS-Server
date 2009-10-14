@@ -481,7 +481,7 @@ sub TABLE_file {
     dkey           VARCHAR(255),     # domain-defined
     UNIQUE dkey  (dmid, dkey),
 
-    length        INT UNSIGNED,        # 4GB limit
+    length        BIGINT UNSIGNED,   # big limit
 
     classid       TINYINT UNSIGNED NOT NULL,
     devcount      TINYINT UNSIGNED NOT NULL,

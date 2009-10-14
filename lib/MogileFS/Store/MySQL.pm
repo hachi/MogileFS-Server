@@ -146,10 +146,14 @@ sub fid_type {
     my $create = eval { $dbh->selectrow_array("SHOW CREATE TABLE file") };
     if ($create && $create =~ /\bbigint\b/i) {
         return $self->{_fid_type} = "BIGINT";
+    } else {
+        # Old installs might not have raised the fid type size yet.
+        return $self->{_fid_type} = "INT";
     }
 
-    # else, use 32-bit ints for the fid type
-    return $self->{_fid_type} = "INT";
+    # Used to default to 32bit ints, but this always bites people
+    # a few years down the road. So default to 64bit.
+    return $self->{_fid_type} = "BIGINT";
 }
 
 sub column_type {
