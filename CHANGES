@@ -1,7 +1,7 @@
         * Many minor bug/documentation fixes.
 
-        * MySQL installs now use BIGINT's for fid/length by default.
-          (dormando)
+        * MySQL and Postgres installs now use BIGINT's for fid/length by
+          default. (dormando, robbat2)
 
         * Accept 405 responses to MKCOL from the WebDAV server since it often
           just means that the directory already exists. (Ask Bjørn Hansen)
