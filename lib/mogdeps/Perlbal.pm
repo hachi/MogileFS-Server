@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 #
 
 =head1 NAME
@@ -14,8 +14,8 @@ Perlbal - Reverse-proxy load balancer and webserver
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright 2004, Danga Interactice, Inc.
-Copyright 2005-2006, Six Apart, Ltd.
+Copyright 2004, Danga Interactive, Inc.
+Copyright 2005-2007, Six Apart, Ltd.
 
 You can use and redistribute Perlbal under the same terms as Perl itself.
 
@@ -25,7 +25,7 @@ package Perlbal;
 
 BEGIN {
     # keep track of anonymous subs' origins:
-    $^P = 0x200;
+    $^P |= 0x200;
 }
 
 my $has_gladiator  = eval "use Devel::Gladiator; 1;";
@@ -33,7 +33,7 @@ my $has_cycle      = eval "use Devel::Cycle; 1;";
 use Devel::Peek;
 
 use vars qw($VERSION);
-$VERSION = '1.59';
+$VERSION = '1.73';
 
 use constant DEBUG => $ENV{PERLBAL_DEBUG} || 0;
 use constant DEBUG_OBJ => $ENV{PERLBAL_DEBUG_OBJ} || 0;
@@ -53,6 +53,9 @@ $Perlbal::BSD_RESOURCE_AVAILABLE = eval { require BSD::Resource; 1; };
 
 # incremented every second by a timer:
 $Perlbal::tick_time = time();
+
+# Set to 1 when we open syslog, and 0 when we close it
+$Perlbal::syslog_open = 0;
 
 use Getopt::Long;
 use Carp qw(cluck croak);
@@ -89,11 +92,16 @@ our(%service);   # servicename -> Perlbal::Service
 our(%pool);      # poolname => Perlbal::Pool
 our(%plugins);   # plugin => 1 (shows loaded plugins)
 our($last_error);
+our $service_autonumber = 1; # used to generate names for anonymous services created with Perlbal->create_service()
 our $vivify_pools = 1; # if on, allow automatic creation of pools
 our $foreground = 1; # default to foreground
 our $track_obj = 0;  # default to not track creation locations
 our $reqs = 0; # total number of requests we've done
 our $starttime = time(); # time we started
+our $pidfile = '';  # full path, default to not writing pidfile
+# used by pidfile (only makes sense before run started)
+# don't rely on this variable, it might change.
+our $run_started = 0;  
 our ($lastutime, $laststime, $lastreqs) = (0, 0, 0); # for deltas
 
 our %PluginCase = ();   # lowercase plugin name -> as file is named
@@ -187,6 +195,21 @@ sub service {
     return $service{$_[0]};
 }
 
+sub create_service {
+    my $class = shift;
+    my $name = shift;
+    
+    unless (defined($name)) {
+        $name = "____auto_".($service_autonumber++);
+    }
+
+    croak("service '$name' already exists") if $service{$name};
+    croak("pool '$name' already exists") if $pool{$name};
+
+    # Create the new service and return it
+    return $service{$name} = Perlbal::Service->new($name);
+}
+
 sub pool {
     my $class = shift;
     return $pool{$_[0]};
@@ -240,6 +263,7 @@ sub run_manage_command {
 
     # expand variables
     $cmd =~ s/\$\{(.+?)\}/_expand_config_var($1)/eg;
+    $cmd =~ s/\$(\w+)/$ENV{$1}/g;
 
     $out ||= sub {};
     $ctx ||= Perlbal::CommandContext->new;
@@ -380,7 +404,7 @@ sub MANAGE_verbose {
 }
 
 sub MANAGE_shutdown {
-    my $mc = shift->parse(qr/^shutdown( graceful)?$/);
+    my $mc = shift->parse(qr/^shutdown(\s?graceful)?\s?(\d+)?$/);
 
     # immediate shutdown
     exit(0) unless $mc->arg(1);
@@ -414,8 +438,40 @@ sub MANAGE_shutdown {
         return 0; # end the event loop and thus we exit perlbal
     });
 
+    # If requested, register a callback to kill the perlbal process after a specified number of seconds
+    if (my $timeout = $mc->arg(2)) {
+        Perlbal::Socket::register_callback($timeout, sub { exit(0); });
+    }
+
     # so they know something happened
     return $mc->ok;
+}
+
+sub MANAGE_mime {
+    my $mc = shift->parse(qr/^mime(?:\s+(\w+)(?:\s+(\w+))?(?:\s+(\S+))?)?$/);
+    my ($cmd, $arg1, $arg2) = ($mc->arg(1), $mc->arg(2), $mc->arg(3));
+
+    if (!$cmd || $cmd eq 'list') {
+        foreach my $key (sort keys %$Perlbal::ClientHTTPBase::MimeType) {
+            $mc->out("$key $Perlbal::ClientHTTPBase::MimeType->{$key}");
+        }
+        $mc->end;
+    } elsif ($cmd eq 'set') {
+        if (!$arg1 || !$arg2) {
+            return $mc->err("Usage: set <ext> <mime>");
+        }
+
+        $Perlbal::ClientHTTPBase::MimeType->{$arg1} = $arg2;
+        return $mc->out("$arg1 set to $arg2.");
+    } elsif ($cmd eq 'remove') {
+        if (delete $Perlbal::ClientHTTPBase::MimeType->{$arg1}) {
+            return $mc->out("$arg1 removed.");
+        } else {
+            return $mc->err("$arg1 not a defined extension.");
+        }
+    } else {
+        return $mc->err("Usage: list, remove <ext>, add <ext> <mime>");
+    }
 }
 
 sub MANAGE_xs {
@@ -631,7 +687,11 @@ sub MANAGE_socks {
         $mc->out(sprintf("%5s %6s", "fd", "age"));
         foreach (sort { $a <=> $b } keys %$sf) {
             my $sock = $sf->{$_};
-            my $age = $now - $sock->{create_time};
+            my $age;
+            eval {
+                $age = $now - $sock->{create_time};
+            };
+            $age ||= 0;
             $mc->out(sprintf("%5d %5ds %s", $_, $age, $sock->as_string));
         }
     }
@@ -707,6 +767,7 @@ sub MANAGE_states {
 
     my %states; # { "Class" => { "State" => int count; } }
     foreach my $sock (values %$sf) {
+        next unless $sock->can('state');
         my $state = $sock->state;
         next unless defined $state;
         if (defined $svc) {
@@ -734,17 +795,20 @@ sub MANAGE_queues {
     foreach my $svc (values %service) {
         next unless $svc->{role} eq 'reverse_proxy';
 
-        my ($age, $count) = (0, scalar(@{$svc->{waiting_clients}}));
-        my Perlbal::ClientProxy $oldest = $svc->{waiting_clients}->[0];
-        $age = $now - $oldest->{last_request_time} if defined $oldest;
-        $mc->out("$svc->{name}-normal.age $age");
-        $mc->out("$svc->{name}-normal.count $count");
+        my %queues = (
+            normal  => 'waiting_clients',
+            highpri => 'waiting_clients_highpri',
+            lowpri  => 'waiting_clients_lowpri',
+        );
 
-        ($age, $count) = (0, scalar(@{$svc->{waiting_clients_highpri}}));
-        $oldest = $svc->{waiting_clients_highpri}->[0];
-        $age = $now - $oldest->{last_request_time} if defined $oldest;
-        $mc->out("$svc->{name}-highpri.age $age");
-        $mc->out("$svc->{name}-highpri.count $count");
+        while (my ($queue_name, $clients_key) = each %queues) {
+            my $age = 0;
+            my $count = @{$svc->{$clients_key}};
+            my Perlbal::ClientProxy $oldest = $svc->{$clients_key}->[0];
+            $age = $now - $oldest->{last_request_time} if defined $oldest;
+            $mc->out("$svc->{name}-$queue_name.age $age");
+            $mc->out("$svc->{name}-$queue_name.count $count");
+        }
     }
     $mc->end;
 }
@@ -766,7 +830,7 @@ sub MANAGE_state {
 sub MANAGE_leaks {
     my $mc = shift->parse(qr/^leaks(?:\s+(.+))?$/);
     return $mc->err("command disabled without \$ENV{PERLBAL_DEBUG} set")
-        unless $ENV{PERBAL_DEBUG};
+        unless $ENV{PERLBAL_DEBUG};
 
     my $what = $mc->arg(1);
 
@@ -890,7 +954,63 @@ sub MANAGE_server {
         return $mc->ok;
     }
 
+    if ($key eq "pidfile") {
+        return $mc->err("pidfile must be configured at startup, before Perlbal::run is called") if  $run_started;
+        return $mc->err("Expected full pathname to pidfile") unless $val;
+        $pidfile = $val;
+        return $mc->ok;
+    }
+
+    if ($key eq "crash_backtrace") {
+        return $mc->err("Expected 1 or 0") unless $val eq '1' || $val eq '0';
+        if ($val) {
+            $SIG{__DIE__} = sub { Carp::confess(@_) };
+        } else {
+            $SIG{__DIE__} = undef;
+        }
+        return $mc->ok;
+    }
+
     return $mc->err("unknown server option '$val'");
+}
+
+sub MANAGE_dumpconfig {
+    my $mc = shift;
+
+    while (my ($name, $pool) = each %pool) {
+        $mc->out("CREATE POOL $name");
+
+        if ($pool->can("dumpconfig")) {
+            foreach my $line ($pool->dumpconfig) {
+                $mc->out("  $line");
+            }
+        } else {
+            my $class = ref($pool);
+            $mc->out("  # Pool class '$class' is unable to dump config.");
+        }
+    } continue {
+        $mc->out("");
+    }
+
+    while (my ($name, $service) = each %service) {
+        $mc->out("CREATE SERVICE $name");
+
+        if ($service->can("dumpconfig")) {
+            foreach my $line ($service->dumpconfig) {
+                $mc->out("  $line");
+            }
+        } else {
+            my $class = ref($service);
+            $mc->out("  # Service class '$class' is unable to dump config.");
+        }
+
+        my $state = $service->{enabled} ? "ENABLE" : "DISABLE";
+        $mc->out("$state $name");
+    } continue {
+        $mc->out("");
+    }
+
+    return $mc->ok
 }
 
 sub MANAGE_reproxy_state {
@@ -907,7 +1027,7 @@ sub MANAGE_create {
     if ($what eq "service") {
         return $mc->err("service '$name' already exists") if $service{$name};
         return $mc->err("pool '$name' already exists") if $pool{$name};
-        $service{$name} = Perlbal::Service->new($name);
+        Perlbal->create_service($name);
         $mc->{ctx}{last_created} = $name;
         return $mc->ok;
     }
@@ -1089,14 +1209,13 @@ sub MANAGE_aio {
 
 sub load_config {
     my ($file, $writer) = @_;
-    open (F, $file) or die "Error opening config file ($file): $!\n";
+    open (my $fh, $file) or die "Error opening config file ($file): $!\n";
     my $ctx = Perlbal::CommandContext->new;
     $ctx->verbose(0);
-    while (my $line = <F>) {
-        $line =~ s/\$(\w+)/$ENV{$1}/g;
+    while (my $line = <$fh>) {
         return 0 unless run_manage_command($line, $writer, $ctx);
     }
-    close(F);
+    close($fh);
     return 1;
 }
 
@@ -1117,7 +1236,7 @@ sub daemonize {
     croak "Cannot detach from controlling terminal"
         unless $sess_id = POSIX::setsid();
 
-    ## Prevent possibility of acquiring a controling terminal
+    ## Prevent possibility of acquiring a controlling terminal
     $SIG{'HUP'} = 'IGNORE';
     if ($pid = fork) { exit 0; }
 
@@ -1138,22 +1257,44 @@ sub daemonize {
     open(STDERR, "+>&STDIN");
 }
 
+# For other apps using Danga::Socket that want to embed Perlbal, this can be called
+# directly to start it up. You can call this as many times as you like; it'll
+# only actually do what it does the first time it's called.
+sub initialize {
+    unless ($run_started) {
+        $run_started = 1;
+
+        # number of AIO threads.  the number of outstanding requests isn't
+        # affected by this
+        IO::AIO::min_parallel(3)    if $Perlbal::OPTMOD_IO_AIO;
+
+        # register IO::AIO pipe which gets written to from threads
+        # doing blocking IO
+        if ($Perlbal::OPTMOD_IO_AIO) {
+            Perlbal::Socket->AddOtherFds(IO::AIO::poll_fileno() =>
+                                         \&IO::AIO::poll_cb);
+        }
+
+        # The fact that this only runs the first time someone calls initialize()
+        # means that some things which depend on it might be unreliable when
+        # used in an embedded perlbal if there is a race for multiple components
+        # to call initialize().
+        run_global_hook("pre_event_loop");
+    }
+}
+
+# This is the function to call if you want Perlbal to be in charge of the event loop.
+# It won't return until Perlbal is somehow told to exit.
 sub run {
+
     # setup for logging
     Sys::Syslog::openlog('perlbal', 'pid', 'daemon') if $Perlbal::SYSLOG_AVAILABLE;
+    $Perlbal::syslog_open = 1;
     Perlbal::log('info', 'beginning run');
+    my $pidfile_written = 0;
+    $pidfile_written = _write_pidfile( $pidfile ) if $pidfile;
 
-    # number of AIO threads.  the number of outstanding requests isn't
-    # affected by this
-    IO::AIO::min_parallel(3)    if $Perlbal::OPTMOD_IO_AIO;
-
-    # register IO::AIO pipe which gets written to from threads
-    # doing blocking IO
-    if ($Perlbal::OPTMOD_IO_AIO) {
-        Perlbal::Socket->AddOtherFds(IO::AIO::poll_fileno() =>
-                                     \&IO::AIO::poll_cb);
-    }
-
+    Perlbal::initialize();
 
     Danga::Socket->SetLoopTimeout(1000);
     Danga::Socket->SetPostLoopCallback(sub {
@@ -1161,8 +1302,6 @@ sub run {
         Perlbal::Socket::run_callbacks();
         return 1;
     });
-
-    run_global_hook("pre_event_loop");
 
     # begin the overall loop to try to capture if Perlbal dies at some point
     # so we can have a log of it
@@ -1178,7 +1317,14 @@ sub run {
         Perlbal::log('crit', "crash log: $_") foreach split(/\r?\n/, $@);
         $clean_exit = 0;
     }
+
+    # Note: This will only actually remove the pidfile on 'shutdown graceful'
+    # A more reliable approach might be to have a pidfile object which fires
+    # removal on DESTROY.
+    _remove_pidfile( $pidfile ) if $pidfile_written;
+
     Perlbal::log('info', 'ending run');
+    $Perlbal::syslog_open = 0;
     Sys::Syslog::closelog() if $Perlbal::SYSLOG_AVAILABLE;
 
     return $clean_exit;
@@ -1188,13 +1334,39 @@ sub log {
     # simple logging functionality
     if ($foreground) {
         # syslog acts like printf so we have to use printf and append a \n
-        shift; # ignore the first parameter (info, warn, critical, etc)
+        shift; # ignore the first parameter (info, warn, crit, etc)
         printf(shift(@_) . "\n", @_);
     } else {
         # just pass the parameters to syslog
-        Sys::Syslog::syslog(@_) if $Perlbal::SYSLOG_AVAILABLE;
+        Sys::Syslog::syslog(@_) if $Perlbal::syslog_open;
     }
 }
+
+
+sub _write_pidfile {
+    my $file = shift;
+
+    my $fh;
+    unless (open($fh, ">$file")) {
+        Perlbal::log('info', "couldn't create pidfile '$file': $!" );
+        return 0;
+    }
+    unless ((print $fh "$$\n") && close($fh)) {
+        Perlbal::log('info', "couldn't write into pidfile '$file': $!" );
+        _remove_pidfile($file);
+        return 0;
+    }
+    return 1;
+}
+
+
+sub _remove_pidfile {
+    my $file = shift;
+    
+    unlink $file;
+    return 1;
+}
+
 
 # Local Variables:
 # mode: perl

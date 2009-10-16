@@ -2,8 +2,8 @@
 # Pool class
 ######################################################################
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 #
 
 package Perlbal::Pool;
@@ -92,6 +92,23 @@ sub set {
         return $set->();
     }
 
+}
+
+sub dumpconfig {
+    my Perlbal::Pool $self = shift;
+    my $name = $self->{name};
+
+    my @return;
+
+    if (my $nodefile = $self->{'nodefile'}) {
+        push @return, "SET nodefile = $nodefile";
+    } else {
+        foreach my $node (@{$self->{nodes}}) {
+            my ($ip, $port) = @$node;
+            push @return, "POOL ADD $name $ip:$port";
+        }
+    }
+    return @return;
 }
 
 # returns string of balance method

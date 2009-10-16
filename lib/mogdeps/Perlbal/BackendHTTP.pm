@@ -1,8 +1,8 @@
 ######################################################################
 # HTTP connection to backend node
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 #
 
 package Perlbal::BackendHTTP;
@@ -38,6 +38,8 @@ use fields ('client',  # Perlbal::ClientProxy connection, or undef
             'use_count',  # number of requests this backend's been used for
             'generation', # int; counts what generation we were spawned in
             'buffered_upload_mode', # bool; if on, we're doing a buffered upload transmit
+
+            'scratch' # for plugins
             );
 use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM SOL_SOCKET SO_ERROR
               AF_UNIX PF_UNSPEC
@@ -61,7 +63,8 @@ our %NodeStats; # { "ip:port" => { ... } }; keep statistics about nodes
 # an options hashref that contains some options:
 #       reportto => object obeying reportto interface
 sub new {
-    my ($class, $svc, $ip, $port, $opts) = @_;
+    my Perlbal::BackendHTTP $self = shift;
+    my ($svc, $ip, $port, $opts) = @_;
     $opts ||= {};
 
     my $sock;
@@ -71,11 +74,16 @@ sub new {
         Perlbal::log('crit', "Error creating socket: $!");
         return undef;
     }
+    my $inet_aton = Socket::inet_aton($ip);
+    unless ($inet_aton) {
+        Perlbal::log('crit', "inet_aton failed creating socket for $ip");
+        return undef;
+    }
 
     IO::Handle::blocking($sock, 0);
-    connect $sock, Socket::sockaddr_in($port, Socket::inet_aton($ip));
+    connect $sock, Socket::sockaddr_in($port, $inet_aton);
 
-    my $self = fields::new($class);
+    $self = fields::new($self) unless ref $self;
     $self->SUPER::new($sock);
 
     Perlbal::objctor($self);
@@ -104,7 +112,6 @@ sub new {
     # for header reading:
     $self->init;
 
-    bless $self, ref $class || $class;
     $self->watch_write(1);
     return $self;
 }
@@ -166,7 +173,6 @@ sub new_process {
     $self->state("connecting");
 
     $self->init;
-    bless $self, ref $class || $class;
     $self->watch_write(1);
     return $self;
 }
@@ -264,9 +270,12 @@ sub assign_client {
     # forwarding info headers
     if ($svc->trusted_ip($client_ip)) {
         # yes, we trust our upstream, so just append our client's IP
-        # to the existing list of forwarded IPs
-        my @ips = split /,\s*/, ($hds->header("X-Forwarded-For") || '');
-        $hds->header("X-Forwarded-For", join ", ", @ips, $client_ip);
+        # to the existing list of forwarded IPs, if we're a blind proxy
+        # then don't append our IP to the end of the list.
+        unless ($svc->{blind_proxy}) {
+            my @ips = split /,\s*/, ($hds->header("X-Forwarded-For") || '');
+            $hds->header("X-Forwarded-For", join ", ", @ips, $client_ip);
+        }
     } else {
         # no, don't trust upstream (untrusted client), so remove all their
         # forwarding headers and tag their IP as the x-forwarded-for
@@ -342,8 +351,10 @@ sub event_write {
         if (defined $self->{service} && $self->{service}->{verify_backend} &&
             !$self->{has_attention} && !defined $NoVerify{$self->{ipport}}) {
 
+            return if $self->{service}->run_hook('backend_write_verify', $self);
+
             # the backend should be able to answer this incredibly quickly.
-            $self->write("OPTIONS * HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
+            $self->write("OPTIONS " . $self->{service}->{verify_backend_path} . " HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
             $self->watch_read(1);
             $self->{waiting_options} = 1;
             $self->{content_length_remain} = undef;
@@ -367,6 +378,15 @@ sub event_write {
     $self->watch_write(0) if $done;
 }
 
+sub verify_success {
+    my Perlbal::BackendHTTP $self = shift;
+    $self->{waiting_options} = 0;
+    $self->{has_attention} = 1;
+    $NodeStats{$self->{ipport}}->{verifies}++;
+    $self->next_request(1); # initial
+    return;
+}
+
 sub verify_failure {
     my Perlbal::BackendHTTP $self = shift;
     $NoVerify{$self->{ipport}} = time() + 60;
@@ -377,6 +397,11 @@ sub verify_failure {
 
 sub event_read_waiting_options { # : void
     my Perlbal::BackendHTTP $self = shift;
+
+    if (defined $self->{service}) {
+        return if $self->{service}->run_hook('backend_readable_verify', $self);
+    }
+
     if ($self->{content_length_remain}) {
         # the HTTP/1.1 spec says OPTIONS responses can have content-lengths,
         # but the meaning of the response is reserved for a future spec.
@@ -393,11 +418,7 @@ sub event_read_waiting_options { # : void
     # if we've got the option response and read any response data
     # if present:
     if ($self->{res_headers} && ! $self->{content_length_remain}) {
-        # other setup to mark being done with options checking
-        $self->{waiting_options} = 0;
-        $self->{has_attention} = 1;
-        $NodeStats{$self->{ipport}}->{verifies}++;
-        $self->next_request(1); # initial
+        $self->verify_success;
     }
     return;
 }
@@ -453,19 +474,19 @@ sub handle_response { # : void
     # special cases:  reproxying and retrying after server errors:
     if ((my $rep = $hd->header('X-REPROXY-FILE')) && $self->may_reproxy) {
         # make the client begin the async IO while we move on
-        $client->start_reproxy_file($rep, $hd);
         $self->next_request;
+        $client->start_reproxy_file($rep, $hd);
         return;
     } elsif ((my $urls = $hd->header('X-REPROXY-URL')) && $self->may_reproxy) {
+        $self->next_request;
         $self->{service}->add_to_reproxy_url_cache($rqhd, $hd)
             if $reproxy_cache_for;
-        $client->start_reproxy_uri($self->{res_headers}, $urls);
-        $self->next_request;
+        $client->start_reproxy_uri($hd, $urls);
         return;
     } elsif ((my $svcname = $hd->header('X-REPROXY-SERVICE')) && $self->may_reproxy) {
-        $self->{client} = undef;
-        $client->start_reproxy_service($self->{res_headers}, $svcname);
         $self->next_request;
+        $self->{client} = undef;
+        $client->start_reproxy_service($hd, $svcname);
         return;
     } elsif ($res_code == 500 &&
              $rqhd->request_method =~ /^GET|HEAD$/ &&
@@ -499,7 +520,11 @@ sub handle_response { # : void
 
         # also update the response code, in case of 206 partial content
         my $rescode = $hd->response_code;
-        $thd->code($rescode) if $rescode == 206 || $rescode == 416;
+        if ($rescode == 206 || $rescode == 416) {
+            $thd->code($rescode);
+            $thd->header('Accept-Ranges', $hd->header('Accept-Ranges')) if $hd->header('Accept-Ranges');
+            $thd->header('Content-Range', $hd->header('Content-Range')) if $hd->header('Content-Range');
+        } 
         $thd->code(200) if $thd->response_code == 204;  # upgrade HTTP No Content (204) to 200 OK.
     }
 

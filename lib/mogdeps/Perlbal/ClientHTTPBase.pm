@@ -7,8 +7,8 @@
 # both paths can then go into persist_wait, which means they're waiting
 # for another request from the user
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 
 package Perlbal::ClientHTTPBase;
 use strict;
@@ -39,11 +39,10 @@ use fields ('service',             # Perlbal::Service object
             );
 
 use Fcntl ':mode';
-use Errno qw( EPIPE ECONNRESET );
+use Errno qw(EPIPE ECONNRESET);
 use POSIX ();
 
-# ghetto hard-coding.  should let siteadmin define or something.
-# maybe console/config command:  AddMime <ext> <mime-type>  (apache-style?)
+# hard-code defaults can be changed with MIME management command
 our $MimeType = {qw(
                     css  text/css
                     doc  application/msword
@@ -54,6 +53,7 @@ our $MimeType = {qw(
                     js   application/x-javascript
                     mp3  audio/mpeg
                     mpg  video/mpeg
+                    pdf  application/pdf
                     png  image/png
                     tif   image/tiff
                     tiff  image/tiff
@@ -64,10 +64,10 @@ our $MimeType = {qw(
 
 # ClientHTTPBase
 sub new {
-    my ($class, $service, $sock, $selector_svc) = @_;
 
-    my $self = $class;
-    $self = fields::new($class) unless ref $self;
+    my Perlbal::ClientHTTPBase $self = shift;
+    my ($service, $sock, $selector_svc) = @_;
+    $self = fields::new($self) unless ref $self;
     $self->SUPER::new($sock);       # init base fields
 
     $self->{service}         = $service;
@@ -79,7 +79,6 @@ sub new {
 
     $self->state('reading_headers');
 
-    bless $self, ref $class || $class;
     $self->watch_read(1);
     return $self;
 }
@@ -124,7 +123,7 @@ sub setup_keepalive {
     my $do_keepalive = $persist_client && $rqhd->req_keep_alive($reshd);
     if ($do_keepalive) {
         print "  doing keep-alive to client\n" if Perlbal::DEBUG >= 3;
-        my $timeout = $self->max_idle_time;
+        my $timeout = $self->{service}->{persist_client_timeout};
         $reshd->header('Connection', 'keep-alive');
         $reshd->header('Keep-Alive', $timeout ? "timeout=$timeout, max=100" : undef);
     } else {
@@ -136,6 +135,16 @@ sub setup_keepalive {
         $reshd->header('Connection', 'close');
         $reshd->header('Keep-Alive', undef);
     }
+}
+
+# overridden here from Perlbal::Socket to use the service value
+sub max_idle_time {
+    return $_[0]->{service}->{persist_client_timeout};
+}
+
+# Called when this client is entering a persist_wait state, but before we are returned to base.
+sub persist_wait {
+    
 }
 
 # called when we've finished writing everything to a client and we need
@@ -188,8 +197,12 @@ sub http_response_sent {
     $self->{post_sendfile_cb} = undef;
     $self->state('persist_wait');
 
+    $self->persist_wait;
+
     if (my $selector_svc = $self->{selector_svc}) {
-        $selector_svc->return_to_base($self);
+        if (! $selector_svc->run_hook('return_to_base', $self)){
+            $selector_svc->return_to_base($self);
+        }
     }
 
     # NOTE: because we only speak 1.0 to clients they can't have
@@ -209,11 +222,41 @@ sub reproxy_fh {
         $self->{reproxy_fh} = $fh;
         $self->{reproxy_file_offset} = 0;
         $self->{reproxy_file_size} = $size;
-        # call hook that we're reproxying a file
-        return $fh if $self->{service}->run_hook("start_send_file", $self);
-        # turn on writes (the hook might not have wanted us to)
-        $self->watch_write(1);
-        return $fh;
+
+        my $is_ssl_webserver = ( $self->{service}->{listener}->{sslopts} &&
+                               ( $self->{service}->{role} eq 'web_server') );
+
+        unless ($is_ssl_webserver) {
+            # call hook that we're reproxying a file
+            return $fh if $self->{service}->run_hook("start_send_file", $self);
+            # turn on writes (the hook might not have wanted us to)
+            $self->watch_write(1);
+            return $fh;
+        } else { # use aio_read for ssl webserver instead of sendfile
+
+            print "webserver in ssl mode, sendfile disabled!\n"
+                if $Perlbal::DEBUG >= 3;
+
+            # turn off writes
+            $self->watch_write(0);
+            #create filehandle for reading
+            my $data = '';
+            Perlbal::AIO::aio_read($self->reproxy_fh, 0, 2048, $data, sub {
+                # got data? undef is error
+                return $self->_simple_response(500) unless $_[0] > 0;
+
+                # seek into the file now so sendfile starts further in
+                my $ld = length $data;
+                sysseek($self->{reproxy_fh}, $ld, &POSIX::SEEK_SET);
+                $self->{reproxy_file_offset} = $ld;
+                # reenable writes after we get data
+                $self->tcp_cork(1); # by setting reproxy_file_offset above,
+                                    # it won't cork, so we cork it
+                $self->write($data);
+                $self->watch_write(1);
+            });
+            return 1;
+        }
     }
 
     return $self->{reproxy_fh};
@@ -221,6 +264,8 @@ sub reproxy_fh {
 
 sub event_read {
     my Perlbal::ClientHTTPBase $self = shift;
+
+    $self->{alive_time} = $Perlbal::tick_time;
 
     # see if we have headers?
     die "Shouldn't get here!  This is an abstract base class, pretty much, except in the case of the 'selector' role."
@@ -235,7 +280,7 @@ sub event_read {
     # PUT/POST overflow, it'll be sent to ClientHTTPBase, which can't
     # handle it yet.  must wait for the selector (which has as much
     # time as it wants) to route as to our subclass, which can then
-    # renable reads.
+    # re-enable reads.
     $self->watch_read(0);
 
     my $select = sub {
@@ -256,6 +301,19 @@ sub event_read {
     }
 }
 
+sub reproxy_file_done {
+    my Perlbal::ClientHTTPBase $self = shift;
+    return if $self->{service}->run_hook('reproxy_fh_finished', $self);
+    # close the sendfile fd
+    CORE::close($self->{reproxy_fh});
+    $self->{reproxy_fh} = undef;
+    if (my $cb = $self->{post_sendfile_cb}) {
+        $cb->();
+    } else {
+        $self->http_response_sent;
+    }
+}
+
 # client is ready for more of its file.  so sendfile some more to it.
 # (called by event_write when we're actually in this mode)
 sub event_write_reproxy_fh {
@@ -263,11 +321,46 @@ sub event_write_reproxy_fh {
 
     my $remain = $self->{reproxy_file_size} - $self->{reproxy_file_offset};
     $self->tcp_cork(1) if $self->{reproxy_file_offset} == 0;
+    $self->watch_write(0);
+
+    if ($self->{service}->{listener}->{sslopts}) { # SSL (sendfile does not do SSL)
+        return if $self->{closed};
+        if ($remain <= 0) { #done
+            print "REPROXY SSL done\n" if Perlbal::DEBUG >= 2;
+            $self->reproxy_file_done;
+            return;
+        }
+        # queue up next read
+        Perlbal::AIO::set_file_for_channel($self->{reproxy_file});
+        my $len = $remain > 4096 ? 4096 : $remain; # buffer size
+        my $buffer = '';
+        Perlbal::AIO::aio_read(
+            $self->{reproxy_fh},
+            $self->{reproxy_file_offset},
+            $len,
+            $buffer,
+            sub {
+                return if $self->{closed};
+                # we have buffer to send
+                my $rv = $_[0]; # arg is result of sysread
+                if (!defined($rv) || $rv <= 0) { # read error
+                    # sysseek is called after sysread so $! not valid
+                    $self->close('sysread_error');
+                    print STDERR "Error w/ reproxy sysread\n";
+                    return;
+                }
+                $self->{reproxy_file_offset} += $rv;
+                $self->tcp_cork(1); # by setting reproxy_file_offset above,
+                                    # it won't cork, so we cork it
+                $self->write($buffer); # start socket send
+                $self->watch_write(1);
+            } 
+        );
+        return;
+    }
 
     # cap at 128k sendfiles
     my $to_send = $remain > 128 * 1024 ? 128 * 1024 : $remain;
-
-    $self->watch_write(0);
 
     my $postread = sub {
         return if $self->{closed};
@@ -288,17 +381,7 @@ sub event_write_reproxy_fh {
         $self->{reproxy_file_offset} += $sent;
 
         if ($sent >= $remain) {
-            return if $self->{service}->run_hook('reproxy_fh_finished', $self);
-
-            # close the sendfile fd
-            CORE::close($self->{reproxy_fh});
-
-            $self->{reproxy_fh} = undef;
-            if (my $cb = $self->{post_sendfile_cb}) {
-                $cb->();
-            } else {
-                $self->http_response_sent;
-            }
+            $self->reproxy_file_done;
         } else {
             $self->watch_write(1);
         }
@@ -532,6 +615,7 @@ sub _serve_request_multiple {
 
     return $self->_simple_response(403, "Multiple file serving isn't enabled") unless $svc->{enable_concatenate_get};
     return $self->_simple_response(403, "Too many files requested") if @multiple_files > 100;
+    return $self->_simple_response(403, "Bogus filenames") if grep { m!(?:\A|/)\.\./! } @multiple_files;
 
     my $remain = @multiple_files + 1;  # 1 for the base directory
     my $dirbase = $svc->{docroot} . $base;
@@ -584,7 +668,7 @@ sub _serve_request_multiple_poststat {
         $ims_len = $1;
     }
 
-    # What is -f _ doing here? don't we detect the existance of all files above in the loop?
+    # What is -f _ doing here? don't we detect the existence of all files above in the loop?
     my $not_mod = $ims eq $lastmod && -f _;
 
     my $res;
@@ -650,6 +734,22 @@ sub _serve_request_multiple_poststat {
         });
     };
     $self->{post_sendfile_cb}->();
+}
+
+sub check_req_headers {
+    my Perlbal::ClientHTTPBase $self = shift;
+    my Perlbal::HTTPHeaders $hds = $self->{req_headers};
+
+    if ($self->{service}->trusted_ip($self->peer_ip_string)) {
+        my @ips = split /,\s*/, ($hds->header("X-Forwarded-For") || '');
+
+        # This list may be empty, and that's OK, in that case we should unset the
+        # observed_ip_string, so no matter what we'll use the 0th element, whether
+        # it happens to be an ip string, or undef.
+        $self->observed_ip_string($ips[0]);
+    }
+
+    return;
 }
 
 sub try_index_files {
@@ -764,19 +864,26 @@ sub system_error {
     return $self->send_response(500, $msg);
 }
 
-# FIXME: let this be configurable?
-sub max_idle_time { 30; }
-
 sub event_err {  my $self = shift; $self->close('error'); }
 sub event_hup {  my $self = shift; $self->close('hup'); }
+
+sub _sock_port {
+    my $name = $_[0];
+    my $port = eval { (Socket::sockaddr_in($name))[0] };
+    return $port unless $@;
+    # fallback to IPv6:
+    return (Socket6::unpack_sockaddr_in($name))[0];
+}
 
 sub as_string {
     my Perlbal::ClientHTTPBase $self = shift;
 
     my $ret = $self->SUPER::as_string;
     my $name = $self->{sock} ? getsockname($self->{sock}) : undef;
-    my $lport = $name ? (Socket::sockaddr_in($name))[0] : undef;
+    my $lport = $name ? _sock_port($name) : undef;
+    my $observed = $self->observed_ip_string;
     $ret .= ": localport=$lport" if $lport;
+    $ret .= "; observed_ip=$observed" if defined $observed;
     $ret .= "; reqs=$self->{requests}";
     $ret .= "; $self->{state}";
 

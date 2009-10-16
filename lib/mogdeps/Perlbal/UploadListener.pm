@@ -1,7 +1,7 @@
 ######################################################################
 # Listen for UDP upload status packets
 #
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2005-2007, Six Apart, Ltd.
 
 
 package Perlbal::UploadListener;
@@ -26,11 +26,10 @@ sub new {
 
     return Perlbal::error("Error creating listening socket: " . ($@ || $!))
         unless $sock;
-
-    my $self = $class->SUPER::new($sock);
+    my $self = fields::new($class);
+    $self->SUPER::new($sock);
     $self->{service} = $service;
     $self->{hostport} = $hostport;
-    bless $self, ref $class || $class;
     $self->watch_read(1);
     return $self;
 }

@@ -1,8 +1,8 @@
 ######################################################################
 # HTTP Connection from a reverse proxy client
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 #
 package Perlbal::ClientProxy;
 use strict;
@@ -11,6 +11,7 @@ use base "Perlbal::ClientHTTPBase";
 no  warnings qw(deprecated);
 
 use Perlbal::ChunkedUploadState;
+use Perlbal::Util;
 
 use fields (
             'backend',             # Perlbal::BackendHTTP object (or undef if disconnected)
@@ -59,14 +60,12 @@ my $udp_sock;
 
 # ClientProxy
 sub new {
-    my ($class, $service, $sock) = @_;
-
-    my $self = $class;
-    $self = fields::new($class) unless ref $self;
-    $self->SUPER::new($service, $sock);       # init base fields
+    my Perlbal::ClientProxy $self = shift;
+    my ($service, $sock) = @_;
+    $self = fields::new($self) unless ref $self;
+    $self->SUPER::new($service,  $sock );
 
     Perlbal::objctor($self);
-    bless $self, ref $class || $class;
 
     $self->init;
     $self->watch_read(1);
@@ -76,7 +75,7 @@ sub new {
 sub new_from_base {
     my $class = shift;
     my Perlbal::ClientHTTPBase $cb = shift;
-    bless $cb, $class;
+    Perlbal::Util::rebless($cb, $class);
     $cb->init;
     $cb->watch_read(1);
     $cb->handle_request;
@@ -231,9 +230,9 @@ sub use_reproxy_backend {
     if (my $range = $self->{req_headers}->header("Range")) {
         $extra_hdr .= "Range: $range\r\n";
     }
-
-    my $host = $datref->[0];
-    $extra_hdr .= "Host: $host\r\n" if $host;
+    if (my $host = $self->{req_headers}->header("Host")) {
+        $extra_hdr .= "Host: $host\r\n";
+    }
 
     my $req_method = $self->{req_headers}->request_method eq 'HEAD' ? 'HEAD' : 'GET';
     my $headers = "$req_method $datref->[2] HTTP/1.0\r\nConnection: keep-alive\r\n${extra_hdr}\r\n";
@@ -317,7 +316,7 @@ sub start_reproxy_file {
         }
 
         # if the thing we're reproxying is indeed a file, advertise that
-        # we support byteranges on it
+        # we support byte ranges on it
         if (-f _) {
             $hd->header("Accept-Ranges", "bytes");
         }
@@ -427,7 +426,7 @@ sub backend_finished {
     my Perlbal::ClientProxy $self = shift;
     print "ClientProxy::backend_finished\n" if Perlbal::DEBUG >= 3;
 
-    # mark ourselves as having responded (presumeably if we're here,
+    # mark ourselves as having responded (presumably if we're here,
     # the backend has responded already)
     $self->{responded} = 1;
 
@@ -439,9 +438,16 @@ sub backend_finished {
     return $self->http_response_sent unless $self->{unread_data_waiting};
 
     # if we get here (and we do, rarely, in practice) then that means
-    # the backend read was empty/disconected (or otherwise messed up),
+    # the backend read was empty/disconnected (or otherwise messed up),
     # and the only thing we can really do is close the client down.
     $self->close("backend_finished_while_unread_data");
+}
+
+# Called when this client is entering a persist_wait state, but before we are returned to base.
+sub persist_wait {
+    my Perlbal::ClientProxy $self = $_[0];
+    # We're in keepalive, and just completed a proxy request
+    $self->{service}->run_hooks('end_proxy_request', $self);
 }
 
 # called when we've sent a response to a user fully and we need to reset state
@@ -505,6 +511,12 @@ sub close {
     my Perlbal::ClientProxy $self = shift;
     my $reason = shift;
 
+    warn sprintf(
+                    "Perlbal::ClientProxy closed %s%s.\n",
+                    ( $self->{closed} ? "again " : "" ),
+                    (defined $reason ? "saying '$reason'" : "for an unknown reason")
+    ) if Perlbal::DEBUG >= 2;
+
     # don't close twice
     return if $self->{closed};
 
@@ -543,11 +555,12 @@ sub event_write {
     my Perlbal::ClientProxy $self = shift;
     print "ClientProxy::event_write\n" if Perlbal::DEBUG >= 3;
 
-    $self->SUPER::event_write;
-
     # obviously if we're writing the backend has processed our request
     # and we are responding/have responded to the user, so mark it so
     $self->{responded} = 1;
+
+    # will eventually, finally reset the whole object on completion
+    $self->SUPER::event_write;
 
     # trigger our backend to keep reading, if it's still connected
     if ($self->{backend_stalled} && (my $backend = $self->{backend})) {
@@ -730,6 +743,13 @@ sub handle_request {
     my Perlbal::ClientProxy $self = shift;
     my $req_hd = $self->{req_headers};
 
+    unless ($req_hd) {
+        $self->close("handle_request without headers");
+        return;
+    }
+
+    $self->check_req_headers;
+
     my $svc = $self->{service};
     # give plugins a chance to force us to bail
     return if $svc->run_hook('start_proxy_request', $self);
@@ -741,9 +761,16 @@ sub handle_request {
         # if defined we're waiting on some amount of data.  also, we have to
         # subtract out read_size, which is the amount of data that was
         # extra in the packet with the header that's part of the body.
-        $self->{request_body_length} =
+        my $length = $self->{request_body_length} =
             $self->{content_length_remain} =
             $req_hd->content_length;
+
+        if (defined $length && $length < 0) {
+            $self->_simple_response(400, "Invalid request: Content-Length < 0");
+            $self->close("negative_content_length");
+            return;
+        }
+
         $self->{unread_data_waiting} = 1 if $self->{content_length_remain};
     }
 
@@ -1002,13 +1029,13 @@ sub send_buffered_upload {
 
     my $clen = $self->{req_headers}->content_length;
     if ($clen != $self->{buoutpos}) {
-        Perlbal::log('critical', "Content length of $clen declared but $self->{buoutpos} bytes written to disk");
+        Perlbal::log('crit', "Content length of $clen declared but $self->{buoutpos} bytes written to disk");
         return $self->_simple_response(500);
     }
 
     # reset our position so we start reading from the right spot
     $self->{buoutpos} = 0;
-    sysseek($self->{bufh}, 0, 0);
+    sysseek($self->{bufh}, 0, 0) if ($self->{bufh}); # But only if it exists at all
 
     # notify that we want the backend so we get the ball rolling
     $self->request_backend;
@@ -1022,14 +1049,16 @@ sub continue_buffered_upload {
     # now send the data
     my $clen = $self->{request_body_length};
 
-    my $sent = Perlbal::Socket::sendfile($be->{fd}, fileno($self->{bufh}), $clen - $self->{buoutpos});
-    if ($sent < 0) {
-        return $self->close("epipe") if $! == EPIPE;
-        return $self->close("connreset") if $! == ECONNRESET;
-        print STDERR "Error w/ sendfile: $!\n";
-        return $self->close('sendfile_error');
+    if ($self->{buoutpos} < $clen) {
+        my $sent = Perlbal::Socket::sendfile($be->{fd}, fileno($self->{bufh}), $clen - $self->{buoutpos});
+        if ($sent < 0) {
+            return $self->close("epipe") if $! == EPIPE;
+            return $self->close("connreset") if $! == ECONNRESET;
+            print STDERR "Error w/ sendfile: $!\n";
+            return $self->close('sendfile_error');
+        }
+        $self->{buoutpos} += $sent;
     }
-    $self->{buoutpos} += $sent;
 
     # if we're done, purge the file and move on
     if ($self->{buoutpos} >= $clen) {
@@ -1061,7 +1090,7 @@ sub buffered_upload_update {
 
             # throw errors back to the user
             if (! $self->{bufh}) {
-                Perlbal::log('critical', "Failure to open $fn for buffered upload output");
+                Perlbal::log('crit', "Failure to open $fn for buffered upload output");
                 return $self->_simple_response(500);
             }
 
@@ -1096,8 +1125,8 @@ sub buffered_upload_update {
         $self->{is_writing} = 0;
 
         # check for error
-        unless ($bytes) {
-            Perlbal::log('critical', "Error writing buffered upload: $!.  Tried to do $len bytes at $self->{buoutpos}.");
+        unless ($bytes > 0) {
+            Perlbal::log('crit', "Error writing buffered upload: $!.  Tried to do $len bytes at $self->{buoutpos}.");
             return $self->_simple_response(500);
         }
 
@@ -1105,7 +1134,7 @@ sub buffered_upload_update {
         $self->{buoutpos} += $bytes;
 
         # now check if we wrote less than we had in this chunk of buffer.  if that's
-        # the case then we need to reenqueue the part of the chunk that wasn't
+        # the case then we need to re-enqueue the part of the chunk that wasn't
         # written out and update as appropriate.
         if ($bytes < $len) {
             my $diff = $len - $bytes;
@@ -1143,6 +1172,9 @@ sub buffered_upload_update {
 sub purge_buffered_upload {
     my Perlbal::ClientProxy $self = shift;
 
+    # Main reason for failure below is a 0-length chunked upload, where the file is never created.
+    return unless $self->{bufh};
+
     # FIXME: it's reported that sometimes the two now-in-eval blocks
     # fail, hence the eval blocks and warnings.  the FIXME is to
     # figure this out, why it happens sometimes.
@@ -1156,7 +1188,7 @@ sub purge_buffered_upload {
     $self->{bufh} = undef;
 
     eval {
-        # now asyncronously unlink the file
+        # now asynchronously unlink the file
         Perlbal::AIO::aio_unlink($self->{bufilename}, sub {
             if ($!) {
                 # note an error, but whatever, we'll either overwrite the file later (O_TRUNC | O_CREAT)

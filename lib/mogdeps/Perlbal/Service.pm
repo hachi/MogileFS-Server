@@ -2,8 +2,8 @@
 # Service class
 ######################################################################
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 #
 
 package Perlbal::Service;
@@ -13,6 +13,7 @@ no  warnings qw(deprecated);
 
 use Perlbal::BackendHTTP;
 use Perlbal::Cache;
+use Perlbal::Util;
 
 use fields (
             'name',            # scalar: name of this service
@@ -26,7 +27,7 @@ use fields (
             # end-user tunables
             'listen',             # scalar IP:port of where we're listening for new connections
             'docroot',            # document root for webserver role
-            'dirindexing',        # bool: direcotry indexing?  (for webserver role)  not async.
+            'dirindexing',        # bool: directory indexing?  (for webserver role)  not async.
             'index_files',        # arrayref of filenames to try for index files
             'enable_concatenate_get',   # bool:  if user can request concatenated files
             'enable_put', # bool: whether PUT is supported
@@ -40,6 +41,7 @@ use fields (
             'persist_client',  # bool: persistent connections for clients
             'persist_backend', # bool: persistent connections for backends
             'verify_backend',  # bool: get attention of backend before giving it clients (using OPTIONS)
+            'verify_backend_path', # path to check with the OPTIONS request (default *)
             'max_backend_uses',  # max requests to send per kept-alive backend (default 0 = unlimited)
             'connect_ahead',           # scalar: number of spare backends to connect to in advance all the time
             'buffer_size', # int: specifies how much data a ClientProxy object should buffer from a backend
@@ -50,16 +52,18 @@ use fields (
                                    # request when we're in pressure relief mode
             'trusted_upstream_proxies', # Net::Netmask object containing netmasks for trusted upstreams
             'always_trusted', # bool; if true, always trust upstreams
+            'blind_proxy', # bool: if true, do not modify X-Forwarded-For, X-Host, or X-Forwarded-Host headers
             'enable_reproxy', # bool; if true, advertise that server will reproxy files and/or URLs
             'reproxy_cache_maxsize', # int; maximum number of reproxy results to be cached. (0 is disabled and default)
             'client_sndbuf_size',    # int: bytes for SO_SNDBUF
             'server_process' ,       # scalar: path to server process (executable)
+            'persist_client_timeout',  # int: keep-alive timeout in seconds for clients (default is 30)
 
             # Internal state:
             'waiting_clients',         # arrayref of clients waiting for backendhttp conns
             'waiting_clients_highpri', # arrayref of high-priority clients waiting for backendhttp conns
             'waiting_clients_lowpri',  # arrayref of low-priority clients waiting for backendhttp conns
-            'waiting_client_count',    # number of clients waiting for backendds
+            'waiting_client_count',    # number of clients waiting for backends
             'waiting_client_map'  ,    # map of clientproxy fd -> 1 (if they're waiting for a conn)
             'pending_connects',        # hashref of "ip:port" -> $time (only one pending connect to backend at a time)
             'pending_connect_count',   # number of outstanding backend connects
@@ -76,6 +80,7 @@ use fields (
             'backend_no_spawn', # { "ip:port" => 1 }; if on, spawn_backends will ignore this ip:port combo
             'buffer_backend_connect', # 0 for of, else, number of bytes to buffer before we ask for a backend
             'selector',    # CODE ref, or undef, for role 'selector' services
+            'default_service', # Perlbal::Service; name of a service a selector should default to
             'buffer_uploads', # bool; enable/disable the buffered uploads to disk system
             'buffer_uploads_path', # string; path to store buffered upload files
             'buffer_upload_threshold_time', # int; buffer uploads estimated to take longer than this
@@ -128,7 +133,9 @@ our $tunables = {
     'listen' => {
         check_role => "*",
         des => "The ip:port to listen on.  For a service to work, you must either make it listen, or make another selector service map to a non-listening service.",
-        check_type => ["regexp", qr/^\d+\.\d+\.\d+\.\d+:\d+$/, "Expecting IP:port of form a.b.c.d:port."],
+        check_type => ["regexp", qr/^(\d+\.\d+\.\d+\.\d+:)?\d+$/,
+                       "Listen argument must be ip:port or port. " .
+                       "e.g. 192.168.0.1:80 or 81"],
         setter => sub {
             my ($self, $val, $set, $mc) = @_;
 
@@ -168,6 +175,12 @@ our $tunables = {
         des => "Whether Perlbal should send a quick OPTIONS request to the backends before sending an actual client request to them.  If your backend is Apache or some other process-based webserver, this is HIGHLY recommended.  All too often a loaded backend box will reply to new TCP connections, but it's the kernel's TCP stack Perlbal is talking to, not an actual Apache process yet.  Using this option reduces end-user latency a ton on loaded sites.",
         default => 0,
         check_type => "bool",
+        check_role => "reverse_proxy",
+    },
+    
+    'verify_backend_path' => {
+        des => "What path the OPTIONS request sent by verify_backend should use.  Default is '*'.",
+        default => '*',
         check_role => "reverse_proxy",
     },
 
@@ -315,7 +328,7 @@ our $tunables = {
     },
 
     'enable_concatenate_get' => {
-        des => "Enable Perlbal's multiple-files-in-one-request mode, where a client have use a comma-separated list of files to return, always in text/plain.  Useful for webapps which have dozens/hundreds of tiny css/js files, and don't trust browsers/etc to do pipelining.  Decreases overall roundtrip latency a bunch, but requires app to be modified to support it.  See t/17-concat.t test for details.",
+        des => "Enable Perlbal's multiple-files-in-one-request mode, where a client have use a comma-separated list of files to return, always in text/plain.  Useful for web apps which have dozens/hundreds of tiny css/js files, and don't trust browsers/etc to do pipelining.  Decreases overall round-trip latency a bunch, but requires app to be modified to support it.  See t/17-concat.t test for details.",
         default => 0,
         check_role => "web_server",
         check_type => "bool",
@@ -338,6 +351,13 @@ our $tunables = {
         des => "Whether to trust all incoming requests' X-Forwarded-For and related headers.  Set to true only if you know that all incoming requests from your own proxy servers that clean/set those headers.",
         default => 0,
         check_type => "bool",
+        check_role => "*",
+    },
+
+    'blind_proxy' => {
+        des => "Flag to disable any modification of X-Forwarded-For, X-Host, and X-Forwarded-Host headers.",
+        default => 0,
+        check_type => "bool",
         check_role => "reverse_proxy",
     },
 
@@ -353,7 +373,7 @@ our $tunables = {
 
     'trusted_upstream_proxies' => {
         des => "A Net::Netmask filter (e.g. 10.0.0.0/24, see Net::Netmask) that determines whether upstream clients are trusted or not, where trusted means their X-Forwarded-For/etc headers are not munged.",
-        check_role => "reverse_proxy",
+        check_role => "*",
         check_type => sub {
             my ($self, $val, $errref) = @_;
             unless (my $loaded = eval { require Net::Netmask; 1; }) {
@@ -365,17 +385,47 @@ our $tunables = {
             $$errref = "Error defining trusted upstream proxies: " . Net::Netmask::errstr();
             return 0;
         },
-
+        setter => sub {
+            my ($self, $val, $set, $mc) = @_;
+	    # Do nothing here, we don't want the default setter because we've
+	    # already set the value in the type_check step.
+            return $mc->ok;
+	},
     },
 
     'index_files' => {
         check_role => "web_server",
         default => "index.html",
-        des => "Comma-seperated list of filenames to load when a user visits a directory URL, listed in order of preference.",
+        des => "Comma-separated list of filenames to load when a user visits a directory URL, listed in order of preference.",
         setter => sub {
             my ($self, $val, $set, $mc) = @_;
             $self->{index_files} = [ split(/[\s,]+/, $val) ];
             return $mc->ok;
+        },
+        dumper => sub {
+            my ($self, $val) = @_;
+            return join(', ', @$val);
+        },
+    },
+
+    'default_service' => {
+        des => "Name of previously-created service to default requests that aren't matched by a selector plugin to.",
+        check_role => "selector",
+        check_type => sub {
+            my ($self, $val, $errref) = @_;
+
+            my $svc = Perlbal->service($val);
+            unless ($svc) {
+                $$errref = "Service '$svc' not found";
+                return 0;
+            }
+
+            $self->{default_service} = $svc;
+            return 1;
+        }, 
+        setter => sub {
+            # override default so we don't set it to the text
+            return $_[3]->ok;
         },
     },
 
@@ -402,6 +452,10 @@ our $tunables = {
             # the type-checking phase.  instead, we do nothing here.
             return $mc->ok;
         },
+        dumper => sub {
+            my ($self, $val) = @_;
+            return $val->name;
+        }
     },
 
     'server_process' => {
@@ -416,6 +470,13 @@ our $tunables = {
         },
     },
 
+    'persist_client_timeout' => {
+        des => "Timeout in seconds for HTTP keep-alives to the end user (default is 30)",
+        check_type => "int",
+        default => 30,
+        check_role => "*",
+    },
+    
     'buffer_uploads_path' => {
         des => "Directory root for storing files used to buffer uploads.",
 
@@ -564,6 +625,98 @@ sub new {
     }
 
     return $self;
+}
+
+# handy instance method to run some manage commands in the context of this service,
+# without needing to worry about its name.
+# This is intended as an internal API thing, so any output that would have been
+# generated is just eaten.
+sub run_manage_commands {
+    my ($self, $cmd_block) = @_;
+
+    my $ctx = Perlbal::CommandContext->new;
+    $ctx->{last_created} = $self->name;
+    return Perlbal::run_manage_commands($cmd_block, undef, $ctx);
+}
+
+# here's an alternative version of the above that runs a single command
+sub run_manage_command {
+    my ($self, $cmd) = @_;
+
+    my $ctx = Perlbal::CommandContext->new;
+    $ctx->{last_created} = $self->name;
+    return Perlbal::run_manage_command($cmd, undef, $ctx);
+}
+
+sub dumpconfig {
+    my $self = shift;
+
+    my @return;
+
+    my %my_tunables = %$tunables;
+
+    my $dump = sub {
+        my $setting = shift;
+    };
+
+    foreach my $skip (qw(role listen pool)) {
+        delete $my_tunables{$skip};
+    }
+
+    my $role = $self->{role};
+
+    foreach my $setting ("role", "listen", "pool", sort keys %my_tunables) {
+        my $attrs = $tunables->{$setting};
+        my $value = $self->{$setting};
+
+        my $check_role = $attrs->{check_role};
+        my $check_type = $attrs->{check_type};
+        my $default    = $attrs->{default};
+        my $required   = $attrs->{required};
+
+        next if ($check_role && $check_role ne '*' && $check_role ne $role);
+
+        if ($check_type && $check_type eq 'size') {
+            $default = $1               if $default =~ /^(\d+)b$/i;
+            $default = $1 * 1024        if $default =~ /^(\d+)k$/i;
+            $default = $1 * 1024 * 1024 if $default =~ /^(\d+)m$/i;
+        }
+
+        if (!$required) {
+            next unless defined $value;
+            next if (defined $default && $value eq $default);
+        }
+
+        if (my $dumper = $attrs->{dumper}) {
+            $value = $dumper->($self, $value);
+        }
+
+        if ($check_type && $check_type eq 'bool') {
+            $value = 'on' if $value;
+        }
+
+        push @return, "SET $setting = $value";
+    }
+
+    my $plugins = $self->{plugins};
+
+    foreach my $plugin (keys %$plugins) {
+        local $@;
+
+        my $class = "Perlbal::Plugin::$plugin";
+        my $cv = $class->can('dumpconfig');
+
+        if ($cv) {
+            eval { push @return, $class->dumpconfig($self) };
+            if ($@) {
+                push @return, "# Plugin '$plugin' threw an exception while being dumped.";
+            }
+        } else {
+            push @return, "# Plugin '$plugin' isn't capable of dumping config.";
+        }
+    }
+
+    return @return;
 }
 
 # called once a role has been set
@@ -1190,7 +1343,7 @@ sub spawn_backends {
         unless ($pool) {
             if (my $sp = $self->{server_process}) {
                 warn "To create = $to_create...\n";
-                warn "  spawing $sp\n";
+                warn "  spawning $sp\n";
                 my $be = Perlbal::BackendHTTP->new_process($self, $sp);
                 return;
             }
@@ -1259,6 +1412,7 @@ sub header_management {
     my ($mode, $key, $val, $mc) = @_;
     return $mc->err("no header provided") unless $key;
     return $mc->err("no value provided")  unless $val || $mode eq 'remove';
+    return $mc->err("only valid on reverse_proxy services") unless $self->{role} eq 'reverse_proxy';
 
     if ($mode eq 'insert') {
         push @{$self->{extra_headers}->{insert}}, [ $key, $val ];
@@ -1286,7 +1440,23 @@ sub munge_headers {
 # getter/setter
 sub selector {
     my Perlbal::Service $self = shift;
-    $self->{selector} = shift if @_;
+    if (@_) {
+        my $ref = shift;
+        $self->{selector} = sub {
+            my $cb = shift;
+
+            # try to give it to our defined selector
+            my $res = $ref->($cb);
+
+            # if that failed and we have a default, then give it to them
+            if (!$res && $self->{default_service}) {
+                $self->{default_service}->adopt_base_client($cb);
+                return 1;
+            }
+
+            return $res;
+        };
+    }
     return $self->{selector};
 }
 
@@ -1303,6 +1473,9 @@ sub adopt_base_client {
     } elsif ($self->{'role'} eq "reverse_proxy") {
         Perlbal::ClientProxy->new_from_base($cb);
         return;
+    } elsif ($self->{'role'} eq "selector") {
+        $self->selector()->($cb);
+        return;
     } else {
         $cb->_simple_response(500, "Can't map to service type $self->{'role'}");
     }
@@ -1315,7 +1488,7 @@ sub return_to_base {
     my Perlbal::ClientHTTPBase $cb = shift;  # actually a subclass of Perlbal::ClientHTTPBase
 
     $cb->{service} = $self;
-    bless $cb, "Perlbal::ClientHTTPBase";
+    Perlbal::Util::rebless($cb, "Perlbal::ClientHTTPBase");
 
     # the read/watch events are reset by ClientHTTPBase's http_response_sent (our caller)
 }

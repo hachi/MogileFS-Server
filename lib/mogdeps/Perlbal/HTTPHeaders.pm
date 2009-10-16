@@ -1,14 +1,16 @@
 ######################################################################
 # HTTP header class (both request and response)
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 #
 
 package Perlbal::HTTPHeaders;
 use strict;
 use warnings;
 no  warnings qw(deprecated);
+
+use Perlbal;
 
 use fields (
             'headers',   # href; lowercase header -> comma-sep list of values
@@ -29,6 +31,8 @@ our $HTTPCode = {
     200 => 'OK',
     204 => 'No Content',
     206 => 'Partial Content',
+    301 => 'Permanent Redirect',
+    302 => 'Found',
     304 => 'Not Modified',
     400 => 'Bad request',
     403 => 'Forbidden',
@@ -103,7 +107,7 @@ sub new {
 
         # check for valid response line
         return fail("Bogus response line") unless
-            $self->{responseLine} =~ m!^HTTP\/(\d+)\.(\d+)\s+(\d+)\s+(.+)$!;
+            $self->{responseLine} =~ m!^HTTP\/(\d+)\.(\d+)\s+(\d+)\s+(.*)$!;
 
         my ($ver_ma, $ver_mi, $code) = ($1, $2, $3);
         $self->code($code, $4);
@@ -222,6 +226,25 @@ sub request_uri {
     return $self->{uri};
 }
 
+sub set_request_uri {
+    my Perlbal::HTTPHeaders $self = shift;
+    return unless $self->{requestLine};
+
+    my $uri = shift;
+
+    return unless defined $uri and length $uri;
+
+    my $ver = $self->{ver};
+
+    if ($ver == 0.9) {
+        $self->{requestLine} = sprintf("%s %s", $self->{method}, $uri);
+    } else {
+        $self->{requestLine} = sprintf("%s %s HTTP/%s", $self->{method}, $uri, $ver);
+    }
+
+    return $self->{uri} = $uri;
+}
+
 sub version_number {
     my Perlbal::HTTPHeaders $self = $_[0];
     return $self->{vernum} unless $_[1];
@@ -242,6 +265,11 @@ sub header {
     }
 
     return $self->{headers}{$key} = shift;
+}
+
+sub headers_list {
+    my Perlbal::HTTPHeaders $self = shift;
+    return [$self->{headers} ? keys %{ $self->{headers} } : ()];
 }
 
 sub to_string_ref {
@@ -406,7 +434,7 @@ sub res_keep_alive {
 
 # returns (status, range_start, range_end) when given a size
 # status = 200 - invalid or non-existent range header.  serve normally.
-# status = 206 - parsable range is good.  serve partial content.
+# status = 206 - parseable range is good.  serve partial content.
 # status = 416 - Range is unsatisfiable
 sub range {
     my Perlbal::HTTPHeaders $self = $_[0];

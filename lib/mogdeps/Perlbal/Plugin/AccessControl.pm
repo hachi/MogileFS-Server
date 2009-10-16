@@ -34,7 +34,7 @@ sub load {
                               (?:\s+(\S+))?                  # arg1
                               (?:\s+(\S+))?                  # optional arg2
                               $/x,
-                              "usage: ACCESS [<service>] <cmd> <arg1> [<arg2>]");
+                              "usage: ACCESS <cmd> <arg1> [<arg2>]");
         my ($cmd, $arg1, $arg2) = $mc->args;
 
         my $svcname;
@@ -86,13 +86,15 @@ sub load {
 # unload our global commands, clear our service object
 sub unload {
     my $class = shift;
-    Perlbal::unregister_global_hook('manage_command.vhost');
+    Perlbal::unregister_global_hook('manage_command.access');
     return 1;
 }
 
 # called when we're being added to a service
 sub register {
     my ($class, $svc) = @_;
+
+    my $use_observed_ip;
 
     $svc->register_hook('AccessControl', 'start_http_request', sub {
         my Perlbal::ClientHTTPBase $client = shift;
@@ -125,15 +127,20 @@ sub register {
         my $match = sub {
             my $rule = shift;
             if ($rule->[1] eq "ip") {
-                my $peer_ip = $client->peer_ip_string;
+                my $peer_ip;
+                $peer_ip = $client->observed_ip_string if $use_observed_ip;
+                $peer_ip ||= $client->peer_ip_string;
+
                 return $peer_ip eq $rule->[2];
             }
 
             if ($rule->[1] eq "netmask") {
-                my $peer_ip = $client->peer_ip_string;
+                my $peer_ip;
+                $peer_ip = $client->observed_ip_string if $use_observed_ip;
+                $peer_ip ||= $client->peer_ip_string;
+
                 return eval { $rule->[2]->match($peer_ip); };
             }
-
         };
 
         my $cfg = $svc->{extra_config}->{_access} ||= {};
@@ -147,6 +154,20 @@ sub register {
         return $allow->();
     });
 
+    # Allow AccessControl users to specify that they would like to use the observed IP as
+    # opposed to the real IP for ACL checking.
+    $svc->register_setter('AccessControl', 'use_observed_ip', sub {
+        my ($out, $what, $val) = @_;
+        return 0 unless $what;
+
+        $use_observed_ip = $val;
+
+        $out->("OK") if $out;
+
+        return 1;
+    });
+
+
     return 1;
 }
 
@@ -154,6 +175,27 @@ sub register {
 sub unregister {
     my ($class, $svc) = @_;
     return 1;
+}
+
+sub dumpconfig {
+    my ($class, $svc) = @_;
+
+    my @return;
+
+    my $cfg = $svc->{extra_config}->{_access} ||= {};
+    my $rules = $cfg->{rules} || [];
+
+    foreach my $rule (@$rules) {
+        my $action = uc $rule->[0];
+        my $type   = uc $rule->[1];
+        my $value  = $rule->[2];
+        push @return, "ACCESS $action $type $value";
+    }
+
+    my $default_action = $cfg->{deny_default} ? "DENY" : "ALLOW";
+    push @return, "ACCESS POLICY $default_action";
+
+    return @return;
 }
 
 1;

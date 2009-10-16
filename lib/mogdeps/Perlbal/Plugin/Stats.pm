@@ -27,7 +27,7 @@ sub register {
     $statobjs{$svc->{name}} = [ $svc, $sobj ];
 
     # simple events we count are done here.  when the hook on the left side is called,
-    # we simply increment the count of the stat ont he right side.
+    # we simply increment the count of the stat on the right side.
     my %simple = qw(
         start_send_file         files_sent
         start_file_reproxy      files_reproxied
@@ -43,14 +43,15 @@ sub register {
     # more complicated statistics
     $svc->register_hook('Stats', 'backend_client_assigned', sub {
         my Perlbal::BackendHTTP $be = shift;
-        $sobj->{pending}->{"$be->{client}"} = [ gettimeofday() ];
-        ($be->{client}->{high_priority} ? $sobj->{proxy_requests_highpri} : $sobj->{proxy_requests})++;
+        my Perlbal::ClientProxy $cp = $be->{client};
+        $sobj->{pending}->{"$cp"} = [ gettimeofday() ];
+        ($cp->{high_priority} ? $sobj->{proxy_requests_highpri} : $sobj->{proxy_requests})++;
         return 0;
     });
     $svc->register_hook('Stats', 'backend_response_received', sub {
         my Perlbal::BackendHTTP $be = shift;
         my Perlbal::ClientProxy $obj = $be->{client};
-        my $ot = $sobj->{pending}->{"$obj"};
+        my $ot = delete $sobj->{pending}->{"$obj"};
         return 0 unless defined $ot;
 
         # now construct data to put in recent

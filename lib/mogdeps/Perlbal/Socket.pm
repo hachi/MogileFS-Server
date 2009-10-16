@@ -1,7 +1,7 @@
 # Base class for all socket types
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 
 package Perlbal::Socket;
 use strict;
@@ -32,6 +32,10 @@ use fields (
             'read_size',       # total bytes read from client, ever
 
             'ditch_leading_rn', # if true, the next header parsing will ignore a leading \r\n
+
+            'observed_ip_string', # if defined, contains the observed IP string of the peer
+                                  # we're serving. this is intended for hoding the value of
+                                  # the X-Forwarded-For and using it to govern ACLs.
             );
 
 use constant MAX_HTTP_HEADER_LENGTH => 102400;  # 100k, arbitrary
@@ -106,7 +110,7 @@ sub new {
             @created_objects = grep { $_ } @created_objects;
 
             # however, the grep turned our weak references back into strong ones, so
-            # we have to reweaken them
+            # we have to re-weaken them
             weaken($_) foreach @created_objects;
 
             # we've cleaned up at this point
@@ -131,18 +135,14 @@ sub _do_cleanup {
 
     my $now = time;
 
-    my %max_age;  # classname -> max age (0 means forever)
     my @to_close;
     while (my $k = each %$sf) {
         my Perlbal::Socket $v = $sf->{$k};
-        my $ref = ref $v;
-        unless (defined $max_age{$ref}) {
-            # eval because not all Danga::Socket connections in Perlbal
-            # must be Perlbal::Socket-derived
-            $max_age{$ref} = eval { $ref->max_idle_time } || 0;
-        }
-        next unless $max_age{$ref};
-        if ($v->{alive_time} < $now - $max_age{$ref}) {
+
+        my $max_age = eval { $v->max_idle_time } || 0;
+        next unless $max_age;
+
+        if ($v->{alive_time} < $now - $max_age) {
             push @to_close, $v;
         }
     }
@@ -219,8 +219,14 @@ sub read_headers {
 
     $self->{headers_string} .= $$bref;
     my $idx = index($self->{headers_string}, "\r\n\r\n");
+    my $delim_len = 4;
 
-    # can't find the header delimiter?
+    # can't find the header delimiter? check for LFLF header delimiter.
+    if ($idx == -1) {
+        $idx = index($self->{headers_string}, "\n\n");
+        $delim_len = 2;
+    }
+    # still can't find the header delimiter?
     if ($idx == -1) {
 
         # usually we get the headers all in one packet (one event), so
@@ -243,7 +249,7 @@ sub read_headers {
     my $hstr = substr($self->{headers_string}, 0, $idx);
     print "  pre-parsed headers: [$hstr]\n" if Perlbal::DEBUG >= 3;
 
-    my $extra = substr($self->{headers_string}, $idx+4);
+    my $extra = substr($self->{headers_string}, $idx+$delim_len);
     if (my $len = length($extra)) {
         print "  pushing back $len bytes after header\n" if Perlbal::DEBUG >= 3;
         $self->push_back_read(\$extra);
@@ -295,6 +301,21 @@ sub die_gracefully {
     $self->{do_die} = 1;
 }
 
+### METHOD: write()
+### Overridden from Danga::Socket to update our alive time on successful writes
+### Stops sockets from being closed on long-running write operations
+sub write {
+    my $self = shift;
+
+    my $ret;
+    if ($ret = $self->SUPER::write(@_)) {
+        # Mark this socket alive so we don't time out
+        $self->{alive_time} = $Perlbal::tick_time;
+    }
+    
+    return $ret;
+}
+
 ### METHOD: close()
 ### Set our state when we get closed.
 sub close {
@@ -311,6 +332,16 @@ sub state {
 
     push @{$state_changes{"$self"} ||= []}, $_[0] if Perlbal::TRACK_STATES;
     return $self->{state} = $_[0];
+}
+
+sub observed_ip_string {
+    my Perlbal::Socket $self = shift;
+
+    if (@_) {
+        return $self->{observed_ip_string} = $_[0];
+    } else {
+        return $self->{observed_ip_string};
+    }
 }
 
 sub as_string_html {

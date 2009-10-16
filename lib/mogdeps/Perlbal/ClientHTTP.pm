@@ -2,8 +2,8 @@
 # HTTP Connection from a reverse proxy client.  GET/HEAD only.
 #  most functionality is implemented in the base class.
 #
-# Copyright 2004, Danga Interactice, Inc.
-# Copyright 2005-2006, Six Apart, Ltd.
+# Copyright 2004, Danga Interactive, Inc.
+# Copyright 2005-2007, Six Apart, Ltd.
 #
 
 package Perlbal::ClientHTTP;
@@ -12,6 +12,7 @@ use warnings;
 no  warnings qw(deprecated);
 
 use base "Perlbal::ClientHTTPBase";
+use Perlbal::Util;
 
 use fields ('put_in_progress', # 1 when we're currently waiting for an async job to return
             'put_fh',          # file handle to use for writing data
@@ -46,7 +47,7 @@ sub new {
 sub new_from_base {
     my $class = shift;
     my Perlbal::ClientHTTPBase $cb = shift;    # base object
-    bless $cb, $class;
+    Perlbal::Util::rebless($cb, $class);
     $cb->init;
 
     $cb->watch_read(1);   # enable our reads, so we can get PUT/POST data
@@ -101,6 +102,8 @@ sub handle_request {
     my Perlbal::ClientHTTP $self = shift;
     my $hd = $self->{req_headers};
 
+    $self->check_req_headers;
+
     # fully formed request received
     $self->{requests}++;
 
@@ -142,12 +145,13 @@ sub handle_put {
     # return a 400 (bad request) if we got no content length or if it's
     # bigger than any specified max put size
     return $self->send_response(400, "Content-length of $clen is invalid.")
-        if !$clen ||
+        if ! defined($clen) ||
+        $clen < 0 ||
         ($self->{service}->{max_put_size} &&
          $clen > $self->{service}->{max_put_size});
 
-    # if we have some data already from a header over-read, note it
-    if (defined $self->{read_ahead} && $self->{read_ahead} > 0) {
+    # if we are supposed to read data and have some data already from a header over-read, note it
+    if ($clen && defined $self->{read_ahead} && $self->{read_ahead} > 0) {
         $self->{content_length_remain} -= $self->{read_ahead};
     }
 
@@ -224,7 +228,6 @@ sub handle_put_chunked {
     my ($path, $filename) = ($1 || '', $2);
 
     my $disk_path = $self->{service}->{docroot} . '/' . $path;
-    $self->start_put_open($disk_path, $filename);
 
     $self->{chunked_upload_state} = Perlbal::ChunkedUploadState->new(%{{
         on_new_chunk => sub {
@@ -264,6 +267,8 @@ sub handle_put_chunked {
             $self->put_close;
         },
     }});
+
+    $self->start_put_open($disk_path, $filename);
 
     return 1;
 }
@@ -391,6 +396,14 @@ sub start_put_open {
         $self->{put_fh}          = $fh;
         $self->{put_pos}         = 0;
         $self->{put_fh_filename} = "$path/$file";
+
+        # We just opened the file, haven't read_ahead any bytes, are expecting 0 bytes for read and we're
+        # not in chunked mode, so close the file immediately, we're done.
+        unless ($self->{read_ahead} || $self->{content_length_remain} || $self->{chunked_upload_state}) {
+            # FIXME this should be done through AIO
+            $self->put_close;
+            return;
+        }
 
         $self->put_writeout;
     });

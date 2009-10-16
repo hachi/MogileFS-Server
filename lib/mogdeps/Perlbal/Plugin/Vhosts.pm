@@ -3,9 +3,9 @@
 ###########################################################################
 
 # things to test:
-#   one persistent connection, first to a docs plugin, then to web proxy... see if it returns us to our base class after end of reuqest
+#   one persistent connection, first to a docs plugin, then to web proxy... see if it returns us to our base class after end of request
 #   PUTing a large file to a selector, seeing if it is put correctly to the PUT-enabled web_server proxy
-#   obvious cases:  non-existant domains, default domains (*), proper matching (foo.brad.lj before *.brad.lj)
+#   obvious cases:  non-existent domains, default domains (*), proper matching (foo.brad.lj before *.brad.lj)
 #
 
 package Perlbal::Plugin::Vhosts;
@@ -75,6 +75,22 @@ sub unregister {
     return 1;
 }
 
+sub dumpconfig {
+    my ($class, $svc) = @_;
+
+    my $vhosts = $svc->{extra_config}->{_vhosts};
+
+    return unless $vhosts;
+
+    my @return;
+
+    while (my ($vhost, $target) = each %$vhosts) {
+        push @return, "VHOST $vhost = $target";
+    }
+
+    return @return;
+}
+
 # call back from Service via ClientHTTPBase's event_read calling service->select_new_service(Perlbal::ClientHTTPBase)
 sub vhost_selector {
     my Perlbal::ClientHTTPBase $cb = shift;
@@ -83,6 +99,10 @@ sub vhost_selector {
     return $cb->_simple_response(404, "Not Found (no reqheaders)") unless $req;
 
     my $vhost = $req->header("Host");
+
+    # Browsers and the Apache API considers 'www.example.com.' == 'www.example.com'
+    $vhost and $vhost =~ s/\.$//;
+
     my $uri = $req->request_uri;
     my $maps = $cb->{service}{extra_config}{_vhosts} ||= {};
 

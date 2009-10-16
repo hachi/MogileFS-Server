@@ -38,6 +38,16 @@ lib/mogdeps/Perlbal/Plugin/NotModified.pm
 lib/mogdeps/Perlbal/Plugin/Queues.pm
 lib/mogdeps/Perlbal/Plugin/Stats.pm
 lib/mogdeps/Perlbal/Plugin/Vhosts.pm
+lib/mogdeps/Perlbal/Plugin/AtomInject.pm
+lib/mogdeps/Perlbal/Plugin/AtomStream.pm
+lib/mogdeps/Perlbal/Plugin/Cgilike.pm
+lib/mogdeps/Perlbal/Plugin/EchoService.pm
+lib/mogdeps/Perlbal/Plugin/Include.pm
+lib/mogdeps/Perlbal/Plugin/LazyCDN.pm
+lib/mogdeps/Perlbal/Plugin/MaxContentLength.pm
+lib/mogdeps/Perlbal/Plugin/Palimg.pm
+lib/mogdeps/Perlbal/Plugin/Redirect.pm
+lib/mogdeps/Perlbal/Plugin/Vpaths.pm
 lib/mogdeps/Perlbal/Pool.pm
 lib/mogdeps/Perlbal/ReproxyManager.pm
 lib/mogdeps/Perlbal/Service.pm
@@ -48,6 +58,7 @@ lib/mogdeps/Perlbal/Test/WebClient.pm
 lib/mogdeps/Perlbal/Test/WebServer.pm
 lib/mogdeps/Perlbal/UploadListener.pm
 lib/mogdeps/Perlbal/Util.pm
+lib/mogdeps/Perlbal/SocketSSL.pm
 lib/mogdeps/Sys/Syscall.pm
 lib/MogileFS/Class.pm
 lib/MogileFS/Config.pm

@@ -16,15 +16,16 @@ use fields ('service',
 
 # ClientManage
 sub new {
-    my ($class, $service, $sock) = @_;
-    my $self = $class->SUPER::new($sock);
+    my Perlbal::ClientManage $self = shift;
+    my ($service, $sock) = @_;
+    $self = fields::new($self) unless ref $self;
+    $self->SUPER::new($sock);
     $self->{service} = $service;
     $self->{buf} = "";   # what we've read so far, not forming a complete line
 
     $self->{ctx} = Perlbal::CommandContext->new;
     $self->{ctx}->verbose(1);
 
-    bless $self, ref $class || $class;
     $self->watch_read(1);
     return $self;
 }
@@ -111,7 +112,8 @@ sub handle_http {
         foreach my $sname (Perlbal->service_names) {
             my Perlbal::Service $svc = Perlbal->service($sname);
             next unless $svc;
-            $body .= "<li><a href='/service?$sname'>$sname</a> - $svc->{role} ($svc->{listen})</li>\n";
+            my $listen = $svc->{listen} ? " ($svc->{listen})" : "";
+            $body .= "<li><a href='/service?$sname'>$sname</a> - $svc->{role}$listen</li>\n";
         }
         $body .= "</ul></li>";
         $body .= "</ul>";
