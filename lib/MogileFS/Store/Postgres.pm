@@ -371,6 +371,33 @@ sub column_constraint {
     return undef;
 }
 
+sub fid_type {
+    my $self = shift;
+    return $self->{_fid_type} if $self->{_fid_type};
+
+    # let people force bigint mode with environment.
+    if ($ENV{MOG_FIDSIZE} && $ENV{MOG_FIDSIZE} eq "big") {
+        return $self->{_fid_type} = "BIGINT";
+    }
+
+    # else, check a maybe-existing table and see if we're in bigint
+    # mode already.
+    my $dbh = $self->dbh;
+    my $file_fid_type = $self->column_type("file", "fid");
+    if($file_fid_type) {
+        if ($file_fid_type =~ /bigint/i) {
+            return $self->{_fid_type} = "BIGINT";
+        } elsif($file_fid_type =~ /int/i) {
+            # Old installs might not have raised the fid type size yet.
+            return $self->{_fid_type} = "INT";
+        }
+    }
+
+    # Used to default to 32bit ints, but this always bites people
+    # a few years down the road. So default to 64bit.
+    return $self->{_fid_type} = "BIGINT";
+}
+
 # --------------------------------------------------------------------------
 # Test suite things we override
 # --------------------------------------------------------------------------
