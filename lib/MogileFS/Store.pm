@@ -9,6 +9,8 @@ use List::Util ();
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
 #
+# 6: adds file_to_replicate table
+# 7: adds file_to_delete_later table
 # 8: adds fsck_log table
 # 9: adds 'drain' state to enum in device table
 # 10: adds 'replpolicy' column to 'class' table
@@ -359,10 +361,6 @@ use constant TABLES => qw( domain class file tempfile file_to_delete
 sub setup_database {
     my $sto = shift;
 
-    # schema history:
-    #   8: adds fsck_log table
-    #   7: adds file_to_delete_later table
-    #   6: adds file_to_replicate table
     my $curver = $sto->schema_version;
 
     my $latestver = SCHEMA_VERSION;
