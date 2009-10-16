@@ -129,7 +129,7 @@ sub TABLE_file {
     dkey         VARCHAR(255),      -- domain-defined
     UNIQUE       (dmid, dkey),
 
-    length       INT,               -- 2TiB limit
+    length       BIGINT,            -- big limit
     CHECK        (length >= 0),
 
     classid      SMALLINT NOT NULL,
