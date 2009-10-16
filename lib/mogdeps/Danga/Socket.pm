@@ -100,7 +100,7 @@ use Time::HiRes ();
 my $opt_bsd_resource = eval "use BSD::Resource; 1;";
 
 use vars qw{$VERSION};
-$VERSION = "1.57";
+$VERSION = "1.61";
 
 use warnings;
 no  warnings qw(deprecated);
@@ -112,10 +112,12 @@ use fields ('sock',              # underlying socket
             'write_buf',         # arrayref of scalars, scalarrefs, or coderefs to write
             'write_buf_offset',  # offset into first array of write_buf to start writing at
             'write_buf_size',    # total length of data in all write_buf items
+            'write_set_watch',   # bool: true if we internally set watch_write rather than by a subclass
             'read_push_back',    # arrayref of "pushed-back" read data the application didn't want
             'closed',            # bool: socket is closed
             'corked',            # bool: socket is corked
             'event_watch',       # bitmask of events the client is interested in (POLLIN,OUT,etc.)
+            'peer_v6',           # bool: cached; if peer is an IPv6 address
             'peer_ip',           # cached stringified IP address of $sock
             'peer_port',         # cached port number of $sock
             'local_ip',          # cached stringified IP address of local end of $sock
@@ -185,6 +187,9 @@ sub Reset {
     %PLCMap = ();
     $DoneInit = 0;
 
+    POSIX::close($Epoll)  if defined $Epoll  && $Epoll  >= 0;
+    POSIX::close($KQueue) if defined $KQueue && $KQueue >= 0;
+    
     *EventLoop = *FirstTimeEventLoop;
 }
 
@@ -1036,6 +1041,7 @@ sub write {
                     push @{$self->{write_buf}}, $bref;
                     $self->{write_buf_size} += $len;
                 }
+                $self->{write_set_watch} = 1 unless $self->{event_watch} & POLLOUT;
                 $self->watch_write(1);
                 return 0;
             } elsif ($! == ECONNRESET) {
@@ -1063,6 +1069,11 @@ sub write {
                                                $written, $self->{fd}, $need_queue);
             $self->{write_buf_offset} = 0;
 
+            if ($self->{write_set_watch}) {
+                $self->watch_write(0);
+                $self->{write_set_watch} = 0;
+            }
+
             # this was our only write, so we can return immediately
             # since we avoided incrementing the buffer size or
             # putting it in the buffer.  we also know there
@@ -1079,6 +1090,7 @@ sub write {
 
 sub on_incomplete_write {
     my Danga::Socket $self = shift;
+    $self->{write_set_watch} = 1 unless $self->{event_watch} & POLLOUT;
     $self->watch_write(1);
 }
 
@@ -1226,6 +1238,11 @@ sub watch_write {
     $event &= ~POLLOUT if ! $val;
     $event |=  POLLOUT if   $val;
 
+    if ($val && caller ne __PACKAGE__) {
+        # A subclass registered interest, it's now responsible for this.
+        $self->{write_set_watch} = 0;
+    }
+
     # If it changed, set it
     if ($event != $self->{event_watch}) {
         if ($HaveKQueue) {
@@ -1288,7 +1305,11 @@ sub peer_ip_string {
     return _undef("peer_ip_string undef: getpeername") unless $pn;
 
     my ($port, $iaddr) = eval {
-        Socket::sockaddr_in($pn);
+        if (length($pn) >= 28) {
+            return Socket6::unpack_sockaddr_in6($pn);
+        } else {
+            return Socket::sockaddr_in($pn);
+        }
     };
 
     if ($@) {
@@ -1298,7 +1319,13 @@ sub peer_ip_string {
 
     $self->{peer_port} = $port;
 
-    return $self->{peer_ip} = Socket::inet_ntoa($iaddr);
+    if (length($iaddr) == 4) {
+        return $self->{peer_ip} = Socket::inet_ntoa($iaddr);
+    } else {
+        $self->{peer_v6} = 1;
+        return $self->{peer_ip} = Socket6::inet_ntop(Socket6::AF_INET6(),
+                                                     $iaddr);
+    }
 }
 
 =head2 C<< $obj->peer_addr_string() >>
@@ -1309,8 +1336,11 @@ object in form "ip:port"
 =cut
 sub peer_addr_string {
     my Danga::Socket $self = shift;
-    my $ip = $self->peer_ip_string;
-    return $ip ? "$ip:$self->{peer_port}" : undef;
+    my $ip = $self->peer_ip_string
+        or return undef;
+    return $self->{peer_v6} ?
+        "[$ip]:$self->{peer_port}" :
+        "$ip:$self->{peer_port}";
 }
 
 =head2 C<< $obj->local_ip_string() >>
