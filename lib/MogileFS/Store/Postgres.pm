@@ -114,6 +114,9 @@ sub filter_create_sql {
         $sql =~ s!,\s*INDEX\s*(\w+)?\s*\(.+?\)!!mgi;
     }
 
+    # Allow 64-bit ids for file IDs
+    $sql =~ s!\bfid\s+INT\b!fid BIGINT!i if $self->fid_type eq "BIGINT";
+
     return $sql;
 }
 
