@@ -365,8 +365,9 @@ sub cmd_create_close {
 
     my $sto = Mgd::get_store();
 
-    # find the temp file we're closing and making real
-    my $trow = $sto->tempfile_row_from_fid($fidid) or
+    # find the temp file we're closing and making real.  If another worker
+    # already has it, bail out---the client closed it twice.
+    my $trow = $sto->delete_and_return_tempfile_row($fidid) or
         return $self->err_line("no_temp_file");
 
     # if a temp file is closed without a provided-key, that means to
@@ -380,6 +381,11 @@ sub cmd_create_close {
     # see if we have a fid for this key already
     my $old_fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key);
     if ($old_fid) {
+        # Fail if a file already exists for this fid.  Should never
+        # happen, as it should not be possible to close a file twice.
+        return $self->err_line("fid_exists")
+            unless $old_fid->{fidid} != $fidid;
+
         $old_fid->delete;
     }
 
@@ -411,7 +417,6 @@ sub cmd_create_close {
 
     # mark it as needing replicating:
     $fid->enqueue_for_replication(from_device => $devid);
-    $sto->delete_tempfile_row($fidid);
 
     if ($fid->update_devcount) {
         # call the hook - if this fails, we need to back the file out
@@ -1545,6 +1550,7 @@ sub err_line {
         'no_host' => "No host provided",
         'no_ip' => "IP required to create host",
         'no_port' => "Port required to create host",
+        'no_temp_file' => "No tempfile or file already closed",
         'none_match' => "No keys match that pattern and after-value (if any).",
         'plugin_aborted' => "Action aborted by plugin",
         'state_too_high' => "Status cannot go from dead to alive; must use down",

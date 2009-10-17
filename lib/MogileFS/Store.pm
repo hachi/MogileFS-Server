@@ -1022,8 +1022,18 @@ sub delete_fidid {
 
 sub delete_tempfile_row {
     my ($self, $fidid) = @_;
-    $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
+    my $rv = $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
     $self->condthrow;
+    return $rv;
+}
+
+# Load the specified tempfile, then delete it.  If we succeed, we were
+# here first; otherwise, someone else beat us here (and we return undef)
+sub delete_and_return_tempfile_row {
+    my ($self, $fidid) = @_;
+    my $rv = $self->tempfile_row_from_fid($fidid);
+    my $rows_deleted = $self->delete_tempfile_row($fidid);
+    return $rv if ($rows_deleted > 0);
 }
 
 sub replace_into_file {
