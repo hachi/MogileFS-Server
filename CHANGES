@@ -1,3 +1,9 @@
+2009-10-18: Release version 2.31
+
+        * Fix create_close race condition. (pipegeek)
+
+        * Fix bug in reporting of available disk space.
+
         * Many minor bug/documentation fixes.
 
         * MySQL and Postgres installs now use BIGINT's for fid/length by
