@@ -10,10 +10,9 @@ our @ISA = qw(Exporter);
 our @EXPORT = qw($DEBUG config set_config);
 our @EXPORT_OK = qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
-our ($DEFAULT_CONFIG, $DEFAULT_MOG_ROOT, $MOG_ROOT, $MOGSTORED_STREAM_PORT, $DEBUG);
+our ($DEFAULT_CONFIG, $MOGSTORED_STREAM_PORT, $DEBUG);
 $DEBUG = 0;
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
-$DEFAULT_MOG_ROOT = "/mnt/mogilefs";
 $MOGSTORED_STREAM_PORT = 7501;
 
 use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
@@ -58,7 +57,6 @@ our (
     $replicate_jobs,
     $reaper_jobs,
     $monitor_jobs,
-    $mog_root,
     $min_free_space,
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
@@ -85,7 +83,6 @@ sub load_config {
                              'dbuser=s'      => \$cmdline{db_user},
                              'dbpass:s'      => \$cmdline{db_pass},
                              'user=s'        => \$cmdline{user},
-                             'r|mogroot=s'   => \$cmdline{mog_root},
                              'p|confport=i'  => \$cmdline{conf_port},
                              'l|listen=s@'   => \$cmdline{listen},
                              'w|workers=i'   => \$cmdline{query_jobs},
@@ -144,9 +141,6 @@ sub load_config {
     $db_user        = choose_value( 'db_user', "mogile" );
     $db_pass        = choose_value( 'db_pass', "", 1 );
     $conf_port      = choose_value( 'conf_port', 7001 );
-    $MOG_ROOT       = set_config('root',
-                                 choose_value( 'mog_root', $DEFAULT_MOG_ROOT )
-                                 );
     $query_jobs     = set_config("query_jobs",
                                  choose_value( 'listener_jobs', undef) || # undef if not present, then we
                                  choose_value( 'query_jobs', 20 ));       # fall back to query_jobs, new name
