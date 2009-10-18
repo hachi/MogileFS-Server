@@ -1161,6 +1161,7 @@ sub update_devcount {
 sub enqueue_for_replication {
     my ($self, $fidid, $from_devid, $in) = @_;
 
+    $in = 0 unless $in;
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
@@ -1174,6 +1175,7 @@ sub enqueue_for_replication {
 sub enqueue_for_delete2 {
     my ($self, $fidid, $in) = @_;
 
+    $in = 0 unless $in;
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     $self->insert_ignore("INTO file_to_delete2 (fid, nexttry) ".
@@ -1184,6 +1186,7 @@ sub enqueue_for_delete2 {
 sub enqueue_for_todo {
     my ($self, $fidid, $type, $in) = @_;
 
+    $in = 0 unless $in;
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     $self->insert_ignore("INTO file_to_queue (fid, type, nexttry) ".
@@ -1197,6 +1200,8 @@ sub enqueue_many_for_todo {
         $self->enqueue_for_todo($_->{fid}, $type, $in) foreach @$fidids;
         return 1;
     }
+
+    $in = 0 unless $in;
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     # TODO: convert to prepared statement?
