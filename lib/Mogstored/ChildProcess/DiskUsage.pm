@@ -57,6 +57,13 @@ sub look_at_disk_usage {
                 $disk = "$path/$devnum";
             }
 
+            # FIXME: We're stupidly throwing away the 'avail' value here.
+            # This causes mogilefs to run aground when used with ext
+            # partitions using reserved space. Drop the reserved space from
+            # the total, and in the future add available to the device table
+            # and just use that.
+            $total = $used + $avail;
+
             # create string to print
             my $now = time;
             my $output = {
