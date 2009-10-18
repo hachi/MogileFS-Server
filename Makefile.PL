@@ -34,17 +34,12 @@ WriteMakefile(
         'Gearman::Client' => 1.07,  # for Gearman::Worker, in fidsizes worker
         fields            => 0,
     },
-    EXTRA_META              => <<'EXTRA',
-no_index:
-    directory:
-        - lib/mogdeps
-    package:
-        - ProcessHandle
-        - TrackerHandle
-        - MogstoredHandle
-        - MogPath
-        - Mgd
-        - MogPath
-EXTRA
+    META_MERGE              => {
+        no_index => {
+            directory => 'lib/mogdeps',
+            package   => ['ProcessHandle', 'TrackerHandle', 'MogstoredHandle',
+            'MogPath', 'Mgd'],
+        },
+    },
 );
 

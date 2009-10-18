@@ -1,3 +1,7 @@
+2009-10-18: Release version 2.32
+
+        * No changes... MFS is hard to release due to mogdeps :/
+
 2009-10-18: Release version 2.31
 
         * Fix create_close race condition. (pipegeek)
