@@ -151,7 +151,7 @@ sub _inject_fsck_queues {
 sub queue_depth_check {
     my ($depth, $limit) = @_;
     if ($depth == 0) {
-        $limit += 50 unless $limit >= 1000;
+        $limit += 50 unless $limit >= 500;
         return (1, $limit);
     } elsif ($depth / $limit < 0.70) {
         return (1, $limit);
