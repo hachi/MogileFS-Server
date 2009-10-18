@@ -159,6 +159,7 @@ OPTS:
  --httplisten=<ip:port> IP/Port HTTP server listens on
  --mgmtlisten=<ip:port> IP/Port management/sidechannel listens on
  --docroot=<path>       Docroot above device mount points.  Defaults to /var/mogdata
+ --maxconns=<number>    Number of simultaneous clients to serve. Default 10000
 ";
 
 }

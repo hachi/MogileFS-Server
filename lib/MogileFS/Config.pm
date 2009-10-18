@@ -55,6 +55,7 @@ our (
     $query_jobs,
     $delete_jobs,
     $replicate_jobs,
+    $fsck_jobs,
     $reaper_jobs,
     $monitor_jobs,
     $min_free_space,
@@ -88,8 +89,8 @@ sub load_config {
                              'w|workers=i'   => \$cmdline{query_jobs},
                              'no_http'       => \$cmdline{no_http},  # OLD, we just eat it to shut it up.
                              'workerport=i'  => \$dummy_workerport,  # eat it for backwards compat
-                             'maxdiskage=i'  => \$cmdline{max_disk_age},
-                             'minfreespace=i' => \$cmdline{min_free_space},
+                             'max_disk_age=i'  => \$cmdline{max_disk_age},
+                             'min_free_space=i' => \$cmdline{min_free_space},
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
                              'pidfile=s'      => \$cmdline{pidfile},
@@ -146,6 +147,7 @@ sub load_config {
                                  choose_value( 'query_jobs', 20 ));       # fall back to query_jobs, new name
     $delete_jobs    = choose_value( 'delete_jobs', 1 );
     $replicate_jobs = choose_value( 'replicate_jobs', 1 );
+    $fsck_jobs      = choose_value( 'fsck_jobs', 1 );
     $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
     $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
     $min_free_space = choose_value( 'min_free_space', 100 );

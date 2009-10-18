@@ -104,7 +104,7 @@ sub run {
     MogileFS::ProcManager->set_min_workers('replicate'   => MogileFS->config('replicate_jobs'));
     MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
     MogileFS::ProcManager->set_min_workers('monitor'     => MogileFS->config('monitor_jobs'));
-    MogileFS::ProcManager->set_min_workers('fsck'        => 1);
+    MogileFS::ProcManager->set_min_workers('fsck'        => MogileFS->config('fsck_jobs'));
     MogileFS::ProcManager->set_min_workers('job_master'  => 1);
 
     # open up our log
