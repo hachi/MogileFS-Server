@@ -1161,10 +1161,7 @@ sub update_devcount {
 sub enqueue_for_replication {
     my ($self, $fidid, $from_devid, $in) = @_;
 
-    my $nexttry = 0;
-    if ($in) {
-        $nexttry = $self->unix_timestamp . " + " . int($in);
-    }
+    my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
                          "VALUES (?,?,$nexttry)", undef, $fidid, $from_devid);
