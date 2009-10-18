@@ -1177,10 +1177,7 @@ sub enqueue_for_replication {
 sub enqueue_for_delete2 {
     my ($self, $fidid, $in) = @_;
 
-    my $nexttry = 0;
-    if ($in) {
-        $nexttry = $self->unix_timestamp . " + " . int($in);
-    }
+    my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     $self->insert_ignore("INTO file_to_delete2 (fid, nexttry) ".
                          "VALUES (?,$nexttry)", undef, $fidid);
