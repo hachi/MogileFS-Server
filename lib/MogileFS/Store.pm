@@ -1187,10 +1187,7 @@ sub enqueue_for_delete2 {
 sub enqueue_for_todo {
     my ($self, $fidid, $type, $in) = @_;
 
-    my $nexttry = 0;
-    if ($in) {
-        $nexttry = $self->unix_timestamp . " + " . int($in);
-    }
+    my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     $self->insert_ignore("INTO file_to_queue (fid, type, nexttry) ".
                          "VALUES (?,?,$nexttry)", undef, $fidid, $type);
@@ -1203,10 +1200,7 @@ sub enqueue_many_for_todo {
         $self->enqueue_for_todo($_->{fid}, $type, $in) foreach @$fidids;
         return 1;
     }
-    my $nexttry = 0;
-    if ($in) {
-        $nexttry = $self->unix_timestamp . " + " . int($in);
-    }
+    my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     # TODO: convert to prepared statement?
     $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
