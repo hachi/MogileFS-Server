@@ -392,15 +392,17 @@ sub cmd_create_close {
     # get size of file and verify that it matches what we were given, if anything
     my $size = MogileFS::HTTPFile->at($path)->size;
 
-    if ($args->{size} >= 0 && (!defined($size) || $size == MogileFS::HTTPFile::FILE_MISSING)) {
-        # size check has been requested and that storage node is unreachable or the file is missing
+    # size check is optional? Needs to support zero byte files.
+    $args->{size} = -1 unless $args->{size};
+    if (!defined($size) || $size == MogileFS::HTTPFile::FILE_MISSING) {
+        # storage node is unreachable or the file is missing
         my $type    = defined $size ? "missing" : "cantreach";
         my $lasterr = MogileFS::Util::last_error();
         return $self->err_line("size_verify_error", "Expected: $args->{size}; actual: 0 ($type); path: $path; error: $lasterr")
     }
 
     return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
-        if $args->{size} && ($args->{size} != $size);
+        if $args->{size} > -1 && ($args->{size} != $size);
 
     # TODO: check for EIO?
 
