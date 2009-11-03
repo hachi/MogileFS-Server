@@ -1,3 +1,6 @@
+        * Add 'max_handles' config option to restart a DB connection if there
+          are too many handles to it (victori).
+
         * Close possibly invalid DB connections as we go out of scope
           (victori).
  
