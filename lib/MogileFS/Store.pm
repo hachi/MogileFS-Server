@@ -265,9 +265,9 @@ sub dbh {
                 $self->{max_handles} &&
                 $self->{max_handles} > 0 && 
                 $self->{handles_given} > $self->{max_handles}) {
-            # Do not destory existing copies of this handle.
-            $self->{dbh}{InactiveDestroy} = 0;
-            $self->{dbh}->disconnect();
+			# TODO: Not sure about this disconnect. We probably want existing
+			# users of the connection to continue to do so.
+			$self->{dbh}->disconnect();
             $self->{dbh} = undef;
             $self->{handles_given} = 0;
         }
@@ -277,6 +277,7 @@ sub dbh {
         $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
             PrintError => 0,
             AutoCommit => 1,
+            InactiveDestroy => 1,
             # FUTURE: will default to on (have to validate all callers first):
             RaiseError => ($self->{raise_errors} || 0),
         }) or
