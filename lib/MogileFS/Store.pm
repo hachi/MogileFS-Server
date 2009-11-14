@@ -260,7 +260,6 @@ sub dbh {
     $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
         PrintError => 0,
         AutoCommit => 1,
-        InactiveDestroy => 1,
         # FUTURE: will default to on (have to validate all callers first):
         RaiseError => ($self->{raise_errors} || 0),
     }) or
