@@ -3,6 +3,7 @@ use strict;
 use Getopt::Long;
 use lib 'lib';
 use MogileFS::Store;
+use MogileFS::Config;
 
 # Rename binary in process list to make init scripts saner
 $0 = $_ = $0;
@@ -106,6 +107,8 @@ confirm("This will attempt to setup or upgrade your MogileFS database.\nIt won't
 
 $sclass->on_status(\&status);
 $sclass->on_confirm(\&confirm);
+
+MogileFS::Config->load_config;
 
 my $sto = $sclass->new_from_mogdbsetup(
                                        map { $_ => $args{$_} }

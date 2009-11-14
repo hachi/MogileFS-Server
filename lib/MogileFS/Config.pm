@@ -57,6 +57,7 @@ our (
     $fsck_jobs,
     $reaper_jobs,
     $monitor_jobs,
+    $max_handles,
     $min_free_space,
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
@@ -92,6 +93,7 @@ sub load_config {
                              'min_free_space=i' => \$cmdline{min_free_space},
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
+                             'max_handles=i'  => \$cmdline{max_handles},
                              'pidfile=s'      => \$cmdline{pidfile},
                              'no_schema_check' => \$cmdline{no_schema_check},
                              'old_repl_compat=i' => \$cmdline{old_repl_compat},
@@ -152,6 +154,7 @@ sub load_config {
     $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
+    $max_handles    = choose_value( 'max_handles', 0 );
     $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0 );
     $pidfile        = choose_value( 'pidfile', "" );
 

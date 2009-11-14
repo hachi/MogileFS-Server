@@ -20,11 +20,11 @@ use constant SCHEMA_VERSION => 12;
 
 sub new {
     my ($class) = @_;
-    return $class->new_from_dsn_user_pass(map { MogileFS->config($_) } qw(db_dsn db_user db_pass));
+    return $class->new_from_dsn_user_pass(map { MogileFS->config($_) } qw(db_dsn db_user db_pass max_handles));
 }
 
 sub new_from_dsn_user_pass {
-    my ($class, $dsn, $user, $pass) = @_;
+    my ($class, $dsn, $user, $pass, $max_handles) = @_;
     my $subclass;
     if ($dsn =~ /^DBI:mysql:/i) {
         $subclass = "MogileFS::Store::MySQL";
@@ -44,11 +44,13 @@ sub new_from_dsn_user_pass {
         dsn    => $dsn,
         user   => $user,
         pass   => $pass,
+        max_handles => $max_handles, # Max number of handles to allow
         raise_errors => $subclass->want_raise_errors,
         slave_list_cachetime => 0,
         slave_list_cache     => [],
         recheck_req_gen  => 0,  # incremented generation, of recheck of dbh being requested
         recheck_done_gen => 0,  # once recheck is done, copy of what the request generation was
+        handles_left     => 0,  # amount of times this handle can still be verified
         server_setting_cache => {}, # value-agnostic db setting cache.
     }, $subclass;
     $self->init;
@@ -249,9 +251,13 @@ sub recheck_dbh {
 
 sub dbh {
     my $self = shift;
+    
     if ($self->{dbh}) {
         if ($self->{recheck_done_gen} != $self->{recheck_req_gen}) {
             $self->{dbh} = undef unless $self->{dbh}->ping;
+            # Handles a memory leak under Solaris/Postgres.
+            $self->{dbh} = undef if ($self->{max_handles} &&
+                $self->{handles_left}-- < 0);
             $self->{recheck_done_gen} = $self->{recheck_req_gen};
         }
         return $self->{dbh} if $self->{dbh};
@@ -265,6 +271,7 @@ sub dbh {
     }) or
         die "Failed to connect to database: " . DBI->errstr;
     $self->post_dbi_connect;
+    $self->{handles_left} = $self->{max_handles} if $self->{max_handles};
     return $self->{dbh};
 }
 
