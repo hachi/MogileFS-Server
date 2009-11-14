@@ -242,6 +242,15 @@ sub get_store {
     return $store = MogileFS::Store->new;
 }
 
+sub close_store {
+    if ($store) {
+        $store->dbh->disconnect();
+        $store = undef;
+        return 1;
+    }
+    return 0;
+}
+
 # only for t/ scripts to explicitly set a store, without loading in a config
 sub set_store {
     my ($s) = @_;

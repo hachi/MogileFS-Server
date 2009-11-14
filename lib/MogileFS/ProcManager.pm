@@ -202,6 +202,10 @@ sub make_new_child {
     my $pid;
     my $sigset;
 
+    # Ensure our dbh is closed before we fork anything.
+    # Causes problems on some platforms (Solaris+Postgres)
+    Mgd::close_store();
+
     # block signal for fork
     $sigset = POSIX::SigSet->new(SIGINT);
     sigprocmask(SIG_BLOCK, $sigset)
