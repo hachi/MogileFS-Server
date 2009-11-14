@@ -235,16 +235,18 @@ sub get_dbh      { return Mgd::get_store()->dbh  }
 # the eventual replacement for callers asking for a dbh directly:
 # they'll ask for the current store, which is a database abstraction
 # layer.
-my (%stores);
+my ($store, $store_pid);
 sub get_store {
-    return $stores{$$} if $stores{$$};
-    return $stores{$$} = MogileFS::Store->new;
+    return $store if $store && $store_pid == $$;
+    $store_pid = $$;
+    return $store = MogileFS::Store->new;
 }
 
 # only for t/ scripts to explicitly set a store, without loading in a config
 sub set_store {
     my ($s) = @_;
-    $stores{$$} = $s;
+    $store = $s;
+    $store_pid = $$;
 }
 
 # log stuff to syslog or the screen
