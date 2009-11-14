@@ -111,7 +111,7 @@ sub new {
 
     my $sock = IO::Socket::INET->new(
                                      PeerAddr => $hostspec,
-                                     PeerPort => 7501,
+                                     PeerPort => MogileFS->config("mogstored_stream_port"),
                                      Proto    => 'tcp',
                                      Blocking => 0,
                                      );

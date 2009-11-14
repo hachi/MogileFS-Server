@@ -38,7 +38,6 @@ sub set_config_no_broadcast {
     return $conf{$k} = $v;
 }
 
-set_config("mogstored_stream_port" => $MOGSTORED_STREAM_PORT);
 set_config('default_mindevcount', 2);
 
 our (
@@ -102,6 +101,7 @@ sub load_config {
                              'repl_use_get_port=i' => \$cmdline{repl_use_get_port},
                              'local_network=s' => \$cmdline{local_network},
                              'no_unreachable_tracking' => \$cmdline{no_unreachable_tracking},
+                             'mogstored_stream_port' => \$cmdline{mogstored_stream_port},
                              );
 
     # warn of old/deprecated options
@@ -158,6 +158,7 @@ sub load_config {
     $DEBUG          = choose_value( 'debug', $ENV{DEBUG} || 0 );
     $pidfile        = choose_value( 'pidfile', "" );
 
+    choose_value( 'mogstored_stream_port', $MOGSTORED_STREAM_PORT );
     choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
