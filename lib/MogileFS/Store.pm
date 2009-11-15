@@ -307,6 +307,12 @@ sub _valid_params {
     return %ret;
 }
 
+sub was_deadlock_error {
+    my $self = shift;
+    my $dbh = $self->dbh;
+    die "UNIMPLEMENTED";
+}
+
 sub was_duplicate_error {
     my $self = shift;
     my $dbh = $self->dbh;
@@ -1341,21 +1347,33 @@ sub files_to_replicate {
 sub grab_files_to_replicate {
     my ($self, $limit) = @_;
     my $dbh = $self->dbh;
-    $dbh->begin_work;
-    my $ut = $self->unix_timestamp;
-    my $to_repl_map = $dbh->selectall_hashref(qq{
-        SELECT fid, fromdevid, failcount, flags, nexttry
-        FROM file_to_replicate
-        WHERE nexttry <= $ut
-        ORDER BY nexttry
-        LIMIT $limit
-        FOR UPDATE
-    }, 'fid');
-    unless (keys %$to_repl_map) { $dbh->commit; return (); }
-    my $fidlist = join(', ', keys %$to_repl_map);
-    $dbh->do(qq{UPDATE file_to_replicate SET nexttry = $ut + 1000
-        WHERE fid IN ($fidlist)});
-    $dbh->commit;
+    my $tries = 3;
+    my $to_repl_map;
+
+    while ($tries-- > 0) {
+        eval {
+            $dbh->begin_work;
+            my $ut = $self->unix_timestamp;
+            $to_repl_map = $dbh->selectall_hashref(qq{
+                SELECT fid, fromdevid, failcount, flags, nexttry
+                FROM file_to_replicate
+                WHERE nexttry <= $ut
+                ORDER BY nexttry
+                LIMIT $limit
+                FOR UPDATE
+            }, 'fid');
+            unless (keys %$to_repl_map) { $dbh->commit; return (); }
+            my $fidlist = join(', ', keys %$to_repl_map);
+            $dbh->do(qq{UPDATE file_to_replicate SET nexttry = $ut
+                + 1000 WHERE fid IN ($fidlist)});
+            $dbh->commit;
+        };
+        next if ($self->was_deadlock_error);
+        $self->condthrow;
+        last;
+    }
+
+    return () unless defined $to_repl_map;
     return values %$to_repl_map;
 }
 
@@ -1363,43 +1381,65 @@ sub grab_files_to_replicate {
 sub grab_files_to_delete2 {
     my ($self, $limit) = @_;
     my $dbh = $self->dbh;
-    $dbh->begin_work;
-    my $ut = $self->unix_timestamp;
-    my $to_del_map = $dbh->selectall_hashref(qq{
-        SELECT *
-        FROM file_to_delete2
-        WHERE nexttry <= $ut
-        ORDER BY nexttry
-        LIMIT $limit
-        FOR UPDATE
-    }, 'fid');
-    unless (keys %$to_del_map) { $dbh->commit; return (); }
-    my $fidlist = join(', ', keys %$to_del_map);
-    $dbh->do(qq{UPDATE file_to_delete2 SET nexttry = $ut + 1000
-        WHERE fid IN ($fidlist)});
-    $dbh->commit;
+    my $tries = 3;
+    my $to_del_map;
+    while ($tries-- > 0) {
+        eval {
+            $dbh->begin_work;
+            my $ut = $self->unix_timestamp;
+            $to_del_map = $dbh->selectall_hashref(qq{
+                SELECT *
+                FROM file_to_delete2
+                WHERE nexttry <= $ut
+                ORDER BY nexttry
+                LIMIT $limit
+                FOR UPDATE
+            }, 'fid');
+            unless (keys %$to_del_map) { $dbh->commit; return (); }
+            my $fidlist = join(', ', keys %$to_del_map);
+            $dbh->do(qq{UPDATE file_to_delete2 SET nexttry = $ut + 1000
+                WHERE fid IN ($fidlist)});
+            $dbh->commit;
+        };
+        next if ($self->was_deadlock_error);
+        $self->condthrow;
+        last;
+    }
+
+    return () unless defined $to_del_map;
     return values %$to_del_map;
 }
 
 sub grab_files_to_queued {
     my ($self, $type, $limit) = @_;
     my $dbh = $self->dbh;
-    $dbh->begin_work;
-    my $ut = $self->unix_timestamp;
-    my $todo_map = $dbh->selectall_hashref(qq{
-        SELECT fid, type, failcount, flags, nexttry
-        FROM file_to_queue
-        WHERE type = $type
-        AND nexttry <= $ut
-        ORDER BY nexttry
-        LIMIT $limit
-        FOR UPDATE
-    }, 'fid');
-    unless (keys %$todo_map) { $dbh->commit; return (); }
-    my $fidlist = join(', ', keys %$todo_map);
-    $dbh->do(qq{UPDATE file_to_queue SET nexttry = $ut + 1000
-        WHERE fid IN ($fidlist)});
-    $dbh->commit;
+    my $tries = 3;
+    my $todo_map;
+    while ($tries-- > 0) {
+        eval {
+            $dbh->begin_work;
+            my $ut = $self->unix_timestamp;
+            $todo_map = $dbh->selectall_hashref(qq{
+                SELECT fid, type, failcount, flags, nexttry
+                FROM file_to_queue
+                WHERE type = $type
+                AND nexttry <= $ut
+                ORDER BY nexttry
+                LIMIT $limit
+                FOR UPDATE
+            }, 'fid');
+            unless (keys %$todo_map) { $dbh->commit; return (); }
+            my $fidlist = join(', ', keys %$todo_map);
+            $dbh->do(qq{UPDATE file_to_queue SET nexttry = $ut + 1000
+                WHERE fid IN ($fidlist)});
+            $dbh->commit;
+        };
+        next if ($self->was_deadlock_error);
+        $self->condthrow;
+        last;
+    }
+
+    return () unless defined $todo_map;
     return values %$todo_map;
 }
 
@@ -1572,6 +1612,7 @@ sub fsck_log {
                    delete $opts{code},
                    delete $opts{devid});
     croak("Unknown opts") if %opts;
+    $self->condthrow;
 
     my $logid = $self->dbh->last_insert_id(undef, undef, 'fsck_log', 'logid')
         or die "No last_insert_id found for fsck_log table";

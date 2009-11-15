@@ -78,6 +78,13 @@ sub can_do_slaves { 0 }
 #sub check_slave {
 #}
 
+sub was_deadlock_error {
+    my $self = shift;
+    my $dbh = $self->dbh;
+    return 0 unless $dbh->err;
+    return 1 if $dbh->state eq '40P01';
+}
+
 sub was_duplicate_error {
     my $self = shift;
     my $dbh = $self->dbh;

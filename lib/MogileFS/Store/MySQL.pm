@@ -37,6 +37,15 @@ sub post_dbi_connect {
     $self->{lock_depth} = 0;
 }
 
+sub was_deadlock_error {
+    my $self = shift;
+    my $dbh = $self->dbh;
+    return 0 unless $dbh->err;
+    # 1205 is "lock wait timeout", but we should bomb out if we've
+    # alerady hung for that long.
+    return 1 if ($dbh->err == 1213);
+}
+
 sub was_duplicate_error {
     my $self = shift;
     my $dbh = $self->dbh;

@@ -55,6 +55,11 @@ sub column_type {
 # Store-related things we override
 # --------------------------------------------------------------------------
 
+# FIXME: Figure out how to properly detect this.
+sub was_deadlock_error {
+    return 0;
+}
+
 sub was_duplicate_error {
     my $self = shift;
     my $dbh = $self->dbh;
