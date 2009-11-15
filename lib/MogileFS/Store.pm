@@ -1686,7 +1686,7 @@ sub fsck_log_summarize {
     # avoiding a potentially-huge GROUP BY in the future..
     my $start_max_logid = $self->server_setting("fsck_start_maxlogid") || 0;
     # both inclusive:
-    my $min_logid = $self->server_setting("fsck_logid_processed");
+    my $min_logid = $self->server_setting("fsck_logid_processed") + 1;
     my $cts = $self->fsck_evcode_counts(logid_range => [$min_logid, $logid]); # inclusive notation :)
     while (my ($evcode, $ct) = each %$cts) {
         $self->incr_server_setting("fsck_sum_evcount_$evcode", $ct);
