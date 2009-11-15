@@ -1,3 +1,8 @@
+
+        * FSCK no longer rabidly fills the queue table. (dormando)
+
+        * Make storage code resilient to rare deadlocks (dormando)
+
         * Add 'max_handles' config option to restart a DB connection if there
           are too many handles to it (victori).
  
