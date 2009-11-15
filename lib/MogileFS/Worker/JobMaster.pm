@@ -124,6 +124,7 @@ sub _inject_fsck_queues {
     my $self = shift;
     my $sto  = shift;
 
+    $sto->fsck_log_summarize;
     my $max_checked = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
     my $to_inject   =
         MogileFS::Config->server_setting_cached('queue_rate_for_fsck', 30) || 100;

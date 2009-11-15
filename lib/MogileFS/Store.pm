@@ -1660,7 +1660,30 @@ sub clear_fsck_log {
     return 1;
 }
 
-sub fsck_log_summarize_every { 100 }
+# FIXME: Fsck log entries are processed a little out of order.
+# Once a fsck has completed, the log should be re-summarized.
+sub fsck_log_summarize {
+    my $self = shift;
+
+    my $lockname = 'mgfs:fscksum';
+    my $lock = eval { $self->get_lock($lockname, 10) };
+    return 0 if defined $lock && $lock == 0;
+
+    my $logid = $self->max_fsck_logid;
+
+    # sum-up evcode counts every so often, to make fsck_status faster,
+    # avoiding a potentially-huge GROUP BY in the future..
+    my $start_max_logid = $self->server_setting("fsck_start_maxlogid") || 0;
+    # both inclusive:
+    my $min_logid = $self->server_setting("fsck_logid_processed");
+    my $cts = $self->fsck_evcode_counts(logid_range => [$min_logid, $logid]); # inclusive notation :)
+    while (my ($evcode, $ct) = each %$cts) {
+        $self->incr_server_setting("fsck_sum_evcount_$evcode", $ct);
+    }
+    $self->set_server_setting("fsck_logid_processed", $logid);
+
+    $self->release_lock($lockname) if $lock;
+}
 
 sub fsck_log {
     my ($self, %opts) = @_;
@@ -1672,26 +1695,6 @@ sub fsck_log {
                    delete $opts{devid});
     croak("Unknown opts") if %opts;
     $self->condthrow;
-
-    my $logid = $self->dbh->last_insert_id(undef, undef, 'fsck_log', 'logid')
-        or die "No last_insert_id found for fsck_log table";
-
-    # sum-up evcode counts every so often, to make fsck_status faster,
-    # avoiding a potentially-huge GROUP BY in the future..
-    my $SUM_EVERY = $self->fsck_log_summarize_every;
-    # Note: totally disregards locking/races because there's only one
-    # fsck process running globally (in theory-- there could be 5
-    # second overlaps on quick stop/starts, so we take some regard for
-    # races, but not much).
-    if ($logid % $SUM_EVERY == 0) {
-        my $start_max_logid = $self->server_setting("fsck_start_maxlogid") || 0;
-        # both inclusive:
-        my $min_logid = max($start_max_logid, $logid - $SUM_EVERY) + 1;
-        my $cts = $self->fsck_evcode_counts(logid_range => [$min_logid, $logid]); # inclusive notation :)
-        while (my ($evcode, $ct) = each %$cts) {
-            $self->incr_server_setting("fsck_sum_evcount_$evcode", $ct);
-        }
-    }
 
     return 1;
 }

@@ -1437,7 +1437,9 @@ sub _do_fsck_reset {
         next unless $k =~ /^fsck_sum_evcount_/;
         $sto->set_server_setting($k, undef);
     }
-    $sto->set_server_setting("fsck_start_maxlogid", $sto->max_fsck_logid);
+    my $logid = $sto->max_fsck_logid;
+    $sto->set_server_setting("fsck_start_maxlogid", $logid);
+    $sto->set_server_setting("fsck_logid_processed", $logid);
 }
 
 sub cmd_fsck_clearlog {
@@ -1469,6 +1471,8 @@ sub cmd_fsck_status {
     my MogileFS::Worker::Query $self = shift;
 
     my $sto        = Mgd::get_store();
+    # Kick up the summary before we read the values
+    $sto->fsck_log_summarize;
     my $fsck_host  = MogileFS::Config->server_setting('fsck_host');
     my $intss      = sub { MogileFS::Config->server_setting($_[0]) || 0 };
     my $ret = {
@@ -1488,15 +1492,6 @@ sub cmd_fsck_status {
     foreach my $k (keys %$ss) {
         next unless $k =~ /^fsck_sum_evcount_(.+)/;
         $ret->{"num_$1"} += $ss->{$k};
-    }
-
-    # add in any stats which might have not been summarized yet.,,
-    my $max_logid = $sto->max_fsck_logid;
-    my $min_logid = MogileFS::Util::max($intss->("fsck_start_maxlogid"),
-                                        $max_logid - ($max_logid % $sto->fsck_log_summarize_every)) + 1;
-    my $ev_cts = $sto->fsck_evcode_counts(logid_range => [$min_logid, $max_logid]);
-    while (my ($ev, $ct) = each %$ev_cts) {
-        $ret->{"num_$ev"} += $ct;
     }
 
     return $self->ok_line($ret);
