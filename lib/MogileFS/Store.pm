@@ -57,9 +57,9 @@ sub new_from_dsn_user_pass {
     return $self;
 }
 
+# Defaults to true now.
 sub want_raise_errors {
-     # will default to true later
-    0;
+    1;
 }
 
 sub new_from_mogdbsetup {
@@ -354,6 +354,21 @@ sub insert_ignore {
         }
         return $rv;
     }
+}
+
+sub retry_on_deadlock {
+    my $self  = shift;
+    my $code  = shift;
+    my $tries = shift || 3;
+    croak("deadlock retries must be positive") if $tries < 1;
+    my $rv;
+
+    while ($tries-- > 0) {
+        $rv = eval { $code->(); };
+        next if ($self->was_deadlock_error);
+        last;
+    }
+    return $rv;
 }
 
 # --------------------------------------------------------------------------
@@ -759,8 +774,10 @@ sub update_class_name {
 sub update_class_mindevcount {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(dmid classid mindevcount)], @_);
+    eval {
     $self->dbh->do("UPDATE class SET mindevcount=? WHERE dmid=? AND classid=?",
                    undef, $arg{mindevcount}, $arg{dmid}, $arg{classid});
+    };
     $self->condthrow;
     return 1;
 }
@@ -776,11 +793,13 @@ sub set_server_setting {
     my $dbh = $self->dbh;
     die "Your database does not support REPLACE! Reimplement set_server_setting!" unless $self->can_replace;
 
-    if (defined $val) {
-        $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
-    } else {
-        $dbh->do("DELETE FROM server_settings WHERE field=?", undef, $key);
-    }
+    eval {
+        if (defined $val) {
+            $dbh->do("REPLACE INTO server_settings (field, value) VALUES (?, ?)", undef, $key, $val);
+        } else {
+            $dbh->do("DELETE FROM server_settings WHERE field=?", undef, $key);
+        }
+    };
 
     die "Error updating 'server_settings': " . $dbh->errstr if $dbh->err;
     return 1;
@@ -993,8 +1012,10 @@ sub create_device {
 sub update_device_usage {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
-    $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = " . $self->unix_timestamp .
-                   " WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{devid});
+    eval {
+        $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = " . $self->unix_timestamp .
+                       " WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{devid});
+    };
     $self->condthrow;
 }
 
@@ -1007,27 +1028,33 @@ sub mark_fidid_unreachable {
 
 sub set_device_weight {
     my ($self, $devid, $weight) = @_;
-    $self->dbh->do('UPDATE device SET weight = ? WHERE devid = ?', undef, $weight, $devid);
+    eval {
+        $self->dbh->do('UPDATE device SET weight = ? WHERE devid = ?', undef, $weight, $devid);
+    };
     $self->condthrow;
 }
 
 sub set_device_state {
     my ($self, $devid, $state) = @_;
-    $self->dbh->do('UPDATE device SET status = ? WHERE devid = ?', undef, $state, $devid);
+    eval {
+        $self->dbh->do('UPDATE device SET status = ? WHERE devid = ?', undef, $state, $devid);
+    };
     $self->condthrow;
 }
 
 sub delete_class {
     my ($self, $dmid, $cid) = @_;
-    $self->dbh->do("DELETE FROM class WHERE dmid = ? AND classid = ?", undef, $dmid, $cid);
+    eval {
+        $self->dbh->do("DELETE FROM class WHERE dmid = ? AND classid = ?", undef, $dmid, $cid);
+    };
     $self->condthrow;
 }
 
 sub delete_fidid {
     my ($self, $fidid) = @_;
-    $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid);
+    eval { $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid); };
     $self->condthrow;
-    $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
+    eval { $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid); };
     $self->condthrow;
     $self->enqueue_for_delete2($fidid, 0);
     $self->condthrow;
@@ -1035,7 +1062,7 @@ sub delete_fidid {
 
 sub delete_tempfile_row {
     my ($self, $fidid) = @_;
-    my $rv = $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
+    my $rv = eval { $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid); };
     $self->condthrow;
     return $rv;
 }
@@ -1053,9 +1080,11 @@ sub replace_into_file {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fidid dmid key length classid)], @_);
     die "Your database does not support REPLACE! Reimplement replace_into_file!" unless $self->can_replace;
-    $self->dbh->do("REPLACE INTO file (fid, dmid, dkey, length, classid, devcount) ".
-                   "VALUES (?,?,?,?,?,0) ", undef,
-                   @arg{'fidid', 'dmid', 'key', 'length', 'classid'});
+    eval {
+        $self->dbh->do("REPLACE INTO file (fid, dmid, dkey, length, classid, devcount) ".
+                       "VALUES (?,?,?,?,?,0) ", undef,
+                       @arg{'fidid', 'dmid', 'key', 'length', 'classid'});
+    };
     $self->condthrow;
 }
 
@@ -1124,8 +1153,8 @@ sub add_fidid_to_devid {
 # returns 1 on success, 0 if not there anyway
 sub remove_fidid_from_devid {
     my ($self, $fidid, $devid) = @_;
-    my $rv = $self->dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
-                            undef, $fidid, $devid);
+    my $rv = eval { $self->dbh->do("DELETE FROM file_on WHERE fid=? AND devid=?",
+                            undef, $fidid, $devid); };
     $self->condthrow;
     return $rv;
 }
@@ -1164,8 +1193,9 @@ sub update_devcount {
     my $ct = $dbh->selectrow_array("SELECT COUNT(*) FROM file_on WHERE fid=?",
                                    undef, $fidid);
 
-    $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
-              $ct, $fidid);
+    eval { $dbh->do("UPDATE file SET devcount=? WHERE fid=?", undef,
+              $ct, $fidid); };
+    $self->condthrow;
 
     return 1;
 }
@@ -1177,8 +1207,10 @@ sub enqueue_for_replication {
     $in = 0 unless $in;
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
-    $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
-                         "VALUES (?,?,$nexttry)", undef, $fidid, $from_devid);
+    $self->retry_on_deadlock(sub {
+        $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
+                             "VALUES (?,?,$nexttry)", undef, $fidid, $from_devid);
+    });
 }
 
 # enqueue a fidid for delete
@@ -1191,8 +1223,10 @@ sub enqueue_for_delete2 {
     $in = 0 unless $in;
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
-    $self->insert_ignore("INTO file_to_delete2 (fid, nexttry) ".
-                         "VALUES (?,$nexttry)", undef, $fidid);
+    $self->retry_on_deadlock(sub {
+        $self->insert_ignore("INTO file_to_delete2 (fid, nexttry) ".
+                             "VALUES (?,$nexttry)", undef, $fidid);
+    });
 }
 
 # enqueue a fidid for work
@@ -1202,8 +1236,10 @@ sub enqueue_for_todo {
     $in = 0 unless $in;
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
-    $self->insert_ignore("INTO file_to_queue (fid, type, nexttry) ".
-                         "VALUES (?,?,$nexttry)", undef, $fidid, $type);
+    $self->retry_on_deadlock(sub {
+        $self->insert_ignore("INTO file_to_queue (fid, type, nexttry) ".
+                             "VALUES (?,?,$nexttry)", undef, $fidid, $type);
+    });
 }
 
 # return 1 on success.  die otherwise.
@@ -1218,17 +1254,22 @@ sub enqueue_many_for_todo {
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     # TODO: convert to prepared statement?
-    $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
-    nexttry) VALUES " .
-                   join(",", map { "(" . int($_->{fid}) . ", $type, $nexttry)" } @$fidids))
-        or die "file_to_queue insert failed";
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
+        nexttry) VALUES " .
+        join(",", map { "(" . int($_->{fid}) . ", $type, $nexttry)" } @$fidids));
+    });
+    $self->condthrow;
 }
 
 # reschedule all deferred replication, return number rescheduled
 sub replicate_now {
     my ($self) = @_;
-    return $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp .
-                          " WHERE nexttry > " . $self->unix_timestamp);
+
+    $self->retry_on_deadlock(sub {
+        return $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp .
+                              " WHERE nexttry > " . $self->unix_timestamp);
+    });
 }
 
 # takes two arguments, devid and limit, both required. returns an arrayref of fidids.
@@ -1383,6 +1424,7 @@ sub grab_files_to_delete2 {
     my $dbh = $self->dbh;
     my $tries = 3;
     my $to_del_map;
+
     while ($tries-- > 0) {
         eval {
             $dbh->begin_work;
@@ -1415,6 +1457,7 @@ sub grab_files_to_queued {
     my $dbh = $self->dbh;
     my $tries = 3;
     my $todo_map;
+
     while ($tries-- > 0) {
         eval {
             $dbh->begin_work;
@@ -1470,43 +1513,57 @@ sub note_done_replicating {
 
 sub delete_fid_from_file_to_replicate {
     my ($self, $fidid) = @_;
-    $self->dbh->do("DELETE FROM file_to_replicate WHERE fid=?", undef, $fidid);
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do("DELETE FROM file_to_replicate WHERE fid=?", undef, $fidid);
+    });
 }
 
 sub delete_fid_from_file_to_queue {
     my ($self, $fidid) = @_;
-    $self->dbh->do("DELETE FROM file_to_queue WHERE fid=?", undef, $fidid);
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do("DELETE FROM file_to_queue WHERE fid=?", undef, $fidid);
+    });
 }
 
 sub delete_fid_from_file_to_delete2 {
     my ($self, $fidid) = @_;
-    $self->dbh->do("DELETE FROM file_to_delete2 WHERE fid=?", undef, $fidid);
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do("DELETE FROM file_to_delete2 WHERE fid=?", undef, $fidid);
+    });
 }
 
 sub reschedule_file_to_replicate_absolute {
     my ($self, $fid, $abstime) = @_;
-    $self->dbh->do("UPDATE file_to_replicate SET nexttry = ?, failcount = failcount + 1 WHERE fid = ?",
-                   undef, $abstime, $fid);
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do("UPDATE file_to_replicate SET nexttry = ?, failcount = failcount + 1 WHERE fid = ?",
+                       undef, $abstime, $fid);
+    });
 }
 
 sub reschedule_file_to_replicate_relative {
     my ($self, $fid, $in_n_secs) = @_;
-    $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp . " + ?, " .
-                   "failcount = failcount + 1 WHERE fid = ?",
-                   undef, $in_n_secs, $fid);
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do("UPDATE file_to_replicate SET nexttry = " . $self->unix_timestamp . " + ?, " .
+                       "failcount = failcount + 1 WHERE fid = ?",
+                       undef, $in_n_secs, $fid);
+    });
 }
 
 sub reschedule_file_to_delete2_absolute {
     my ($self, $fid, $abstime) = @_;
-    $self->dbh->do("UPDATE file_to_delete2 SET nexttry = ?, failcount = failcount + 1 WHERE fid = ?",
-                   undef, $abstime, $fid);
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do("UPDATE file_to_delete2 SET nexttry = ?, failcount = failcount + 1 WHERE fid = ?",
+                       undef, $abstime, $fid);
+    });
 }
 
 sub reschedule_file_to_delete2_relative {
     my ($self, $fid, $in_n_secs) = @_;
-    $self->dbh->do("UPDATE file_to_delete2 SET nexttry = " . $self->unix_timestamp . " + ?, " .
-                   "failcount = failcount + 1 WHERE fid = ?",
-                   undef, $in_n_secs, $fid);
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do("UPDATE file_to_delete2 SET nexttry = " . $self->unix_timestamp . " + ?, " .
+                       "failcount = failcount + 1 WHERE fid = ?",
+                       undef, $in_n_secs, $fid);
+    });
 }
 
 # Given a dmid prefix after and limit, return an arrayref of dkey from the file
@@ -1588,9 +1645,11 @@ sub enqueue_fids_to_delete {
         return 1;
     }
     # TODO: convert to prepared statement?
-    $self->dbh->do($self->ignore_replace . " INTO file_to_delete (fid) VALUES " .
-                   join(",", map { "(" . int($_) . ")" } @fidids))
-        or die "file_to_delete insert failed";
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do($self->ignore_replace . " INTO file_to_delete (fid) VALUES " .
+                       join(",", map { "(" . int($_) . ")" } @fidids));
+    });
+    $self->condthrow;
 }
 
 # clears everything from the fsck_log table
