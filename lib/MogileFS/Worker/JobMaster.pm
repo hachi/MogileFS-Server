@@ -132,6 +132,7 @@ sub _inject_fsck_queues {
     my $max_queue  =
         MogileFS::Config->server_setting_cached('queue_size_for_fsck', 60) ||
             DEF_FSCK_QUEUE_MAX;
+    return if ($queue_size >= $max_queue);
 
     my $max_checked = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
     my $to_inject   =
