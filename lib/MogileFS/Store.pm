@@ -1262,6 +1262,17 @@ sub enqueue_many_for_todo {
     $self->condthrow;
 }
 
+# For file_to_queue queues that should be kept small, find the size.
+# This isn't fast, but for small queues won't be slow, and is usually only ran
+# from a single tracker.
+sub file_queue_length {
+    my $self = shift;
+    my $type = shift;
+
+    return $self->dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue " .
+           "WHERE type = ?", undef, $type);
+}
+
 # reschedule all deferred replication, return number rescheduled
 sub replicate_now {
     my ($self) = @_;

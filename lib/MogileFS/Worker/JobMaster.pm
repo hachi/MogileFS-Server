@@ -15,6 +15,9 @@ use MogileFS::Util qw(every error debug eurl);
 
 use constant FSCK_QUEUE => 1;
 
+use constant DEF_FSCK_QUEUE_MAX => 20_000;
+use constant DEF_FSCK_QUEUE_INJECT => 1000;
+
 sub new {
     my ($class, $psock) = @_;
     my $self = fields::new($class);
@@ -125,9 +128,15 @@ sub _inject_fsck_queues {
     my $sto  = shift;
 
     $sto->fsck_log_summarize;
+    my $queue_size = $sto->file_queue_length(FSCK_QUEUE);
+    my $max_queue  =
+        MogileFS::Config->server_setting_cached('queue_size_for_fsck', 60) ||
+            DEF_FSCK_QUEUE_MAX;
+
     my $max_checked = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
     my $to_inject   =
-        MogileFS::Config->server_setting_cached('queue_rate_for_fsck', 30) || 100;
+        MogileFS::Config->server_setting_cached('queue_rate_for_fsck', 60) ||
+            DEF_FSCK_QUEUE_INJECT;
     my @fids        = $sto->get_fid_hrefs_above_id($max_checked, $to_inject);
     unless (@fids) {
         $sto->set_server_setting("fsck_host", undef);
