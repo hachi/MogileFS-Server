@@ -21,8 +21,15 @@ sub run {
 
     my $start_ppid = getppid();
 
+    # Discover whether or not we have GNU df.
+    my $gnu_df = '';
+    `df -P / 2>/dev/null >/dev/null`;
+    if ($? eq 0) {
+       $gnu_df = '-P';
+    }
+
     while (1) {
-        look_at_disk_usage();
+        look_at_disk_usage($gnu_df);
         sleep 10;
 
         # shut ourselves down if our parent mogstored
@@ -36,6 +43,7 @@ sub look_at_disk_usage {
     my $err = sub { warn "$_[0]\n"; };
     my $path = $ENV{MOG_DOCROOT};
     $path =~ s!/$!!;
+    my $gnu_df = shift;
 
     # find all devices below us
     my @devnum;
@@ -47,7 +55,7 @@ sub look_at_disk_usage {
     }
 
     foreach my $devnum (@devnum) {
-        my $rval = `df -P -l -k $path/$devnum`;
+        my $rval = `df $gnu_df -l -k $path/$devnum`;
         my $uperK = ($rval =~ /512-blocks/i) ? 2 : 1; # units per kB
         foreach my $l (split /\r?\n/, $rval) {
             next unless $l =~ /^(.+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)\s+(.+)$/;
