@@ -1441,7 +1441,7 @@ sub grab_files_to_delete2 {
             $dbh->begin_work;
             my $ut = $self->unix_timestamp;
             $to_del_map = $dbh->selectall_hashref(qq{
-                SELECT *
+                SELECT fid, nexttry, failcount
                 FROM file_to_delete2
                 WHERE nexttry <= $ut
                 ORDER BY nexttry
