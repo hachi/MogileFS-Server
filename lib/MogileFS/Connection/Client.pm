@@ -66,18 +66,6 @@ sub handle_admin_command {
         "bored_queryworkers $wcount",
         map { "$_ $stats->{$_}" } sort keys %$stats;
 
-    } elsif ($cmd =~ /^repl/) {
-        my $sto = Mgd::get_store();
-        MogileFS::Class->foreach(sub {
-            my ($cl, $dmid, $clid) = @_;
-            my $dmname = $cl->domain->name;
-            my $clname = $cl->name;
-            foreach my $ct (1..($cl->mindevcount - 1)) {
-                my $count = $sto->nfiles_with_dmid_classid_devcount($dmid, $clid, $ct);
-                push @out, "$dmname $clname $ct $count";
-            }
-        });
-
     } elsif ($cmd =~ /^shutdown/) {
         print "User requested shutdown: $args\n";
         kill 15, $$; # kill us, that kills our kids

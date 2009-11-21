@@ -584,12 +584,6 @@ Mogilefsd admin commands:
     !jobs       Outstanding job counts, desired level, and pids.
     !shutdown   Immediately kill all of mogilefsd.
 
-    !replication
-                (Deprecated/old)
-                See the replication status for un-replicated files.
-                Output format:
-                <domain> <class> <devcount> <files>
-
     !to <job class> <message>
                 Send <message> to all workers of <job class>.
                 Mostly used for debugging.
