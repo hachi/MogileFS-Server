@@ -15,7 +15,7 @@ requires:  MogileFS-Server-mogilefsd, MogileFS-Server-mogstored
 # Build requires for mogilefsd
 buildrequires: perl(DBI), perl(DBD::mysql), perl(MogileFS::Client), MogileFS-Utils, mysql
 # Build requires for mogstored
-buildrequires: perl(Gearman::Client::Async) >= 0.93, perl(Gearman::Server) >= 1.08, perl(Perlbal) >= 1.53
+buildrequires: perl(Perlbal) >= 1.53
 
 %description
 MogileFS Server daemons and utilities.
@@ -79,7 +79,7 @@ Mogilefsd and related libraries.
 summary:   MogileFS-Server-mogstored - Mogstored and related libraries.
 group:     Applications/CPAN
 autoreq:   no
-requires:  perl-Gearman-Client-Async >= 0.93, perl-Gearman-Server >= 1.08, perl-Perlbal >= 1.53
+requires:  perl-Perlbal >= 1.53
 obsoletes: MogileFS-Server-utils <= 2.16
 
 %description -n MogileFS-Server-mogstored

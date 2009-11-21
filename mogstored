@@ -37,8 +37,6 @@ use IO::Socket::INET;
 use POSIX qw(WNOHANG);
 use Perlbal 1.73;
 use FindBin qw($Bin $RealScript);
-use Gearman::Server 1.08;
-use Gearman::Client::Async 0.93;
 
 use Mogstored::HTTPServer::Perlbal;
 use Mogstored::HTTPServer::Lighttpd;
@@ -140,7 +138,6 @@ start_disk_usage_process();
 start_iostat_process() if $opt_iostat;
 harvest_dead_children();  # every 2 seconds, it reschedules itself
 setup_sidechannel_listener();
-start_fidsizes_worker();
 
 # now start the main loop
 Perlbal::run();
@@ -203,25 +200,6 @@ sub harvest_dead_children {
         $code->() if $code;
     }
     Danga::Socket->AddTimer(2, \&harvest_dead_children);
-}
-
-sub start_fidsizes_worker {
-
-    # Note: in this case, this load is *before* the fork (which happens
-    # in Gearman::Server's start_worker), so be careful nothing
-    # heavy/gross is added to the FIDSizes worker.
-    require Mogstored::ChildProcess::FIDSizes;
-    my $class = "Mogstored::ChildProcess::FIDSizes";
-    $class->pre_exec_init;
-
-    my $pid = Mogstored->gearman_server->start_worker(sub {
-        $class->exec;
-    });
-
-    # old Gearman::Servers didn't return pid integers
-    if ($pid =~ /^\d+$/) {
-        Mogstored->on_pid_death($pid, \&start_fidsizes_worker);
-    }
 }
 
 sub Mogstored::on_pid_death {
@@ -329,17 +307,6 @@ sub read_from_iostat_child {
             $out_sock->write("$line\n");
         }
     }
-}
-
-my $gearman_server;
-sub Mogstored::gearman_server {
-    return $gearman_server ||= Gearman::Server->new;
-}
-
-my $gearman_client;
-sub Mogstored::gearman_client {
-    return $gearman_client ||=
-        Gearman::Client::Async->new(job_servers => [ Mogstored->gearman_server ]);
 }
 
 # Local Variables:

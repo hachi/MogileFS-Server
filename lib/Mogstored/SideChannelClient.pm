@@ -57,33 +57,6 @@ sub event_read {
             }
             $self->watch_read(0);
             Mogstored->iostat_subscribe($self);
-        } elsif (my ($start, $end, $raw_devs) = 
-                 $cmd =~ /^fid_sizes \s+ (\d+)-(\d+) \s+ ([\d\s]+)$/ix) {
-            my @devs = split /\s+/, $raw_devs;
-            my $args = Storable::nfreeze([$start, $end, \@devs]);
-            my $task = Gearman::Task->new(
-                "fid_sizes" => \$args,
-                {
-                    on_complete => sub {
-                        my $res = shift;
-                        my $devices = Storable::thaw($$res);
-                        foreach my $device_ent (@$devices) {
-                            my ($device, $entries) = @$device_ent;
-                            foreach my $entry (@$entries) {
-                                my ($fid, $size) = @$entry;
-                                $self->write("$device\t$fid\t$size\n");
-                            }
-                        }
-                        $self->write(".\n");
-                        $self->watch_read(1);
-                    },
-                    on_fail => sub {
-                        $self->write("ERR error processing fid_sizes request\n");
-                        $self->watch_read(1);
-                    },
-                });
-            Mogstored->gearman_client->add_task($task);
-            $self->watch_read(0);
         } else {
             # we don't understand this so pass it on to manage command interface
             my @out;

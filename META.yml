@@ -7,9 +7,6 @@ installdirs:  site
 requires:
     Danga::Socket:                 1.56
     fields:                        0
-    Gearman::Client:               1.07
-    Gearman::Client::Async:        0.93
-    Gearman::Server:               1.08
     Getopt::Long:                  0
     Net::Netmask:                  0
     Perlbal:                       1.53

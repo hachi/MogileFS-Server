@@ -1,4 +1,7 @@
 
+        * Since FIDSizes is no longer used, remove it and remove gearman
+          dependency. (dormando)
+
         * FSCK no longer rabidly fills the queue table. (dormando)
 
         * Make storage code resilient to rare deadlocks (dormando)
