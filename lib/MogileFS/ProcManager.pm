@@ -805,10 +805,11 @@ sub is_child {
 sub state_change {
     my ($what, $whatid, $state, $exclude) = @_;
     my $key = "$what-$whatid";
+    my $now = time();
     foreach my $child (values %child) {
         my $old = $child->{known_state}{$key} || "";
-        if ($old ne $state) {
-            $child->{known_state}{$key} = $state;
+        if (!$old || $old->[1] ne $state || $old->[0] < $now - 300) {
+            $child->{known_state}{$key} = [$now, $state];
 
             $child->write(":state_change $what $whatid $state\r\n")
                 unless $exclude && $child == $exclude;
