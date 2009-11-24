@@ -64,8 +64,9 @@ sub work {
         unless ($tempres || $delres || $delres2) {
             $sleep_for++ if $sleep_for < $sleep_max;
             sleep $sleep_for;
+        } else {
+            $sleep_for = 0;
         }
-        $sleep_for = 0;
     }
 
 }
