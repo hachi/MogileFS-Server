@@ -1663,6 +1663,27 @@ sub enqueue_fids_to_delete {
     $self->condthrow;
 }
 
+sub enqueue_fids_to_delete2 {
+    my ($self, @fidids) = @_;
+    # multi-row insert-ignore/replace CAN fail with the insert_ignore emulation sub.
+    # when the first row causes the duplicate error, and the remaining rows are
+    # not processed.
+    if (@fidids > 1 && ! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
+        $self->enqueue_fids_to_delete2($_) foreach @fidids;
+        return 1;
+    }
+
+    my $nexttry = $self->unix_timestamp;
+
+    # TODO: convert to prepared statement?
+    $self->retry_on_deadlock(sub {
+        $self->dbh->do($self->ignore_replace . " INTO file_to_delete2 (fid,
+        nexttry) VALUES " .
+                       join(",", map { "(" . int($_) . ", $nexttry)" } @fidids));
+    });
+    $self->condthrow;
+}
+
 # clears everything from the fsck_log table
 # return 1 on success.  die otherwise.
 sub clear_fsck_log {

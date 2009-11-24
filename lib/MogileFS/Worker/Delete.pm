@@ -132,7 +132,7 @@ sub process_tempfiles {
     return 0 unless @fidids;
 
     $sto->mass_insert_file_on(@devfids);
-    $sto->enqueue_fids_to_delete(@fidids);
+    $sto->enqueue_fids_to_delete2(@fidids);
     $sto->dbh->do("DELETE FROM tempfile WHERE fid IN (" . join(',', @fidids) . ")");
     return 1;
 }
