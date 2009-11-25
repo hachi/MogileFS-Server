@@ -1,3 +1,28 @@
+2009-11-24: Release version 2.33
+
+        * 'mogadm fsck status' will now be more accurate.
+
+        * Support non-GNU df (paul armstrong)
+
+        * Remove old !replication command. It's in `mogadm stats` and tends
+          to kill the parent process.
+
+        * Force refreshing internal monitoring status every 5 minutes. Help
+          work around a potential bug where state changes are missed.
+
+        * Use new delete queue for tempfile culling
+
+        * Calculate free space from available space, not total space
+          (todd lipcon)
+
+        * FSCK code has new tunables to control how aggressive it runs:
+          queue_size_for_fsck (how many fids to keep in file_to_queue table)
+          queue_rate_for_fsck (how many fids to put into the table per second)
+          the generic internal queue is now tunable:
+          internal_queue_limit (how many fids to pull out of a queue table at
+              once. old default was 500).
+          All are tunable by 'mogadm settings set'
+          (dormando)
 
         * Replication will now attempt to handle over replication situations.
           FSCK will catch over replication as a policy violation, and
