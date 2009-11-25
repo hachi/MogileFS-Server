@@ -49,12 +49,6 @@ sub replicate_to {
     # total disks available which are candidates for having files on them
     my $total_disks = scalar grep { $_->dstate->should_have_files } values %$all_devs;
 
-    # if we have two copies and that's all the disks there are
-    # anywhere, be happy enough, even if mindevcount is higher.  in
-    # that case, when they add more disks later, they'll need to fsck
-    # to make files replicate more.
-    return ALL_GOOD if $already_on >= 2 && $already_on == $total_disks;
-
     # see which and how many unique hosts we're already on.
     my %on_dev;
     my %on_host;
@@ -65,10 +59,21 @@ sub replicate_to {
     my $uniq_hosts_on    = scalar keys %on_host;
     my $total_uniq_hosts = unique_hosts($all_devs);
 
+    # if we are on two hosts but 10 devices, you want to weaken the number of
+    # devices you're on until you're on the right number of hosts with the
+    # right number of devices.
     return TOO_GOOD if $uniq_hosts_on >  $min;
-    return TOO_GOOD if $uniq_hosts_on == $min && $already_on > $min;
+    return TOO_GOOD if $already_on > $min;
     return ALL_GOOD if $uniq_hosts_on == $min;
     return ALL_GOOD if $uniq_hosts_on >= $total_uniq_hosts && $already_on >= $min;
+
+    # if we have two copies and that's all the disks there are
+    # anywhere, be happy enough, even if mindevcount is higher.  in
+    # that case, when they add more disks later, they'll need to fsck
+    # to make files replicate more.
+    # this is here instead of above in case an over replication error causes
+    # the file to be on all disks (where more than necessary)
+    return ALL_GOOD if $already_on >= 2 && $already_on == $total_disks;
 
     # if there are more hosts we're not on yet, we want to exclude devices we're already
     # on from our applicable host search.

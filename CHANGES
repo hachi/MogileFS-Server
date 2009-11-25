@@ -1,4 +1,9 @@
 
+        * Replication will now attempt to handle over replication situations.
+          FSCK will catch over replication as a policy violation, and
+          replicate will attempt to fix it. (dormando)
+          (rarely it might need multiple fscks)
+
         * Since FIDSizes is no longer used, remove it and remove gearman
           dependency. (dormando)
 

@@ -177,6 +177,9 @@ sub replicate_using_torepl_table {
         # -- HARMLESS --
         # failed_getting_lock        => harmless.  skip.  somebody else probably doing.
         #
+        # -- ACTIONABLE --
+        # too_happy                  => too many copies, attempt to rebalance.
+        #
         # -- TEMPORARY; DO EXPONENTIAL BACKOFF --
         # source_down                => only source available is observed down.
         # policy_error_doing_failed  => policy plugin fucked up.  it's looping.
@@ -217,6 +220,30 @@ sub replicate_using_torepl_table {
             $update_nexttry->( end_of_time => 1 );
             $unlock->() if $unlock;
             next;
+        }
+
+        # try to shake off extra copies. fall through to the backoff logic
+        # so we don't flood if it's impossible to properly weaken the fid.
+        # there's a race where the fid could be checked again, but the
+        # exclusive locking prevents replication clobbering.
+        if ($errcode eq 'too_happy') {
+            $unlock->() if $unlock;
+            $unlock = undef;
+            my $f = MogileFS::FID->new($fid);
+            my @devs = List::Util::shuffle($f->devids);
+            my $devfid;
+            # First one we can delete from, we try to rebalance away from.
+            for (@devs) {
+                my $dev = MogileFS::Device->of_devid($_);
+                # Not positive 'can_read_from' needs to be here.
+                # We must be able to delete off of this dev so the fid can
+                # move.
+                if ($dev->can_delete_from && $dev->can_read_from) {
+                    $devfid = MogileFS::DevFID->new($dev, $f);
+                    last;
+                }
+            }
+            $self->rebalance_devfid($devfid) if $devfid;
         }
 
         # at this point, the rest of the errors require exponential backoff.  define what this means
@@ -417,7 +444,7 @@ sub rebalance_devfid {
     my $should_delete = 0;
     my $del_reason;
 
-    if ($ret eq "lost_race") {
+    if ($ret eq "too_happy" || $ret eq "lost_race") {
         # for some reason, we did no work. that could be because
         # either 1) we lost the race, as the error code implies,
         # and some other process rebalanced this first, or 2)
@@ -690,6 +717,11 @@ sub replicate {
         push @on_devs, $devs->{$ddevid};
         push @on_devs_tellpol, $devs->{$ddevid};
         push @on_up_devid, $ddevid;
+    }
+
+    # We are over replicated. Let caller decide if it should rebalance.
+    if ($rr->too_happy) {
+        return $retunlock->(0, "too_happy", "fid $fidid is on too many devices");
     }
 
     if ($rr->is_happy) {
