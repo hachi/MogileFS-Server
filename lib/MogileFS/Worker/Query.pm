@@ -1337,7 +1337,7 @@ sub cmd_set_server_setting {
         return $self->err_line("not_writable");
 
     my $cleanval = eval { $chk->($val); };
-    return $self->err_line("invalid_format") if $@;
+    return $self->err_line("invalid_format", $@) if $@;
 
     MogileFS::Config->set_server_setting($key, $cleanval);
     return $self->ok_line;

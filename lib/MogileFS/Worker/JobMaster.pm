@@ -160,9 +160,13 @@ sub _inject_fsck_queues {
 # so we don't hammer the DB with giant transactions, but loop
 # fast trying to keep the queue full.
 sub queue_depth_check {
+    my $max_limit =
+        MogileFS::Config->server_setting_cached('internal_queue_limit', 120)
+            || 500;
+
     my ($depth, $limit) = @_;
     if ($depth == 0) {
-        $limit += 50 unless $limit >= 500;
+        $limit += 50 unless $limit >= $max_limit;
         return (1, $limit);
     } elsif ($depth / $limit < 0.70) {
         return (1, $limit);

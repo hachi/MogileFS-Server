@@ -306,6 +306,12 @@ sub server_setting_is_writable {
         return "1" if $v =~ /^(1|t|on|y)/i;
         die "Unknown format";
     };
+    my $num          = sub {
+        my $v = shift;
+        return "0" unless $v;
+        return $v if $v =~ /^\d+$/;
+        die "Must be numeric";
+    };
     my $matchre      = sub {
         my $re = shift;
         return sub {
@@ -330,6 +336,7 @@ sub server_setting_is_writable {
     if ($key =~ /^slave_/) { return $del_if_blank };
     if ($key eq "enable_rebalance") { return $bool };
     if ($key eq "memcache_servers") { return $any  };
+    if ($key eq "internal_queue_limit") { return $num };
 
     # ReplicationPolicy::MultipleNetworks
     if ($key eq 'network_zones') { return $any };
