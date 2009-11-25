@@ -20,8 +20,8 @@ sub new {
     return $self;
 }
 
-# no query should take 10 seconds, and we check in every 5 seconds.
-sub watchdog_timeout { 10 }
+# no query should take 30 seconds, and we check in every 5 seconds.
+sub watchdog_timeout { 30 }
 
 # called by plugins to register a command in the namespace
 sub register_command {
