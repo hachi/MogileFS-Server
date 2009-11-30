@@ -1,8 +1,8 @@
 name:      MogileFS-Server
 summary:   MogileFS-Server - MogileFS Server daemons and utilities.
 version:   2.33
-release:   1
-vendor:    Brad Fitzpatrick <brad@danga.com>
+release:   1%{?dist}
+vendor:    Alan Kasindorf <dormando@rydia.net>
 packager:  Jonathan Steinert <hachi@cpan.org>
 license:   Artistic
 group:     Applications/CPAN
@@ -10,7 +10,8 @@ buildroot: %{_tmppath}/%{name}-%{version}-%(id -u -n)
 buildarch: noarch
 source:    mogilefs-server-%{version}.tar.gz
 autoreq:   no
-requires:  MogileFS-Server-mogilefsd, MogileFS-Server-mogstored
+requires:  MogileFS-Server-mogilefsd = %{version}-%{release}
+requires:  MogileFS-Server-mogstored = %{version}-%{release}
 
 # Build requires for mogilefsd
 buildrequires: perl(DBI), perl(DBD::mysql), perl(MogileFS::Client), MogileFS-Utils, mysql
