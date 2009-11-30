@@ -1,0 +1,26 @@
+Testing under MySQL:
+--------------------
+We use the default 'test' user whom is allowed to connect to the 'test' database from localhost only.
+# make test \
+	MOGTEST_DBUSER=test \
+	MOGTEST_DBNAME=test \
+	MOGTEST_DBTYPE=MySQL
+
+Testing under Postgresql:
+-------------------------
+Database setup:
+# createuser -SRlD mogile
+# createdb -E UTF8 -O mogile tmp_mogiletest
+
+To run the tests:
+# make test \
+	MOGTEST_DBUSER=mogile \
+	MOGTEST_DBNAME=tmp_mogiletest \
+	MOGTEST_DBTYPE=Postgres
+
+Testing under SQLite:
+---------------------
+# make test \
+	MOGTEST_DBUSER=mogile \
+	MOGTEST_DBNAME=tmp_mogiletest \
+	MOGTEST_DBTYPE=SQLite
