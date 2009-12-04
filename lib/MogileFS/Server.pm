@@ -149,15 +149,15 @@ sub run {
                                            Proto     => 'tcp',
                                            Blocking  => 0,
                                            Reuse     => 1,
-                                           Listen    => 10 )
+                                           Listen    => 1024 )
             or die "Error creating socket: $@\n";
 
         # save sub to accept a client
         push @servers, $server;
         Danga::Socket->AddOtherFds( fileno($server) => sub {
-                my $csock = $server->accept
-                    or return;
-                MogileFS::Connection::Client->new($csock);
+                while (my $csock = $server->accept) {
+                    MogileFS::Connection::Client->new($csock);
+                }
             } );
     }
 
