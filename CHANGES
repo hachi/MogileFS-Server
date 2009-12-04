@@ -1,3 +1,7 @@
+
+        * Improve accept loop. A reasonably busy tracker could start dropping
+          new client connections too easily.
+
 2009-11-24: Release version 2.33
 
         * 'mogadm fsck status' will now be more accurate.
