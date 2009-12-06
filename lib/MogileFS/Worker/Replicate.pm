@@ -424,10 +424,12 @@ sub rebalance_devfid {
     # dev machine...
     return 1 if ! $fid->exists;
 
+    my $errcode;
     my ($ret, $unlock) = replicate($fid,
                                    mask_devids  => { $devfid->devid => 1 },
                                    no_unlock    => 1,
                                    avoid_devids => $opts{avoid_devids},
+                                   errref       => \$errcode,
                                    );
 
     my $fail = sub {
@@ -437,14 +439,14 @@ sub rebalance_devfid {
         return 0;
     };
 
-    unless ($ret) {
+    unless ($ret || $errcode eq "too_happy") {
         return $fail->("Replication failed");
     }
 
     my $should_delete = 0;
     my $del_reason;
 
-    if ($ret eq "too_happy" || $ret eq "lost_race") {
+    if ($errcode eq "too_happy" || $ret eq "lost_race") {
         # for some reason, we did no work. that could be because
         # either 1) we lost the race, as the error code implies,
         # and some other process rebalanced this first, or 2)
