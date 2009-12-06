@@ -1,3 +1,5 @@
+        * Fix bug in new copycount reduction code. If it was more than off by
+          one it wouldn't reduce the count properly.
 
         * Improve accept loop. A reasonably busy tracker could start dropping
           new client connections too easily.
