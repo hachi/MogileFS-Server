@@ -116,3 +116,4 @@ t/replpolicy.t
 t/store.t
 t/util.t
 TODO
+TESTING
