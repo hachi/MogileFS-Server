@@ -14,6 +14,10 @@ sub new {
     return $self;
 }
 
+sub watchdog_timeout {
+    return 240;
+}
+
 my %all_empty;  # devid -> bool, if all empty of files in file_on
 
 sub work {
@@ -28,6 +32,7 @@ sub work {
         foreach my $dev (grep { $_->dstate->is_perm_dead }
                          MogileFS::Device->devices)
         {
+            $self->parent_ping;
             my $devid = $dev->id;
             next if $all_empty{$devid};
 
