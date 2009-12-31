@@ -32,7 +32,6 @@ sub work {
         foreach my $dev (grep { $_->dstate->is_perm_dead }
                          MogileFS::Device->devices)
         {
-            $self->parent_ping;
             my $devid = $dev->id;
             next if $all_empty{$devid};
 
@@ -41,6 +40,7 @@ sub work {
                 $all_empty{$devid} = 1;
                 next;
             }
+            $self->parent_ping;
 
             foreach my $fid (@fids) {
                 # order is important here:
