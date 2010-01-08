@@ -507,7 +507,7 @@ sub cmd_list_keys {
         or return $self->err_line('domain_not_found');
     my ($prefix, $after, $limit) = ($args->{prefix}, $args->{after}, $args->{limit});
 
-    if ($prefix) {
+    if (defined $prefix and $prefix ne '') {
         # now validate that after matches prefix
         return $self->err_line('after_mismatch')
             if $after && $after !~ /^$prefix/;
