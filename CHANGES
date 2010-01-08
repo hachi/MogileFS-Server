@@ -1,3 +1,7 @@
+
+        * Fix bug in list_keys command that prevented searches with a
+          '0' prefix. (Ask Bjørn Hansen)
+
 2009-12-05: Release version 2.34
 
         * Fix bug in new copycount reduction code. If it was more than off by
