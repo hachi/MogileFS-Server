@@ -1,4 +1,6 @@
 
+        * Fix dependencies in MogileFS::Server (t0m)
+
         * Fix bug in list_keys command that prevented searches with a
           '0' prefix. (Ask Bjørn Hansen)
 
