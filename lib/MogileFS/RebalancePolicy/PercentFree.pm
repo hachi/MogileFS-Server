@@ -46,6 +46,8 @@ sub devfids_to_rebalance {
 
     my $to_chop = int(@devs / 2);
     @devs = @devs[0..$#devs-$to_chop];
+    # Further restrict it to a top 20 of devices.
+    @devs = splice(@devs, 0, 20);
     @devs = weighted_list(map { [$_, $_->percent_full] } @devs);
 
     my @ret;

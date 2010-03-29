@@ -324,16 +324,16 @@ sub cmd_create_open {
 }
 
 sub sort_devs_by_freespace {
-    my @devices_with_weights;
+    my @devices_with_weights = map {
+        [$_, 100 * $_->percent_free]
+    } sort {
+        $b->percent_free <=> $a->percent_free;
+    } grep {
+        $_->exists;
+    } @_;
 
-    foreach my $dev (@_) {
-        next unless $dev->exists;
-
-        my $weight = 100 * $dev->percent_free;
-        push @devices_with_weights, [$dev, $weight];
-    }
-
-    my @list = MogileFS::Util::weighted_list(@devices_with_weights);
+    my @list =
+        MogileFS::Util::weighted_list(splice(@devices_with_weights, 0, 20));
 
     return @list;
 }

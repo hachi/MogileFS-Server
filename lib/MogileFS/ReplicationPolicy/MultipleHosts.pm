@@ -82,8 +82,8 @@ sub replicate_to {
         %skip_host = %on_host;
     }
 
-    my @all_dests = weighted_list map {
-        [$_, 100 * $_->percent_free]
+    my @all_dests = sort {
+        $b->percent_free <=> $a->percent_free
      } grep {
          ! $on_dev{$_->devid} &&
          ! $failed->{$_->devid} &&
@@ -96,6 +96,13 @@ sub replicate_to {
     my @desp  = grep {   $skip_host{$_->hostid} } @all_dests;
 
     return TEMP_NO_ANSWER if $already_on >= $min && @ideal == 0;
+
+    # Do this little dance to only weight-shuffle the top end of empty devices
+    # to save CPU.
+    @ideal = weighted_list(map { [$_, 100 * $_->percent_free] }
+        splice(@ideal, 0, 20));
+    @desp  = weighted_list(map { [$_, 100 * $_->percent_free] } 
+        splice(@desp, 0, 20));
 
     return MogileFS::ReplicationRequest->new(
                                              ideal => \@ideal,
