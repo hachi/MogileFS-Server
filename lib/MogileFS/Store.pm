@@ -287,6 +287,8 @@ sub condthrow {
     my ($pkg, $fn, $line) = caller;
     my $msg = "Database error from $pkg/$fn/$line: " . $dbh->errstr;
     $msg .= ": $optmsg" if $optmsg;
+    # Auto rollback failures around transactions.
+    if ($dbh->{AutoCommit} == 0) { eval { $dbh->rollback }; }
     croak($msg);
 }
 
@@ -1396,105 +1398,71 @@ sub files_to_replicate {
 # from within a transaction, fetch a limit of fids,
 # then update each fid's nexttry to be off in the future,
 # giving local workers some time to dequeue the items.
+# Note:
+# DBI (even with RaiseError) returns weird errors on
+# deadlocks from selectall_hashref. So we can't do that.
+# we also used to retry on deadlock within the routine,
+# but instead lets return undef and let job_master retry.
+sub grab_queue_chunk {
+    my $self      = shift;
+    my $queue     = shift;
+    my $limit     = shift;
+    my $extfields = shift;
+
+    my $dbh = $self->dbh;
+    my $tries = 3;
+    my $work;
+
+    my $extwhere = shift || '';
+    my $fields = 'fid, nexttry, failcount';
+    $fields .= ', ' . $extfields if $extfields;
+    eval {
+        $dbh->begin_work;
+        my $ut  = $self->unix_timestamp;
+        my $sth = $dbh->prepare(qq{
+            SELECT $fields
+            FROM $queue
+            WHERE nexttry <= $ut
+            $extwhere
+            ORDER BY nexttry
+            LIMIT $limit
+            FOR UPDATE
+        });
+        $sth->execute;
+        $work = $sth->fetchall_hashref('fid');
+        # Nothing to work on.
+        # Now claim the fids for a while.
+        # TODO: Should be configurable... but not necessary.
+        my $fidlist = join(',', keys %$work);
+        unless ($fidlist) { $dbh->commit; return; }
+        $dbh->do("UPDATE $queue SET nexttry = $ut + 1000 WHERE fid IN ($fidlist)");
+        $dbh->commit;
+    };
+    if ($self->was_deadlock_error) {
+        eval { $dbh->rollback };
+        return ();
+    }
+    $self->condthrow;
+
+    return defined $work ? values %$work : ();
+}
+
 sub grab_files_to_replicate {
     my ($self, $limit) = @_;
-    my $dbh = $self->dbh;
-    my $tries = 3;
-    my $to_repl_map;
-
-    while ($tries-- > 0) {
-        eval {
-            $dbh->begin_work;
-            my $ut = $self->unix_timestamp;
-            $to_repl_map = $dbh->selectall_hashref(qq{
-                SELECT fid, fromdevid, failcount, flags, nexttry
-                FROM file_to_replicate
-                WHERE nexttry <= $ut
-                ORDER BY nexttry
-                LIMIT $limit
-                FOR UPDATE
-            }, 'fid');
-            unless (keys %$to_repl_map) { $dbh->commit; return (); }
-            my $fidlist = join(', ', keys %$to_repl_map);
-            $dbh->do(qq{UPDATE file_to_replicate SET nexttry = $ut
-                + 1000 WHERE fid IN ($fidlist)});
-            $dbh->commit;
-        };
-        next if ($self->was_deadlock_error);
-        $self->condthrow;
-        last;
-    }
-
-    return () unless defined $to_repl_map;
-    return values %$to_repl_map;
+    return $self->grab_queue_chunk('file_to_replicate', $limit,
+        'fromdevid, flags');
 }
 
-# Crap I wish this was less ugly to de-dupe. 
 sub grab_files_to_delete2 {
     my ($self, $limit) = @_;
-    my $dbh = $self->dbh;
-    my $tries = 3;
-    my $to_del_map;
-
-    while ($tries-- > 0) {
-        eval {
-            $dbh->begin_work;
-            my $ut = $self->unix_timestamp;
-            $to_del_map = $dbh->selectall_hashref(qq{
-                SELECT fid, nexttry, failcount
-                FROM file_to_delete2
-                WHERE nexttry <= $ut
-                ORDER BY nexttry
-                LIMIT $limit
-                FOR UPDATE
-            }, 'fid');
-            unless (keys %$to_del_map) { $dbh->commit; return (); }
-            my $fidlist = join(', ', keys %$to_del_map);
-            $dbh->do(qq{UPDATE file_to_delete2 SET nexttry = $ut + 1000
-                WHERE fid IN ($fidlist)});
-            $dbh->commit;
-        };
-        next if ($self->was_deadlock_error);
-        $self->condthrow;
-        last;
-    }
-
-    return () unless defined $to_del_map;
-    return values %$to_del_map;
+    return $self->grab_queue_chunk('file_to_delete2', $limit);
 }
 
+# $extwhere is ugly... but should be fine.
 sub grab_files_to_queued {
     my ($self, $type, $limit) = @_;
-    my $dbh = $self->dbh;
-    my $tries = 3;
-    my $todo_map;
-
-    while ($tries-- > 0) {
-        eval {
-            $dbh->begin_work;
-            my $ut = $self->unix_timestamp;
-            $todo_map = $dbh->selectall_hashref(qq{
-                SELECT fid, type, failcount, flags, nexttry
-                FROM file_to_queue
-                WHERE type = $type
-                AND nexttry <= $ut
-                ORDER BY nexttry
-                LIMIT $limit
-                FOR UPDATE
-            }, 'fid');
-            unless (keys %$todo_map) { $dbh->commit; return (); }
-            my $fidlist = join(', ', keys %$todo_map);
-            $dbh->do(qq{UPDATE file_to_queue SET nexttry = $ut + 1000
-                WHERE fid IN ($fidlist)});
-            $dbh->commit;
-        };
-        next if ($self->was_deadlock_error);
-        $self->condthrow;
-        last;
-    }
-
-    return () unless defined $todo_map;
-    return values %$todo_map;
+    return $self->grab_queue_chunk('file_to_queue', $limit,
+        'type, flags', 'AND type = ' . $type);
 }
 
 # although it's safe to have multiple tracker hosts and/or processes
