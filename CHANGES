@@ -1,3 +1,9 @@
+        * Print timestamp when logging to STDOUT (t0m)
+
+        * Sort by free space and weight fewer devices to avoid CPU churn
+          (dormando)
+
+        * Fix deadlock-related crash bugs in db queue fetch routines.
 
         * Fix dependencies in MogileFS::Server (t0m)
 
