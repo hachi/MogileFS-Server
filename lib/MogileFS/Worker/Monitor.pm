@@ -111,16 +111,21 @@ sub check_device {
     my $response = $ua->get($url);
     my $res_time = Time::HiRes::time();
 
+    $hostip ||= 'unknown';
+    $get_port ||= 'unknown';
+    $devid ||= 'unknown';
+    $timeout ||= 'unknown';
+    $url ||= 'unknown';
     unless ($response->is_success) {
         my $failed_after = $res_time - $start_time;
         if ($failed_after < 0.5) {
             $self->broadcast_device_unreachable($dev->id);
-            error("Port $get_port not listening on otherwise-alive machine $hostip?  Error was: " . $response->status_line);
+            error("Port $get_port not listening on $hostip ($url)?  Error was: " . $response->status_line);
         } else {
             $failed_after = sprintf("%.02f", $failed_after);
             $self->broadcast_host_unreachable($dev->hostid);
             $self->{skip_host}{$dev->hostid} = 1;
-            error("Timeout contacting machine $hostip for dev $devid:  took $failed_after seconds out of $timeout allowed");
+            error("Timeout contacting $hostip dev $devid ($url):  took $failed_after seconds out of $timeout allowed");
         }
         return;
     }
