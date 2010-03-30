@@ -1551,9 +1551,9 @@ sub get_keys_like {
     my ($self, $dmid, $prefix, $after, $limit) = @_;
     # fix the input... prefix always ends with a % so that it works
     # in a LIKE call, and after is either blank or something
-    $prefix ||= '';
+    $prefix = '' unless defined $prefix;
     $prefix .= '%';
-    $after ||= '';
+    $after  = '' unless defined $after;
 
     # now select out our keys
     return $self->dbh->selectcol_arrayref
