@@ -1,3 +1,5 @@
+        * Allow list_keys to work with a prefix of '0' (dormando)
+
         * Print timestamp when logging to STDOUT (t0m)
 
         * Sort by free space and weight fewer devices to avoid CPU churn
