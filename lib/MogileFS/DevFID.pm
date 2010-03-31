@@ -73,6 +73,8 @@ sub size_matches {
     my $fid = $self->fid;
     my $disk_size = $self->size_on_disk;
 
+    # Temporary connectivity error with that disk/machine..
+    return 0 unless defined $disk_size;
     return 0 if $disk_size == MogileFS::HTTPFile::FILE_MISSING;
 
     return $disk_size == $fid->length;
