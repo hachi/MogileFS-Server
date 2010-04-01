@@ -173,7 +173,7 @@ sub check_fid {
     my $fix = sub {
         my $fixed = eval { $self->fix_fid($fid) };
         if (! defined $fixed) {
-            error("Fsck stalled: $@");
+            error("Fsck stalled for fid $fid: $@");
             return STALLED;
         }
         $fid->fsck_log(EV_CANT_FIX) if ! $fixed;
@@ -287,7 +287,7 @@ sub fix_fid {
             next if $already_checked{$dev->id}++;
 
             my $disk_size = $self->size_on_disk($dfid);
-            die "dev unreachable" unless defined $disk_size;
+            die "dev " . $dev->id . " unreachable" unless defined $disk_size;
 
             if ($disk_size == $fid->length) {
                 push @good_devs, $dfid->device;

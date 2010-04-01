@@ -1,3 +1,6 @@
+        * Print fidid and devid on errors when fsck fails to fix something
+          (t0m)
+
         * Allow list_keys to work with a prefix of '0' (dormando)
 
         * Print timestamp when logging to STDOUT (t0m)
