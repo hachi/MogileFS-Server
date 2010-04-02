@@ -1,3 +1,5 @@
+2010-04-02: Release version 2.35
+
         * Nuke ancient mogilefs 1.1 replication code.
           no_unreachable_tracking and old_repl_compat variables are gone.
           (dormando)
