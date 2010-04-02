@@ -215,6 +215,18 @@ sub set_mindevcount {
     return 1;
 }
 
+sub set_replpolicy {
+    my ($self, $pol) = @_;
+    return 1 if $self->repl_policy_string eq $pol;
+    Mgd::get_store()->update_class_replpolicy(dmid        => $self->domainid,
+                                              classid     => $self->classid,
+                                              replpolicy  => $pol);
+    $self->{replpolicy} = $pol;
+    MogileFS::Class->invalidate_cache;
+    return 1;
+
+}
+
 # throws:
 #   'has_files'
 sub delete {

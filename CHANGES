@@ -1,3 +1,6 @@
+        * Support modifying class replpolicy strings (requires new
+          mogadm/MogileFS::Client) (dormando)
+
         * Print fidid and devid on errors when fsck fails to fix something
           (t0m)
 

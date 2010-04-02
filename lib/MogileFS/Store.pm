@@ -784,6 +784,18 @@ sub update_class_mindevcount {
     return 1;
 }
 
+# return 1 on success, die otherwise
+sub update_class_replpolicy {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(dmid classid replpolicy)], @_);
+    eval {
+    $self->dbh->do("UPDATE class SET replpolicy=? WHERE dmid=? AND classid=?",
+                   undef, $arg{replpolicy}, $arg{dmid}, $arg{classid});
+    };
+    $self->condthrow;
+    return 1;
+}
+
 sub nfiles_with_dmid_classid_devcount {
     my ($self, $dmid, $classid, $devcount) = @_;
     return $self->dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',

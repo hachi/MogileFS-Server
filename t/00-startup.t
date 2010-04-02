@@ -20,7 +20,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 63;
+    plan tests => 64;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -85,6 +85,8 @@ ok(!$tmptrack->mogadm("domain", "delete", "todie"), "didn't delete todie domain 
 
 ok($tmptrack->mogadm("domain", "add", "testdom"), "created test domain");
 ok($tmptrack->mogadm("class", "add", "testdom", "2copies", "--mindevcount=2"), "created 2copies class in testdom");
+ok($tmptrack->mogadm("class", "add", "testdom", "poltest", "--replpolicy=MultipleHosts(3)"),
+    "created a specific policy class");
 
 ok($tmptrack->mogadm("host", "add", "hostA", "--ip=127.0.1.1", "--status=alive"), "created hostA");
 ok($tmptrack->mogadm("host", "add", "hostB", "--ip=127.0.1.2", "--status=alive"), "created hostB");
