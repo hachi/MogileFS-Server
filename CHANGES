@@ -1,3 +1,7 @@
+        * Nuke ancient mogilefs 1.1 replication code.
+          no_unreachable_tracking and old_repl_compat variables are gone.
+          (dormando)
+
         * Support modifying class replpolicy strings (requires new
           mogadm/MogileFS::Client) (dormando)
 

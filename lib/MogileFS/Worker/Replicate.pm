@@ -19,13 +19,6 @@ use MogileFS::ReplicationRequest qw(rr_upgrade);
 # actually be tried again and require some sort of manual intervention.
 use constant ENDOFTIME => 2147483647;
 
-# { fid => lastcheck }; instructs us not to replicate this fid... we will clear
-# out fids from this list that are expired
-my %fidfailure;
-
-# { fid => 1 }; used to keep track of fids we find in the unreachable_fids table
-my %unreachable;
-
 sub end_of_time { ENDOFTIME; }
 
 sub new {
@@ -35,36 +28,6 @@ sub new {
     $self->{fidtodo} = {};
     $self->{peerrepl} = {};
     return $self;
-}
-
-sub process_line {
-    my ($self, $lineref) = @_;
-
-    if ($$lineref =~ /^repl_was_done (\d+)/) {
-        delete $self->{fidtodo}{$1};
-        return 1;
-    }
-
-    if ($$lineref =~ /^repl_starting (\d+)/) {
-        my $fidid = $1;
-        $self->note_peer_replicating($fidid);
-        return 1;
-    }
-
-    if ($$lineref =~ /^repl_unreachable (\d+)/) {
-        $unreachable{$1} = 1;
-        return 1;
-    }
-
-    # telnet to main port and do:
-    #    !to replicate repl_compat {0,1}
-    # to change it in realtime, without restarting.
-    if ($$lineref =~ /^repl_compat (\d+)/) {
-        MogileFS::Config->set_config("old_repl_compat", $1);
-        return 1;
-    }
-
-    return 0;
 }
 
 # replicator wants
@@ -88,34 +51,10 @@ sub work {
         $self->validate_dbh;
         my $dbh = $self->get_dbh or return 0;
 
-        # update our unreachable fid list... we consider them good for 15 minutes
-        # FIXME: uh, what is this even used for nowadays?  it made more sense in mogilefs 1.x,
-        # so maybe we kinda need it for compatibility?  but maybe we could ditch it here and
-        # instead use the file_to_replicate table's row sat ENDOFTIME as meaning the same?
-        unless (MogileFS::Config->config("no_unreachable_tracking")) {
-            my $urfids = $dbh->selectall_arrayref('SELECT fid, lastupdate FROM unreachable_fids');
-            die $dbh->errstr if $dbh->err;
-            foreach my $r (@{$urfids || []}) {
-                my $nv = $r->[1] + 900;
-                unless ($fidfailure{$r->[0]} && $fidfailure{$r->[0]} < $nv) {
-                    # given that we might have set it below to a time past the unreachable
-                    # 15 minute timeout, we want to only overwrite %fidfailure's idea of
-                    # the expiration time if we are extending it
-                    $fidfailure{$r->[0]} = $nv;
-                }
-                $unreachable{$r->[0]} = 1;
-            }
-        }
-
         $self->send_to_parent("worker_bored 100 replicate drain rebalance");
         $self->read_from_parent(1);
         # this finds stuff to replicate based on its record in the needs_replication table
         $self->replicate_using_torepl_table;
-
-        # this finds stuff to replicate based on the devcounts.  (old style)
-        if (MogileFS::Config->config("old_repl_compat")) {
-            $self->replicate_using_devcounts;
-        }
 
         # if replicators are otherwise idle, use them to make the world
         # better, rebalancing things (if enabled), and draining devices (if
@@ -141,7 +80,6 @@ sub replicate_using_torepl_table {
     while (my $todo = shift @$queue_todo) {
         next unless $todo->{_type} eq 'replicate';
         my $fid = $todo->{fid};
-        next if $self->peer_is_replicating($fid);
         $self->still_alive;
 
         my $errcode;
@@ -254,110 +192,6 @@ sub replicate_using_torepl_table {
         $unlock->() if $unlock;
     }
     return 1;
-}
-
-sub replicate_using_devcounts {
-    my $self = shift;
-
-    # this code path only exists for mogilefsd 1.x compatibility and
-    # is not needed in a pure-MogileFS 2.x environment.  and since you
-    # can't use non-MySQL in 1.x, it's pointless to port this code to
-    # the MogileFS::Store system to make it db portable.  so we just
-    # skip here if not using MySQL.
-    my $sto = Mgd::get_store();
-    return 0 unless $sto->isa("MogileFS::Store::MySQL");
-
-    # call this $mdbh to indicate it's a MySQL dbh, and to help grepping
-    # for old handles.  :)
-    my $mdbh = $sto->dbh;
-
-    my $did_something = 0;
-    MogileFS::Class->foreach(sub {
-        my $mclass = shift;
-        my ($dmid, $classid, $min) = map { $mclass->$_ } qw(domainid classid mindevcount);
-
-        debug("Checking replication for dmid=$dmid, classid=$classid, min=$min") if $Mgd::DEBUG >= 2;
-
-        my $LIMIT = 1000;
-
-        # try going from devcount of 1 up to devcount of $min-1
-        $self->{fidtodo} = {};
-        my $fixed = 0;
-        my $attempted = 0;
-        my $devcount = 1;
-        while ($fixed < $LIMIT && $devcount < $min) {
-            my $now = time();
-            $self->still_alive;
-
-            my $fids = $mdbh->selectcol_arrayref("SELECT fid FROM file WHERE dmid=? AND classid=? ".
-                                                "AND devcount = ? AND length IS NOT NULL ".
-                                                "LIMIT $LIMIT", undef, $dmid, $classid, $devcount);
-            die $mdbh->errstr if $mdbh->err;
-            $self->{fidtodo}{$_} = 1 foreach @$fids;
-
-            # increase devcount so we try to replicate the files at the next devcount
-            $devcount++;
-
-            # see if we have any files to replicate
-            my $count = $fids ? scalar @$fids : 0;
-            debug("  found $count for dmid=$dmid/classid=$classid/min=$min") if $Mgd::DEBUG >= 2;
-            next unless $count;
-
-            # randomize the list so multiple daemons/threads working on
-            # replicate at the same time don't all fight over the
-            # same fids to move
-            my @randfids = List::Util::shuffle(@$fids);
-
-            debug("Need to replicate: $dmid/$classid: @$fids") if $Mgd::DEBUG >= 2;
-            foreach my $fid (@randfids) {
-                # now replicate this fid
-                $attempted++;
-                $did_something = 1;
-                next unless $self->{fidtodo}{$fid};
-                next if $self->peer_is_replicating($fid);
-
-                if ($fidfailure{$fid}) {
-                    if ($fidfailure{$fid} < $now) {
-                        delete $fidfailure{$fid};
-                    } else {
-                        next;
-                    }
-                }
-
-                $self->read_from_parent;
-                $self->still_alive;
-
-                if (my $status = replicate($fid)) {
-                    # $status is either 0 (failure, handled below), 1 (success, we actually
-                    # replicated this file), or 2 (success, but someone else replicated it).
-                    # so if it's 2, we just want to go to the next fid.  this file is done.
-                    next if $status eq "lost_race";
-                    next if $status eq "would_worsen";
-
-                    # if it was no longer reachable, mark it reachable
-                    if (delete $unreachable{$fid}) {
-                        $mdbh->do("DELETE FROM unreachable_fids WHERE fid = ?", undef, $fid);
-                        die $mdbh->errstr if $mdbh->err;
-                    }
-
-                    # housekeeping
-                    $fixed++;
-                    $self->send_to_parent("repl_i_did $fid");
-
-                    # status update
-                    if ($Mgd::DEBUG >= 1 && $fixed % 20 == 0) {
-                        my $ratio = $fixed/$attempted*100;
-                        error(sprintf("replicated=$fixed, attempted=$attempted, ratio=%.2f%%", $ratio))
-                            if $fixed % 20 == 0;
-                    }
-                } else {
-                    # failed in replicate, don't retry for a minute
-                    $fidfailure{$fid} = $now + 60;
-                }
-            }
-        }
-    });
-    return $did_something;
 }
 
 sub rebalance_devices {
@@ -735,34 +569,6 @@ sub replicate {
                         "replication policy ran out of suggestions for us replicating fid $fidid");
 }
 
-my $last_peerreplclean = 0;
-sub note_peer_replicating {
-    my ($self, $fidid) = @_;
-    my $now = time();
-    $self->{peerrepl}{$fidid} = $now;
-
-    # every minute, clean fids in this set older than 2 minutes
-    if ($now > $last_peerreplclean + 60) {
-        $last_peerreplclean = $now;
-        while (my ($k, $t) = each %{$self->{peerrepl}}) {
-            next if $t > $now - 120;
-            delete $self->{peerrepl}{$k};
-        }
-    }
-}
-
-# best effort optimization, doesn't have to be perfect (for instance,
-# doesn't currently know what peers on other hosts are doing, only
-# peer process).  just try to avoid lock contention trying to ask for
-# locks on replicating same files.  we say that if a file was started
-# by a peer in last 60 seconds, it's still being replicated.
-sub peer_is_replicating {
-    my ($self, $fidid) = @_;
-    my $t = $self->{peerrepl}{$fidid} or return 0;
-    my $rv = ($t > time() - 60);
-    return $rv;
-}
-
 # copies a file from one Perlbal to another utilizing HTTP
 sub http_copy {
     my %opts = @_;
@@ -782,13 +588,6 @@ sub http_copy {
 
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error_unreachable = sub {
-        my $worker = MogileFS::ProcManager->is_child;
-
-        unless (MogileFS::Config->config('no_unreachable_tracking')) {
-            $worker->send_to_parent(":repl_unreachable $fid");
-            MogileFS::FID->new($fid)->mark_unreachable;
-        }
-
         $$errref = "src_error" if $errref;
         return error("Fid $fid unreachable while replicating: $_[0]");
     };

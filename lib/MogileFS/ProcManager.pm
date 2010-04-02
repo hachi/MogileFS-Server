@@ -624,24 +624,6 @@ sub HandleChildRequest {
         my ($what, $whatid, $state) = ($1, $2, $3);
         state_change($what, $whatid, $state, $child);
 
-    } elsif ($cmd =~ /^:repl_unreachable (\d+)/) {
-        # announce to the other replicators that this fid can't be reached, but note
-        # that we don't actually drain the queue to the requester, as the replicator
-        # isn't in a place where it can accept a queue drain right now.
-        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_unreachable $1", $child);
-
-    } elsif ($cmd =~ /^repl_i_did (\d+)/) {
-        my $fidid = $1;
-
-        # announce to the other replicators that this fid was done and then drain the
-        # queue to this person.
-        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_was_done $fidid", $child);
-
-    } elsif ($cmd =~ /^repl_starting (\d+)/) {
-        my $fidid = $1;
-
-        # announce to the other replicators that this fid is starting to be replicated
-        MogileFS::ProcManager->ImmediateSendToChildrenByJob('replicate', "repl_starting $fidid", $child);
     } elsif ($cmd =~ /^queue_depth (\w+)/) {
         my $job   = $1;
         if ($job eq 'all') {

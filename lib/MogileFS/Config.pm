@@ -61,11 +61,9 @@ our (
     $min_free_space,
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
-    $old_repl_compat,
     $pidfile,
     $repl_use_get_port,
     $local_network,
-    $no_unreachable_tracking,
    );
 
 my $default_mindevcount;
@@ -96,11 +94,9 @@ sub load_config {
                              'max_handles=i'  => \$cmdline{max_handles},
                              'pidfile=s'      => \$cmdline{pidfile},
                              'no_schema_check' => \$cmdline{no_schema_check},
-                             'old_repl_compat=i' => \$cmdline{old_repl_compat},
                              'plugins=s@'        => \$cmdline{plugins},
                              'repl_use_get_port=i' => \$cmdline{repl_use_get_port},
                              'local_network=s' => \$cmdline{local_network},
-                             'no_unreachable_tracking' => \$cmdline{no_unreachable_tracking},
                              'mogstored_stream_port' => \$cmdline{mogstored_stream_port},
                              );
 
@@ -162,11 +158,9 @@ sub load_config {
     choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
 
-    $old_repl_compat = choose_value( 'old_repl_compat', 0 );
     choose_value( 'rebalance_ignore_missing', 0 );
     $repl_use_get_port = choose_value( 'repl_use_get_port', 0 );
     $local_network  = choose_value( 'local_network', '' );
-    $no_unreachable_tracking = choose_value( 'no_unreachable_tracking', 1 );
 
     choose_value( 'no_schema_check', 0 );
 
