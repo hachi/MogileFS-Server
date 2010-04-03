@@ -152,12 +152,13 @@ sub fid_type {
     # else, check a maybe-existing table and see if we're in bigint
     # mode already.
     my $dbh = $self->dbh;
-    my $create = eval { $dbh->selectrow_array("SHOW CREATE TABLE file") };
-    if ($create && $create =~ /\bbigint\b/i) {
-        return $self->{_fid_type} = "BIGINT";
-    } else {
-        # Old installs might not have raised the fid type size yet.
-        return $self->{_fid_type} = "INT";
+    my @create = eval { $dbh->selectrow_array("SHOW CREATE TABLE file") };
+    if (@create && $create[0] eq 'file') {
+        if ($create[1] =~ /\bfid\b.+\bbigint\b/i) {
+            return $self->{_fid_type} = "BIGINT";
+        } else {
+            return $self->{_fid_type} = "INT";
+        }
     }
 
     # Used to default to 32bit ints, but this always bites people

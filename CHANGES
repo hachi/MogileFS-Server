@@ -1,3 +1,6 @@
+        * Actually default to BIGINT under MySQL...
+          Bug would always initialize new setups to INT.
+
 2010-04-02: Release version 2.35
 
         * Nuke ancient mogilefs 1.1 replication code.
