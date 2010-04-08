@@ -1,7 +1,9 @@
+%define perl_vendorlib %(eval "`/usr/bin/perl -V:installvendorlib`"; echo $installvendorlib)
+
 name:      MogileFS-Server
 summary:   MogileFS-Server - MogileFS Server daemons and utilities.
 version:   2.35
-release:   1%{?dist}
+release:   2%{?dist}
 vendor:    Alan Kasindorf <dormando@rydia.net>
 packager:  Jonathan Steinert <hachi@cpan.org>
 license:   Artistic
@@ -27,7 +29,7 @@ rm -rf "%{buildroot}"
 %setup -n mogilefs-server-%{version}
 
 %build
-%{__perl} Makefile.PL PREFIX=%{buildroot}%{_prefix}
+%{__perl} Makefile.PL INSTALLDIRS="vendor" PREFIX=%{buildroot}%{_prefix}
 make all
 make test
 
@@ -37,7 +39,7 @@ make pure_install
 [ -x /usr/lib/rpm/brp-compress ] && /usr/lib/rpm/brp-compress
 
 # remove mogdeps and related files
-rm -rf %{buildroot}/usr/lib/perl5/site_perl/*/mogdeps
+rm -rf %{buildroot}/%{perl_vendorlib}/mogdeps
 rm -f %{buildroot}/usr/share/man/man3/mogdeps::*
 
 # remove special files
@@ -72,7 +74,7 @@ Mogilefsd and related libraries.
 %defattr(-,root,root)
 %{_prefix}/bin/mogilefsd
 %{_prefix}/bin/mogdbsetup
-%{_prefix}/lib/perl5/site_perl/5.8.5/MogileFS/*
+%{perl_vendorlib}/MogileFS/*
 %{_prefix}/share/man/man1/mogilefsd.1.gz
 %{_prefix}/share/man/man3/MogileFS::*.3pm.gz
 
@@ -90,6 +92,6 @@ Mogstored and related libraries.
 %defattr(-,root,root)
 %{_prefix}/bin/mogstored
 %{_prefix}/bin/mogautomount
-%{_prefix}/lib/perl5/site_perl/5.8.5/Mogstored/*
+%{perl_vendorlib}/Mogstored/*
 %{_prefix}/share/man/man1/mogstored.1.gz
 %{_prefix}/share/man/man1/mogautomount.1.gz
