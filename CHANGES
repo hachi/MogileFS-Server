@@ -1,3 +1,7 @@
+2010-04-16: Release version 2.36
+
+        * Bump required version of perlbal for mogstored.
+
         * Critical bug fix for creating files.
           If you have many dead devices, poor filter ordering could cause
           MogileFS to not consider any alive devices for new files.
