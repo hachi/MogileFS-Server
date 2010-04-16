@@ -257,7 +257,6 @@ sub cmd_create_open {
         my $ddev = shift @devices;
 
         last unless $ddev;
-        next unless $ddev->should_get_new_files;
         next unless $ddev->not_on_hosts(map { $_->host } @dests);
 
         push @dests, $ddev;
@@ -329,7 +328,8 @@ sub sort_devs_by_freespace {
     } sort {
         $b->percent_free <=> $a->percent_free;
     } grep {
-        $_->exists;
+        $_->exists &&
+        $_->should_get_new_files;
     } @_;
 
     my @list =
