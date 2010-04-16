@@ -23,7 +23,7 @@ WriteMakefile(
     EXE_FILES               => $exefiles,
     PREREQ_PM               => {
         'Danga::Socket'    => '1.56',
-        'Perlbal'          => '1.73',
+        'Perlbal'          => '1.75',
         'Sys::Syslog'      => 0,
         'Sys::Syscall'     => '0.22',
         'Getopt::Long'     => 0,
