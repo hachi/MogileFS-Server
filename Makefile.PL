@@ -40,6 +40,13 @@ WriteMakefile(
             package   => ['ProcessHandle', 'TrackerHandle', 'MogstoredHandle',
             'MogPath', 'Mgd'],
         },
+          resources => {
+            homepage    =>      'http://danga.com/mogilefs/',
+            bugtracker  =>      'http://rt.cpan.org/Public/Dist/Display.html?Name=mogilefs-server',
+            repository  =>      'http://code.sixapart.com/svn/mogilefs/',
+            MailingList =>      'http://groups.google.com/group/mogile',
+        },
+
     },
 );
 
