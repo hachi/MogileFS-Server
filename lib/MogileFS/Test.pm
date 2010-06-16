@@ -115,7 +115,7 @@ sub create_mogstored {
 
     my $conn = $connect->();
     die "Failed:  tracker already running on port 7500?\n" if $conn;
-
+    $ENV{PERL5LIB} .= ":$Bin/../lib";
     my @args = ("$Bin/../mogstored",
                 "--httplisten=$ip:7500",
                 "--mgmtlisten=$ip:7501",

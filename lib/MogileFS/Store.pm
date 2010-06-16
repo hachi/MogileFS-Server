@@ -1214,6 +1214,18 @@ sub update_devcount {
     return 1;
 }
 
+# update the classid for a given fidid
+sub update_classid {
+    my ($self, $fidid, $classid) = @_;
+    my $dbh = $self->dbh;
+
+    $dbh->do("UPDATE file SET classid=? WHERE fid=?", undef,
+              $classid, $fidid);
+
+    $self->condthrow;
+    return 1;
+}
+
 # enqueue a fidid for replication, from a specific deviceid (can be undef), in a given number of seconds.
 sub enqueue_for_replication {
     my ($self, $fidid, $from_devid, $in) = @_;

@@ -436,6 +436,34 @@ sub cmd_create_close {
     }
 }
 
+sub cmd_updateclass {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+
+    $args->{dmid} = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
+
+    my $dmid  = $args->{dmid};
+    my $key   = $args->{key}        or return $self->err_line("no_key");
+    my $class = $args->{class}      or return $self->err_line("no_class");
+
+    my $classid = MogileFS::Class->class_id($dmid, $class)
+        or return $self->err_line('class_not_found');
+
+    my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
+        or return $self->err_line('invalid_key');
+
+    my @devids = $fid->devids;
+    return $self->err_line("no_devices") unless @devids;
+
+    if ($fid->classid != $classid) {
+        $fid->update_class(classid => $classid);
+        $fid->enqueue_for_replication();
+    }
+
+    return $self->ok_line;
+}
+
 sub cmd_delete {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;

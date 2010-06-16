@@ -1,3 +1,5 @@
+        * update_class command (Tomas Doran)
+
 2010-04-16: Release version 2.36
 
         * Bump required version of perlbal for mogstored.

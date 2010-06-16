@@ -122,6 +122,16 @@ sub update_devcount {
     }
 }
 
+sub update_class {
+    my ($self, %opts) = @_;
+
+    my $classid = delete $opts{classid};
+    croak "Bogus options" if %opts;
+
+    my $sto = Mgd::get_store();
+    return $sto->update_classid($self->{fidid}, $classid);
+}
+
 sub enqueue_for_replication {
     my ($self, %opts) = @_;
     my $in       = delete $opts{in};

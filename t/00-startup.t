@@ -20,7 +20,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 64;
+    plan tests => 70;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -28,6 +28,8 @@ if ($sto) {
 
 my $dbh = $sto->dbh;
 my $rv;
+
+my ($hostA_ip, $hostB_ip, $hostC_ip) = (qw/127.0.1.1 127.0.1.2 127.0.1.3/);
 
 use File::Temp;
 my %mogroot;
@@ -42,9 +44,9 @@ foreach (sort { $a <=> $b } keys %$dev2host) {
     mkdir("$root/dev$_") or die "Failed to create dev$_ dir: $!";
 }
 
-my $ms1 = create_mogstored("127.0.1.1", $mogroot{1});
+my $ms1 = create_mogstored($hostA_ip, $mogroot{1});
 ok($ms1, "got mogstored1");
-my $ms2 = create_mogstored("127.0.1.2", $mogroot{2});
+my $ms2 = create_mogstored($hostB_ip, $mogroot{2});
 ok($ms2, "got mogstored2");
 
 while (! -e "$mogroot{1}/dev1/usage" &&
@@ -84,12 +86,13 @@ ok($tmptrack->mogadm("domain", "delete", "todie"), "delete todie domain");
 ok(!$tmptrack->mogadm("domain", "delete", "todie"), "didn't delete todie domain again");
 
 ok($tmptrack->mogadm("domain", "add", "testdom"), "created test domain");
+ok($tmptrack->mogadm("class", "add", "testdom", "1copy", "--mindevcount=1"), "created 1copy class in testdom");
 ok($tmptrack->mogadm("class", "add", "testdom", "2copies", "--mindevcount=2"), "created 2copies class in testdom");
 ok($tmptrack->mogadm("class", "add", "testdom", "poltest", "--replpolicy=MultipleHosts(3)"),
     "created a specific policy class");
 
-ok($tmptrack->mogadm("host", "add", "hostA", "--ip=127.0.1.1", "--status=alive"), "created hostA");
-ok($tmptrack->mogadm("host", "add", "hostB", "--ip=127.0.1.2", "--status=alive"), "created hostB");
+ok($tmptrack->mogadm("host", "add", "hostA", "--ip=$hostA_ip", "--status=alive"), "created hostA");
+ok($tmptrack->mogadm("host", "add", "hostB", "--ip=$hostB_ip", "--status=alive"), "created hostB");
 
 ok($tmptrack->mogadm("device", "add", "hostA", 1), "created dev1 on hostA");
 ok($tmptrack->mogadm("device", "add", "hostA", 2), "created dev2 on hostA");
@@ -189,6 +192,33 @@ for (1..10) {
     isnt($urls[0], $dead_url, "didn't return dead url first (try $_)");
 }
 
+# Tests for updateclass command
+{
+    my $fh = $mogc->new_file('file1copy', "1copy");
+    ok($fh, "got filehandle") or
+        die "Error: " . $mogc->errstr;
+    print $fh 'EXAMPLE DATA';
+    ok(close($fh), "closed file");
+
+    is scalar($mogc->get_paths("file1copy")), 1, 'File is on 1 device';
+
+    $mogc->update_class('2copies');
+
+    # wait for it to replicate
+    ok(try_for(10, sub {
+        my @urls = $mogc->get_paths("file1copy");
+        my $nloc = @urls;
+        if ($nloc < 1) {
+            diag("no_content still only on $nloc devices");
+            return 0;
+        }
+        return 1;
+    }), "replicated to 2 paths");
+
+    ok($mogc->delete("file1copy"), "deleted updateclass testfile file1copy")
+        or die "Error: " . $mogc->errstr;
+}
+
 ok($be->do_request("rename", {
     from_key => "file1",
     to_key   => "file1renamed",
@@ -236,9 +266,9 @@ pass("Created a ton of files");
 }
 
 # create a new host and device, for when we start killing some devices
-my $ms3 = create_mogstored("127.0.1.3", $mogroot{3});
+my $ms3 = create_mogstored($hostC_ip, $mogroot{3});
 ok($ms3, "got mogstored3");
-ok($tmptrack->mogadm("host", "add", "hostC", "--ip=127.0.1.3", "--status=alive"), "created hostC");
+ok($tmptrack->mogadm("host", "add", "hostC", "--ip=$hostC_ip", "--status=alive"), "created hostC");
 ok($tmptrack->mogadm("device", "add", "hostC", 5), "created dev5 on hostC");
 ok($tmptrack->mogadm("device", "add", "hostC", 6), "created dev6 on hostC");
 
