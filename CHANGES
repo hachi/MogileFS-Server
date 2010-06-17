@@ -1,3 +1,6 @@
+        * make it slightly harder to crash trackers with bad slave DB settings
+          (Tomas Doran)
+
         * make tracker -> storage node connection timeout configurable.
           was hardcoded to 2 seconds. (Tomas Doran)
 
