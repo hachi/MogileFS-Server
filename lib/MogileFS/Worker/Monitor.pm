@@ -13,6 +13,7 @@ use fields (
             );
 
 use Danga::Socket 1.56;
+use MogileFS::Config;
 use MogileFS::Util qw(error debug);
 use MogileFS::IOStatWatcher;
 
@@ -85,7 +86,7 @@ sub work {
 sub ua {
     my $self = shift;
     return $self->{ua} ||= LWP::UserAgent->new(
-                                               timeout    => 2,
+                                               timeout    => MogileFS::Config->config('conn_timeout') || 2,
                                                keep_alive => 20,
                                                );
 }
@@ -104,7 +105,7 @@ sub check_device {
     $self->{seen_hosts}{$hostip} = 1;
 
     # now try to get the data with a short timeout
-    my $timeout = 2;
+    my $timeout = MogileFS::Config->config('conn_timeout') || 2;
     my $start_time = Time::HiRes::time();
 
     my $ua       = $self->ua;

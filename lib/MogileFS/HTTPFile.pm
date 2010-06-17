@@ -201,7 +201,7 @@ sub size {
         return $2+0;
     };
 
-    my $conn_timeout = 2;
+    my $conn_timeout = MogileFS->config("conn_timeout") || 2;
 
     # try using the cached socket
     if ($sock) {

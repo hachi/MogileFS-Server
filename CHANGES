@@ -1,3 +1,6 @@
+        * make tracker -> storage node connection timeout configurable.
+          was hardcoded to 2 seconds. (Tomas Doran)
+
         * update_class command (Tomas Doran)
 
 2010-04-16: Release version 2.36
