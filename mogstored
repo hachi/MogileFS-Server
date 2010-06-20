@@ -277,6 +277,11 @@ sub start_iostat_process {
     if ($pid) {
         # Parent
         $on_death{$pid} = sub {
+            # Try a final read from data on the socket.
+            # Note that this doesn't internally loop... so it might miss data.
+            read_from_iostat_child();
+            # Kill any buffer so partial reads don't hurt us later.
+            drain_iostat_child_pipe();
             start_iostat_process();
         };
         return;
@@ -289,6 +294,14 @@ sub start_iostat_process {
 }
 
 sub Mogstored::get_iostat_writer_pipe { $iostat_pipe_w }
+
+sub drain_iostat_child_pipe {
+    my $data;
+    while (1) { 
+        last unless sysread($iostat_pipe_r, $data, 10240) > 0;
+    }
+    $iostat_read_buf = '';
+}
 
 # (runs in parent event-loop process)
 sub read_from_iostat_child {
@@ -304,6 +317,8 @@ sub read_from_iostat_child {
         my $line = $1;
         foreach my $out_sock (values %iostat_listeners) {
             # where $line will be like "dev53\t53.23" or a "." to signal end of a group of devices.
+            # stop writing to the socket if the listener isn't picking it up.
+            next if $out_sock->{write_buf_size};
             $out_sock->write("$line\n");
         }
     }
