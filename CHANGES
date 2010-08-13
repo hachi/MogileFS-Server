@@ -1,3 +1,5 @@
+        * Make HTTP DELETE's work reliably
+
         * Fix obscure crashes related to "unknown devices"
 
         * make it slightly harder to crash trackers with bad slave DB settings
