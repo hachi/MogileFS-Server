@@ -232,6 +232,8 @@ sub update_devcount_atomic {
 sub upgrade_add_device_drain {
     return 1;
 }
+sub upgrade_modify_server_settings_value { 1 }
+sub upgrade_add_file_to_queue_arg { 1 }
 
 # inefficient, but no warning and no locking
 sub should_begin_replicating_fidid {

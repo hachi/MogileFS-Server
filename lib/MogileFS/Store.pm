@@ -16,7 +16,9 @@ use List::Util ();
 # 10: adds 'replpolicy' column to 'class' table
 # 11: adds 'file_to_queue' table
 # 12: adds 'file_to_delete2' table
-use constant SCHEMA_VERSION => 12;
+# 13: modifies 'server_settings.value' to TEXT for wider values
+#     also adds a TEXT 'arg' column to file_to_queue for passing arguments
+use constant SCHEMA_VERSION => 13;
 
 sub new {
     my ($class) = @_;
@@ -428,6 +430,8 @@ sub setup_database {
     $sto->upgrade_add_device_readonly;
     $sto->upgrade_add_device_drain;
     $sto->upgrade_add_class_replpolicy;
+    $sto->upgrade_modify_server_settings_value;
+    $sto->upgrade_add_file_to_queue_arg;
 
     return 1;
 }
@@ -629,7 +633,7 @@ sub TABLE_device {
 sub TABLE_server_settings {
     "CREATE TABLE server_settings (
     field   VARCHAR(50) PRIMARY KEY,
-    value   VARCHAR(255)
+    value   TEXT
     )"
 }
 
@@ -682,6 +686,7 @@ sub TABLE_file_to_queue {
     nexttry   INT UNSIGNED NOT NULL,
     failcount TINYINT UNSIGNED NOT NULL default '0',
     flags     SMALLINT UNSIGNED NOT NULL default '0',
+    arg       TEXT,
     PRIMARY KEY (fid, type),
     INDEX type_nexttry (type,nexttry)
     )"
@@ -709,6 +714,8 @@ sub upgrade_add_device_asof { 1 }
 sub upgrade_add_device_weight { 1 }
 sub upgrade_add_device_readonly { 1 }
 sub upgrade_add_device_drain { die "Not implemented in $_[0]" }
+sub upgrade_modify_server_settings_value { die "Not implemented in $_[0]" }
+sub upgrade_add_file_to_queue_arg { die "Not implemented in $_[0]" }
 
 sub upgrade_add_class_replpolicy {
     my ($self) = @_;

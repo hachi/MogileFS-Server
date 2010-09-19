@@ -359,6 +359,20 @@ sub upgrade_add_device_drain {
     }
 }
 
+sub upgrade_modify_server_settings_value {
+    my $self = shift;
+    unless ($self->column_type("server_settings", "value") =~ /text/i) {
+        $self->dowell("ALTER TABLE server_settings MODIFY COLUMN value TEXT");
+    }
+}
+
+sub upgrade_add_file_to_queue_arg {
+    my $self = shift;
+    unless ($self->column_type("file_to_queue", "arg")) {
+        $self->dowell("ALTER TABLE file_to_queue ADD COLUMN arg TEXT");
+    }
+}
+
 sub pre_daemonize_checks {
     my $self = shift;
     # Jay Buffington, from the mailing lists, writes:
