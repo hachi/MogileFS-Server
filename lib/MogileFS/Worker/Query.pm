@@ -1617,6 +1617,9 @@ sub cmd_rebalance_set_policy {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
+    my $rebal_host = MogileFS::Config->server_setting("rebal_host");
+    return $self->err_line("no_set_rebal", "cannot change rebalance policy while rebalance is running") if $rebal_host;
+
     # load policy object, test policy, set policy.
     my $rebal = MogileFS::Rebalance->new;
     eval {
