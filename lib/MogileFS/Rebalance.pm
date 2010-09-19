@@ -10,6 +10,7 @@ use List::Util ();
 # that info for DEBUG display.
 # TODO: Add "debug trace" lines to most functions. "choosing sdev to work on",
 # etc.
+# TODO: tally into the state how many fids/size/etc it's done so far.
 
 # Default policy structure are all of these fields.
 # A minimum set of fields should be defined for a policy to be valid..
@@ -71,7 +72,7 @@ sub init {
 
     # If we don't have an initial source device list, discover them.
     # Used to filter destination devices later.
-    $state{source_devs} = $self->_filter_source_devices($devs);
+    $state{source_devs} = $self->filter_source_devices($devs);
     $self->{state} = \%state;
 }
 
@@ -88,6 +89,11 @@ sub load_state {
 sub save_state {
     my $self = shift;
     return $self->_save_settings($self->{state});
+}
+
+sub source_devices {
+    my $self = shift;
+    return $self->{source_devs};
 }
 
 sub policy {
@@ -138,7 +144,7 @@ sub _parse_settings {
             if (exists $constraint->{$key}) {
                 my $c = $constraint->{$key};
                 # default says we should be an array.
-                if (ref($c) && ref($c) eq 'ARRAY') {
+                if (ref($c) && ref($c) eq 'ARRAY' && !ref($value)) {
                     $parsed{$key} = [$value];
                 } else {
                     $parsed{$key} = $value;
@@ -174,7 +180,7 @@ sub next_fids_to_rebalance {
     my $sdev = $self->_find_source_device($state->{source_devs});
     return undef unless $sdev;
     $sdev = MogileFS::Device->of_devid($sdev);
-    my $filtered_destdevs = $self->_filter_dest_devs($devs);
+    my $filtered_destdevs = $self->filter_dest_devices($devs);
 
     croak("rebalance cannot find suitable destination devices")
         unless (@$filtered_destdevs);
@@ -250,11 +256,10 @@ sub _choose_dest_devs {
 
 # Iterate through all possible constraints until we have a final list.
 # unlike the source list we try this 
-sub _filter_source_devices {
+sub filter_source_devices {
     my $self = shift;
     my $devs = shift;
     my $policy = $self->{policy};
-    my $state  = $self->{state};
  
     my @sdevs = ();
     for my $dev (@$devs) {
@@ -361,13 +366,14 @@ sub _human_to_bytes {
 }
 
 # Apply policy to destination devices.
-sub _filter_dest_devs {
+sub filter_dest_devices {
     my $self = shift;
     my $devs = shift;
     my $policy = $self->{policy};
     my $state  = $self->{state};
 
     # skip anything we would source from.
+    # FIXME: ends up not skipping stuff out of completed_devs? :/
     my %sdevs = map { $_ => 1 } @{$state->{source_devs}};
     my @devs  = grep { ! $sdevs{$_} } @$devs;
 
@@ -407,7 +413,7 @@ sub _filter_dest_devs {
             my $free = $dev->mb_free;
             next unless $free && $free > $policy->{to_space_free};
         }
-        push @ddevs, $dev;
+        push @ddevs, $id;
     }
 
     return \@ddevs;

@@ -171,12 +171,11 @@ sub _check_rebal_queues {
 
     my ($need_fetch, $new_limit) =
         queue_depth_check($self->queue_depth('rebalance'),
-        $self->{rebal_queue_limit});
+        $self->{rebl_queue_limit});
     return unless $need_fetch;
-    # FIXME: will this fetch all of the columns properly?
     my @to_rebal = $sto->grab_files_to_queued(REBAL_QUEUE,
         'type, flags, devid, arg', $new_limit);
-    $self->{rebal_queue_limit} = @to_rebal ? $new_limit : 100;
+    $self->{rebl_queue_limit} = @to_rebal ? $new_limit : 100;
     return unless @to_rebal;
     for my $todo (@to_rebal) {
         $todo->{_type} = 'rebalance';
@@ -206,13 +205,13 @@ sub _inject_rebalance_queues {
     my $rebal_state = MogileFS::Config->server_setting('rebal_state');
     $rebal->policy($rebal_pol);
 
+    my @devs = MogileFS::Device->devices;
     if ($rebal_state) {
         $rebal->load_state($rebal_state);
     } else {
-        $rebal->init;
+        $rebal->init(\@devs);
     }
 
-    my @devs = MogileFS::Device->devices;
     my $devfids = $rebal->next_fids_to_rebalance(\@devs, $sto, $to_inject);
 
     # undefined means there's no work left.
@@ -227,8 +226,8 @@ sub _inject_rebalance_queues {
     # Empty means nothing to queue this round.
     if (@$devfids) {
         # I wish there was less data serialization in the world.
-        my @fids = map { $_->[2] = join(',', @{$_->[2]}) } @$devfids;
-        $sto->enqueue_many_for_todo(\@fids, FSCK_QUEUE, 0);
+        map { $_->[2] = join(',', @{$_->[2]}) } @$devfids;
+        $sto->enqueue_many_for_todo($devfids, FSCK_QUEUE, 0);
     }
 
     $rebal_state = $rebal->save_state;

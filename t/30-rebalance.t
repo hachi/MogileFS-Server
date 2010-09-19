@@ -182,6 +182,36 @@ if ($@) {
 #print Dumper($saved_state), "\n";
 #print Dumper($devfids2), "\n";
 
+use MogileFS::Admin;
+my $moga = MogileFS::Admin->new(
+                                 domain => "testdom",
+                                 hosts  => [ "127.0.0.1:7001" ],
+                                 );
+
+ok(! defined $moga->rebalance_stop);
+my $res;
+ok($res = $moga->rebalance_set_policy($rebal_pol));
+if (! defined $res) {
+    print "Admin error: ", $moga->errstr, "\n";
+}
+ok($res = $moga->rebalance_test);
+if (! defined $res) {
+    print "Admin error: ", $moga->errstr, "\n";
+}
+#print "Test result: ", Dumper($res), "\n\n";
+ok(! defined $res = $moga->rebalance_status);
+if (! defined $res) {
+    print "Admin error: ", $moga->errstr, "\n";
+}
+#print "Status results: ", Dumper($res), "\n\n";
+ok($res = $moga->rebalance_start);
+if (! defined $res) {
+    print "Admin error: ", $moga->errstr, "\n";
+}
+if ($res) {
+    print "Start results: ", Dumper($res), "\n\n";
+}
+
 # NOTE: The above just does some barebones testing. I was using the Dumper
 # to visually inspect.
 # For the enterprising, more tests are needed:

@@ -9,6 +9,7 @@ use fields qw(querystarttime reqid);
 use MogileFS::Util qw(error error_code first weighted_list
                       device_state eurl decode_url_args);
 use MogileFS::HTTPFile;
+use MogileFS::Rebalance;
 
 sub new {
     my ($class, $psock) = @_;
@@ -1537,6 +1538,85 @@ sub cmd_fsck_status {
     return $self->ok_line($ret);
 }
 
+sub cmd_rebalance_status {
+    my MogileFS::Worker::Query $self = shift;
+
+    my $sto = Mgd::get_store();
+
+    my $rebal_state = MogileFS::Config->server_setting('rebal_state');
+    return $self->err_line('no_rebal_state') unless $rebal_state;
+    return $self->ok_line($rebal_state);
+}
+
+sub cmd_rebalance_start {
+    my MogileFS::Worker::Query $self = shift;
+    my $rebal_pol   = MogileFS::Config->server_setting('rebal_policy');
+    return $self->err_line('no_rebal_policy') unless $rebal_pol;
+
+    my $rebal = MogileFS::Rebalance->new;
+    $rebal->policy($rebal_pol);
+    my @devs  = MogileFS::Device->devices;
+    $rebal->init(\@devs);
+    my $sdevs = $rebal->source_devices;
+
+    my $state = $rebal->save_state;
+    MogileFS::Config->set_server_setting('rebal_state', $state);
+    # TODO: register start time somewhere.
+    MogileFS::Config->set_server_setting('rebal_host', MogileFS::Config->hostname);
+    return $self->ok_line({ state => $state });
+}
+
+sub cmd_rebalance_test {
+    my MogileFS::Worker::Query $self = shift;
+    my $rebal_pol   = MogileFS::Config->server_setting('rebal_policy');
+    my $rebal_state = MogileFS::Config->server_setting('rebal_state');
+    return $self->err_line('no_rebal_policy') unless $rebal_pol;
+
+    my $rebal = MogileFS::Rebalance->new;
+    my @devs  = MogileFS::Device->devices;
+    $rebal->policy($rebal_pol);
+    $rebal->init(\@devs);
+
+    # client should display list of source, destination devices.
+    # FIXME: can probably avoid calling this twice by pulling state?
+    # *or* not running init.
+    my $sdevs = $rebal->filter_source_devices(\@devs);
+    my $ddevs = $rebal->filter_dest_devices(\@devs);
+    my $ret   = {};
+    $ret->{sdevs} = join(',', @$sdevs);
+    $ret->{ddevs} = join(',', @$ddevs);
+
+    return $self->ok_line($ret);
+}
+
+sub cmd_rebalance_stop {
+    my MogileFS::Worker::Query $self = shift;
+    my $host = MogileFS::Config->server_setting('rebal_host');
+    unless ($host) {
+        return $self->err_line('rebal_not_started');
+    }
+    # TODO: put stop time somewhere.
+    MogileFS::Config->set_server_setting('rebal_host', undef);
+    return $self->ok_line;
+}
+
+sub cmd_rebalance_set_policy {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+
+    # load policy object, test policy, set policy.
+    my $rebal = MogileFS::Rebalance->new;
+    eval {
+        $rebal->policy($args->{policy});
+    };
+    if ($@) {
+        return $self->err_line("bad_rebal_pol", $@);
+    }
+
+    MogileFS::Config->set_server_setting('rebal_policy', $args->{policy});
+    return $self->ok_line;
+}
+
 sub ok_line {
     my MogileFS::Worker::Query $self = shift;
 
@@ -1595,6 +1675,9 @@ sub err_line {
         'unknown_host' => "Host not found",
         'unknown_state' => "Invalid/unknown state",
         'unreg_domain' => "Domain name invalid/not found",
+        'rebal_not_started' => "Rebalance not running",
+        'no_rebal_state' => "No available rebalance status",
+        'no_rebal_policy' => "No rebalance policy available",
     }->{$err_code} || $err_code;
 
     my $delay = '';

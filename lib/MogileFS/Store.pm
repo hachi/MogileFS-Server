@@ -380,6 +380,9 @@ sub retry_on_deadlock {
     while ($tries-- > 0) {
         $rv = eval { $code->(); };
         next if ($self->was_deadlock_error);
+        if ($@) {
+            croak($@) unless $self->dbh->err;
+        }
         last;
     }
     return $rv;
@@ -1305,10 +1308,10 @@ sub enqueue_many_for_todo {
     # TODO: convert to prepared statement?
     $self->retry_on_deadlock(sub {
         if (ref($fidids->[0]) eq 'ARRAY') {
-            $self->dbh->do($self->insert_ignore(
+            my $sql =  $self->ignore_replace .
                 "INTO file_to_queue (fid, devid, arg, type, nexttry) VALUES ".
-                join(',', map { '(' . join(',', @$_, $type, $nexttry) . ') ' }
-                    @$fidids) ));
+                join(', ', ('(?,?,?,?,?)') x scalar @$fidids);
+            $self->dbh->do($sql, undef, map { @$_, $type, $nexttry } @$fidids);
         } else {
             $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
             nexttry) VALUES " .
@@ -1547,7 +1550,7 @@ sub grab_files_to_queued {
     my ($self, $type, $what, $limit) = @_;
     $what ||= 'type, flags';
     return $self->grab_queue_chunk('file_to_queue', $limit,
-        'type, flags', 'AND type = ' . $type);
+        $what, 'AND type = ' . $type);
 }
 
 # although it's safe to have multiple tracker hosts and/or processes
