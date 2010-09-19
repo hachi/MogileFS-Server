@@ -149,7 +149,7 @@ for my $d (@devs) {
 
 ### Actual rebalance tests.
 my ($devfids, $devfids2, $saved_state);
-my $rebal_pol = "from_hosts=1 fid_age=old limit_type=device limit_by=none to_all_devs=0 to_hosts=3";
+my $rebal_pol = "from_hosts=1 fid_age=old limit_type=device limit_by=none to_all_devs=0 to_hosts=3 leave_in_drain_mode=0";
 eval {
     my $rebal = MogileFS::Rebalance->new;
     ok($rebal->policy($rebal_pol));
@@ -227,6 +227,8 @@ sleep 5;
 
 # TODO: Verify that files moved from devs 1,2 to 5,6
 # select devid, count(*) from file_on group by devid;
+
+# TODO: Verify that devices are left in drain mode or not left in drain mode.
 
 # NOTE: The above just does some barebones testing. I was using the Dumper
 # to visually inspect.

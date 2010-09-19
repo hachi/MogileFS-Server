@@ -11,6 +11,9 @@ use List::Util ();
 # TODO: Add "debug trace" lines to most functions. "choosing sdev to work on",
 # etc.
 # TODO: tally into the state how many fids/size/etc it's done so far.
+# TODO: should track old device state and return to it. Overall this is
+# probably better fit by switching "device state" to a set of "device flags",
+# so we can disable specifically "stop getting new files" while we work :(
 
 # Default policy structure are all of these fields.
 # A minimum set of fields should be defined for a policy to be valid..
@@ -34,6 +37,7 @@ my %default_policy = (
     not_to_hosts => [],
     not_to_devices => [],
     use_dest_devs => 'all',     # all|N (list up to N devices to rep pol)
+    leave_in_drain_mode => 0,
 );
 
 # State policy example
@@ -304,13 +308,19 @@ sub filter_source_devices {
 
 sub _finish_source_device {
     my $self = shift;
-    my $state = $self->{state};
+    my $state  = $self->{state};
+    my $policy = $self->{policy};
     croak "Not presently working on a source device"
         unless $state->{sdev_current};
 
     delete $state->{sdev_lastfid};
     delete $state->{sdev_limit};
     my $sdev = delete $state->{sdev_current};
+    # Unless the user wants a device to never get new files again (sticking in
+    # drain mode), return to alive.
+    unless ($policy->{leave_in_drain_mode}) {
+        MogileFS::Device->of_devid($sdev)->set_state('alive');
+    }
     push @{$state->{completed_devs}}, $sdev;
 }
 
@@ -339,6 +349,8 @@ sub _find_source_device {
                 $limit = 'none';
             }
         }
+        # Must mark device in "drain" mode while we work on it.
+        MogileFS::Device->of_devid($sdev)->set_state('drain');
         $state->{sdev_limit} = $limit;
     }
 
