@@ -199,7 +199,7 @@ sub next_fids_to_rebalance {
         fidid => $state->{sdev_lastfid},
         limit => $limit);
     # We'll wait until the next cycle to find a new sdev.
-    unless (@fids) {
+    if (! @fids || ! $self->_check_limits) {
         $self->_finish_source_device;
         return [];
     }
@@ -240,13 +240,23 @@ sub _check_limits {
     }
 
     if ($p->{limit_by} eq 'count') {
-        return $$limit--;
+        return $fid ? $$limit-- : $$limit;
     } elsif ($p->{limit_by} eq 'size') {
-        if ($fid->length() < $$limit) {
-            $$limit -= $fid->length();
-            return 1;
+        if ($fid) {
+            if ($fid->length() <= $$limit) {
+                $$limit -= $fid->length();
+                return 1;
+            } else {
+                return 0;
+            }
         } else {
-            return 0;
+            if ($$limit < 1024) {
+                # Arbitrary "give up if there's less than 1kb in the limit"
+                # FIXME: Make this configurable
+                return 0;
+            } else {
+                return 1;
+            }
         }
     } else {
         croak("uknown limit_by type");
