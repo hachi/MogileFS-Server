@@ -7,7 +7,7 @@ use MogileFS::Store;
 use Sys::Hostname ();
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw($DEBUG config set_config);
+our @EXPORT = qw($DEBUG config set_config FSCK_QUEUE REBAL_QUEUE);
 our @EXPORT_OK = qw(DEVICE_SUMMARY_CACHE_TIMEOUT);
 
 our ($DEFAULT_CONFIG, $MOGSTORED_STREAM_PORT, $DEBUG);
@@ -15,6 +15,8 @@ $DEBUG = 0;
 $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $MOGSTORED_STREAM_PORT = 7501;
 
+use constant FSCK_QUEUE => 1;
+use constant REBAL_QUEUE => 1;
 use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
 
 my %conf;

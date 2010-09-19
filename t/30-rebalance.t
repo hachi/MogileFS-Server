@@ -13,7 +13,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 34;
+    plan tests => 40;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -195,11 +195,8 @@ if (! defined $res) {
     print "Admin error: ", $moga->errstr, "\n";
 }
 ok($res = $moga->rebalance_test);
-if (! defined $res) {
-    print "Admin error: ", $moga->errstr, "\n";
-}
 #print "Test result: ", Dumper($res), "\n\n";
-ok(! defined $res = $moga->rebalance_status);
+ok(! defined $moga->rebalance_status);
 if (! defined $res) {
     print "Admin error: ", $moga->errstr, "\n";
 }
@@ -209,8 +206,27 @@ if (! defined $res) {
     print "Admin error: ", $moga->errstr, "\n";
 }
 if ($res) {
-    print "Start results: ", Dumper($res), "\n\n";
+#    print "Start results: ", Dumper($res), "\n\n";
 }
+
+sleep 5;
+
+{
+    my $iters = 30;
+    my $to_repl_rows;
+    while ($iters) {
+        $iters--;
+        $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue");
+        last if ! $to_repl_rows;
+        diag("Files to rebalance: $to_repl_rows");
+        sleep 1;
+    }
+    die "Failed to rebalance all files" if $to_repl_rows;
+    pass("Replicated all files");
+}
+
+# TODO: Verify that files moved from devs 1,2 to 5,6
+# select devid, count(*) from file_on group by devid;
 
 # NOTE: The above just does some barebones testing. I was using the Dumper
 # to visually inspect.

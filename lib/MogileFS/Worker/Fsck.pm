@@ -9,6 +9,7 @@ use fields (
             'opt_nostat',          # bool: do we trust mogstoreds? skipping size stats?
             );
 use MogileFS::Util qw(every error debug);
+use MogileFS::Config;
 use List::Util ();
 use Time::HiRes ();
 
@@ -98,7 +99,7 @@ sub work {
             my $fid = MogileFS::FID->new($todo->{fid});
             unless ($fid->exists) {
                 # FID stopped existing before being checked.
-                $sto->delete_fid_from_file_to_queue($fid->id);
+                $sto->delete_fid_from_file_to_queue($fid->id, FSCK_QUEUE);
             }
             push(@fids, $fid);
         }
@@ -124,7 +125,7 @@ sub work {
                 sleep 5;
                 next;
             }
-            $sto->delete_fid_from_file_to_queue($fid->id);
+            $sto->delete_fid_from_file_to_queue($fid->id, FSCK_QUEUE);
             $n_check++;
             $beat->();
         }

@@ -11,6 +11,7 @@ use fields (
 
 use List::Util ();
 use MogileFS::Util qw(error every debug);
+use MogileFS::Config;
 use MogileFS::Class;
 use MogileFS::RebalancePolicy::DrainDevices;
 use MogileFS::ReplicationRequest qw(rr_upgrade);
@@ -50,17 +51,45 @@ sub work {
 
         $self->validate_dbh;
         my $dbh = $self->get_dbh or return 0;
+        my $sto = Mgd::get_store();
 
-        $self->send_to_parent("worker_bored 100 replicate drain rebalance");
+        $self->send_to_parent("worker_bored 100 replicate");
+        # This is here on account of not being able to block on the parent :(
         $self->read_from_parent(1);
-        # this finds stuff to replicate based on its record in the needs_replication table
-        $self->replicate_using_torepl_table;
+        # TODO: might need to sort types or create priority queues in the
+        # parent... would want "replicate" work to happen before rebalance.
+        my $queue_todo = $self->queue_todo('replicate');
+        unless (@$queue_todo) {
+            $self->parent_ping;
+            return;
+        }
 
+        while (my $todo = shift @$queue_todo) {
+            my $fid = $todo->{fid};
+            $self->still_alive;
+            if ($todo->{_type} eq 'replicate') {
+                $self->replicate_using_torepl_table($todo);
+            } elsif ($todo->{_type} eq 'rebalance') {
+                # deserialize the arg :/
+                $todo->{arg} = [split /,/, $todo->{arg}];
+                my $devfid =
+                    MogileFS::DevFID->new($todo->{devid}, $todo->{fid});
+                $self->rebalance_devfid($devfid, 
+                    { target_devids => $todo->{arg} });
+
+                # If files error out, we want to send the error up to syslog
+                # and make a real effort to chew through the queue. Users may
+                # manually re-run rebalance to retry.
+                $sto->delete_fid_from_file_to_queue($todo->{fid}, REBAL_QUEUE);
+            } else {
+                error("Uknown work type: " . $todo->{_type});
+            }
+        }
         # if replicators are otherwise idle, use them to make the world
         # better, rebalancing things (if enabled), and draining devices (if
         # any are marked drain)
-        $self->rebalance_devices;
-        $self->drain_devices;
+        #$self->rebalance_devices;
+        #$self->drain_devices;
     });
 }
 
@@ -68,129 +97,122 @@ sub work {
 # there was nothing to be done.
 sub replicate_using_torepl_table {
     my $self = shift;
+    my $todo = shift;
 
     # find some fids to replicate, prioritize based on when they should be tried
     my $sto = Mgd::get_store();
-    my $queue_todo = $self->queue_todo('replicate');
-    unless (@$queue_todo) {
-        $self->parent_ping;
-        return 0;
-    }
 
-    while (my $todo = shift @$queue_todo) {
-        next unless $todo->{_type} eq 'replicate';
-        my $fid = $todo->{fid};
-        $self->still_alive;
+    my $fid = $todo->{fid};
+    $self->still_alive;
 
-        my $errcode;
+    my $errcode;
 
-        my %opts;
-        $opts{errref}       = \$errcode;
-        $opts{no_unlock}    = 1; # to make it return an $unlock subref
-        $opts{source_devid} = $todo->{fromdevid} if $todo->{fromdevid};
+    my %opts;
+    $opts{errref}       = \$errcode;
+    $opts{no_unlock}    = 1; # to make it return an $unlock subref
+    $opts{source_devid} = $todo->{fromdevid} if $todo->{fromdevid};
 
-        my ($status, $unlock) = replicate($fid, %opts);
+    my ($status, $unlock) = replicate($fid, %opts);
 
-        if ($status) {
-            # $status is either 0 (failure, handled below), 1 (success, we actually
-            # replicated this file), or 2 (success, but someone else replicated it).
+    if ($status) {
+        # $status is either 0 (failure, handled below), 1 (success, we actually
+        # replicated this file), or 2 (success, but someone else replicated it).
 
-            # when $staus eq "lost_race", this delete is unnecessary normally
-            # (somebody else presumably already deleted it if they
-            # also replicated it), but in the case of running with old
-            # replicators from previous versions, -or- simply if the
-            # other guy's delete failed, this cleans it up....
-            $sto->delete_fid_from_file_to_replicate($fid);
-            $unlock->() if $unlock;
-            next;
-        }
-
-        debug("Replication of fid=$fid failed with errcode=$errcode") if $Mgd::DEBUG >= 2;
-
-        # ERROR CASES:
-
-        # README: please keep this up to date if you update the replicate() function so we ensure
-        # that this code always does the right thing
-        #
-        # -- HARMLESS --
-        # failed_getting_lock        => harmless.  skip.  somebody else probably doing.
-        #
-        # -- ACTIONABLE --
-        # too_happy                  => too many copies, attempt to rebalance.
-        #
-        # -- TEMPORARY; DO EXPONENTIAL BACKOFF --
-        # source_down                => only source available is observed down.
-        # policy_error_doing_failed  => policy plugin fucked up.  it's looping.
-        # policy_error_already_there => policy plugin fucked up.  it's dumb.
-        # policy_no_suggestions      => no copy was attempted.  policy is just not happy.
-        # copy_error                 => policy said to do 1+ things, we failed, it ran out of suggestions.
-        #
-        # -- FATAL; DON'T TRY AGAIN --
-        # no_source                  => it simply exists nowhere.  not that something's down, but file_on is empty.
-
-        # bail if we failed getting the lock, that means someone else probably
-        # already did it, so we should just move on
-        if ($errcode eq 'failed_getting_lock') {
-            $unlock->() if $unlock;
-            next;
-        }
-
-        # logic for setting the next try time appropriately
-        my $update_nexttry = sub {
-            my ($type, $delay) = @_;
-            my $sto = Mgd::get_store();
-            if ($type eq 'end_of_time') {
-                # special; update to a time that won't happen again,
-                # as we've encountered a scenario in which case we're
-                # really hosed
-                $sto->reschedule_file_to_replicate_absolute($fid, ENDOFTIME);
-            } elsif ($type eq "offset") {
-                $sto->reschedule_file_to_replicate_relative($fid, $delay+0);
-            } else {
-                $sto->reschedule_file_to_replicate_absolute($fid, $delay+0);
-            }
-        };
-
-        # now let's handle any error we want to consider a total failure; do not
-        # retry at any point.  push this file off to the end so someone has to come
-        # along and figure out what went wrong.
-        if ($errcode eq 'no_source') {
-            $update_nexttry->( end_of_time => 1 );
-            $unlock->() if $unlock;
-            next;
-        }
-
-        # try to shake off extra copies. fall through to the backoff logic
-        # so we don't flood if it's impossible to properly weaken the fid.
-        # there's a race where the fid could be checked again, but the
-        # exclusive locking prevents replication clobbering.
-        if ($errcode eq 'too_happy') {
-            $unlock->() if $unlock;
-            $unlock = undef;
-            my $f = MogileFS::FID->new($fid);
-            my @devs = List::Util::shuffle($f->devids);
-            my $devfid;
-            # First one we can delete from, we try to rebalance away from.
-            for (@devs) {
-                my $dev = MogileFS::Device->of_devid($_);
-                # Not positive 'can_read_from' needs to be here.
-                # We must be able to delete off of this dev so the fid can
-                # move.
-                if ($dev->can_delete_from && $dev->can_read_from) {
-                    $devfid = MogileFS::DevFID->new($dev, $f);
-                    last;
-                }
-            }
-            $self->rebalance_devfid($devfid) if $devfid;
-        }
-
-        # at this point, the rest of the errors require exponential backoff.  define what this means
-        # as far as failcount -> delay to next try.
-        # 15s, 1m, 5m, 30m, 1h, 2h, 4h, 8h, 24h, 24h, 24h, 24h, ...
-        my @backoff = qw( 15 60 300 1800 3600 7200 14400 28800 );
-        $update_nexttry->( offset => int(($backoff[$todo->{failcount}] || 86400) * (rand(0.4) + 0.8)) );
+        # when $staus eq "lost_race", this delete is unnecessary normally
+        # (somebody else presumably already deleted it if they
+        # also replicated it), but in the case of running with old
+        # replicators from previous versions, -or- simply if the
+        # other guy's delete failed, this cleans it up....
+        $sto->delete_fid_from_file_to_replicate($fid);
         $unlock->() if $unlock;
+        next;
     }
+
+    debug("Replication of fid=$fid failed with errcode=$errcode") if $Mgd::DEBUG >= 2;
+
+    # ERROR CASES:
+
+    # README: please keep this up to date if you update the replicate() function so we ensure
+    # that this code always does the right thing
+    #
+    # -- HARMLESS --
+    # failed_getting_lock        => harmless.  skip.  somebody else probably doing.
+    #
+    # -- ACTIONABLE --
+    # too_happy                  => too many copies, attempt to rebalance.
+    #
+    # -- TEMPORARY; DO EXPONENTIAL BACKOFF --
+    # source_down                => only source available is observed down.
+    # policy_error_doing_failed  => policy plugin fucked up.  it's looping.
+    # policy_error_already_there => policy plugin fucked up.  it's dumb.
+    # policy_no_suggestions      => no copy was attempted.  policy is just not happy.
+    # copy_error                 => policy said to do 1+ things, we failed, it ran out of suggestions.
+    #
+    # -- FATAL; DON'T TRY AGAIN --
+    # no_source                  => it simply exists nowhere.  not that something's down, but file_on is empty.
+
+    # bail if we failed getting the lock, that means someone else probably
+    # already did it, so we should just move on
+    if ($errcode eq 'failed_getting_lock') {
+        $unlock->() if $unlock;
+        next;
+    }
+
+    # logic for setting the next try time appropriately
+    my $update_nexttry = sub {
+        my ($type, $delay) = @_;
+        my $sto = Mgd::get_store();
+        if ($type eq 'end_of_time') {
+            # special; update to a time that won't happen again,
+            # as we've encountered a scenario in which case we're
+            # really hosed
+            $sto->reschedule_file_to_replicate_absolute($fid, ENDOFTIME);
+        } elsif ($type eq "offset") {
+            $sto->reschedule_file_to_replicate_relative($fid, $delay+0);
+        } else {
+            $sto->reschedule_file_to_replicate_absolute($fid, $delay+0);
+        }
+    };
+
+    # now let's handle any error we want to consider a total failure; do not
+    # retry at any point.  push this file off to the end so someone has to come
+    # along and figure out what went wrong.
+    if ($errcode eq 'no_source') {
+        $update_nexttry->( end_of_time => 1 );
+        $unlock->() if $unlock;
+        next;
+    }
+
+    # try to shake off extra copies. fall through to the backoff logic
+    # so we don't flood if it's impossible to properly weaken the fid.
+    # there's a race where the fid could be checked again, but the
+    # exclusive locking prevents replication clobbering.
+    if ($errcode eq 'too_happy') {
+        $unlock->() if $unlock;
+        $unlock = undef;
+        my $f = MogileFS::FID->new($fid);
+        my @devs = List::Util::shuffle($f->devids);
+        my $devfid;
+        # First one we can delete from, we try to rebalance away from.
+        for (@devs) {
+            my $dev = MogileFS::Device->of_devid($_);
+            # Not positive 'can_read_from' needs to be here.
+            # We must be able to delete off of this dev so the fid can
+            # move.
+            if ($dev->can_delete_from && $dev->can_read_from) {
+                $devfid = MogileFS::DevFID->new($dev, $f);
+                last;
+            }
+        }
+        $self->rebalance_devfid($devfid) if $devfid;
+    }
+
+    # at this point, the rest of the errors require exponential backoff.  define what this means
+    # as far as failcount -> delay to next try.
+    # 15s, 1m, 5m, 30m, 1h, 2h, 4h, 8h, 24h, 24h, 24h, 24h, ...
+    my @backoff = qw( 15 60 300 1800 3600 7200 14400 28800 );
+    $update_nexttry->( offset => int(($backoff[$todo->{failcount}] || 86400) * (rand(0.4) + 0.8)) );
+    $unlock->() if $unlock;
     return 1;
 }
 
@@ -245,8 +267,8 @@ sub rebalance_policy_obj {
 
 # Return 1 on success, 0 on failure.
 sub rebalance_devfid {
-    my ($self, $devfid, %opts) = @_;
-    MogileFS::Util::okay_args(\%opts, qw(avoid_devids));
+    my ($self, $devfid, $opts) = @_;
+    MogileFS::Util::okay_args($opts, qw(avoid_devids target_devids));
 
     my $fid = $devfid->fid;
 
@@ -262,7 +284,7 @@ sub rebalance_devfid {
     my ($ret, $unlock) = replicate($fid,
                                    mask_devids  => { $devfid->devid => 1 },
                                    no_unlock    => 1,
-                                   avoid_devids => $opts{avoid_devids},
+                                   target_devids => $opts->{target_devids},
                                    errref       => \$errcode,
                                    );
 
@@ -359,6 +381,7 @@ sub replicate {
     my $sdevid    = delete $opts{'source_devid'};
     my $mask_devids  = delete $opts{'mask_devids'}  || {};
     my $avoid_devids = delete $opts{'avoid_devids'} || {};
+    my $target_devids = delete $opts{'target_devids'}; # inverse of avoid_devids.
     die "unknown_opts" if %opts;
     die unless ref $mask_devids eq "HASH";
 
@@ -443,12 +466,17 @@ sub replicate {
     my $got_copy_request = 0;  # true once replication policy asks us to move something somewhere
     my $copy_err;
 
+    my $dest_devs = $devs;
+    if ($target_devids) {
+        $dest_devs = {map { $_ => $devs->{$_} } @$target_devids};
+    }
+
     my $rr;  # MogileFS::ReplicationRequest
     while (1) {
         $rr = rr_upgrade($polobj->replicate_to(
                                                fid       => $fidid,
                                                on_devs   => \@on_devs_tellpol, # all device objects fid is on, dead or otherwise
-                                               all_devs  => $devs,
+                                               all_devs  => $dest_devs,
                                                failed    => \%dest_failed,
                                                min       => $cls->mindevcount,
                                                ));

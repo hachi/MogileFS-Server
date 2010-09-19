@@ -1586,9 +1586,10 @@ sub delete_fid_from_file_to_replicate {
 }
 
 sub delete_fid_from_file_to_queue {
-    my ($self, $fidid) = @_;
+    my ($self, $fidid, $type) = @_;
     $self->retry_on_deadlock(sub {
-        $self->dbh->do("DELETE FROM file_to_queue WHERE fid=?", undef, $fidid);
+        $self->dbh->do("DELETE FROM file_to_queue WHERE fid=? and type=?",
+            undef, $fidid, $type);
     });
 }
 

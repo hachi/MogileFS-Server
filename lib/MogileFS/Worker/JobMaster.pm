@@ -13,9 +13,7 @@ use fields (
             'rebl_queue_limit',
             );
 use MogileFS::Util qw(every error debug eurl);
-
-use constant FSCK_QUEUE => 1;
-use constant REBAL_QUEUE => 1;
+use MogileFS::Config;
 
 use constant DEF_FSCK_QUEUE_MAX => 20_000;
 use constant DEF_FSCK_QUEUE_INJECT => 1000;
