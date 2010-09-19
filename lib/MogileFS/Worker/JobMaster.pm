@@ -177,7 +177,7 @@ sub _check_rebal_queues {
     return unless @to_rebal;
     for my $todo (@to_rebal) {
         $todo->{_type} = 'rebalance';
-        $self->send_to_parent("queue_todo replicate " . _eurl_encode_args($todo));
+        $self->send_to_parent("queue_todo rebalance " . _eurl_encode_args($todo));
     }
 }
 

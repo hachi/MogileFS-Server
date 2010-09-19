@@ -50,13 +50,14 @@ sub work {
         my $dbh = $self->get_dbh or return 0;
         my $sto = Mgd::get_store();
 
-        $self->send_to_parent("worker_bored 100 replicate");
+        $self->send_to_parent("worker_bored 100 replicate rebalance");
         # This is here on account of not being able to block on the parent :(
         $self->read_from_parent(1);
         # TODO: might need to sort types or create priority queues in the
         # parent... would want "replicate" work to happen before rebalance.
-        my $queue_todo = $self->queue_todo('replicate');
-        unless (@$queue_todo) {
+        my $queue_todo  = $self->queue_todo('replicate');
+        my $queue_todo2 = $self->queue_todo('rebalance');
+        unless (@$queue_todo || @$queue_todo2) {
             $self->parent_ping;
             return;
         }
@@ -64,23 +65,21 @@ sub work {
         while (my $todo = shift @$queue_todo) {
             my $fid = $todo->{fid};
             $self->still_alive;
-            if ($todo->{_type} eq 'replicate') {
-                $self->replicate_using_torepl_table($todo);
-            } elsif ($todo->{_type} eq 'rebalance') {
-                # deserialize the arg :/
-                $todo->{arg} = [split /,/, $todo->{arg}];
-                my $devfid =
-                    MogileFS::DevFID->new($todo->{devid}, $todo->{fid});
-                $self->rebalance_devfid($devfid, 
-                    { target_devids => $todo->{arg} });
+            $self->replicate_using_torepl_table($todo);
+        }
+        while (my $todo = shift @$queue_todo2) {
+            $self->still_alive;
+            # deserialize the arg :/
+            $todo->{arg} = [split /,/, $todo->{arg}];
+            my $devfid =
+                MogileFS::DevFID->new($todo->{devid}, $todo->{fid});
+            $self->rebalance_devfid($devfid, 
+                { target_devids => $todo->{arg} });
 
-                # If files error out, we want to send the error up to syslog
-                # and make a real effort to chew through the queue. Users may
-                # manually re-run rebalance to retry.
-                $sto->delete_fid_from_file_to_queue($todo->{fid}, REBAL_QUEUE);
-            } else {
-                error("Uknown work type: " . $todo->{_type});
-            }
+            # If files error out, we want to send the error up to syslog
+            # and make a real effort to chew through the queue. Users may
+            # manually re-run rebalance to retry.
+            $sto->delete_fid_from_file_to_queue($todo->{fid}, REBAL_QUEUE);
         }
         # if replicators are otherwise idle, use them to make the world
         # better, rebalancing things (if enabled), and draining devices (if
