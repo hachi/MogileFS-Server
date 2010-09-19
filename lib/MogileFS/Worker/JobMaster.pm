@@ -225,7 +225,7 @@ sub _inject_rebalance_queues {
     if (@$devfids) {
         # I wish there was less data serialization in the world.
         map { $_->[2] = join(',', @{$_->[2]}) } @$devfids;
-        $sto->enqueue_many_for_todo($devfids, FSCK_QUEUE, 0);
+        $sto->enqueue_many_for_todo($devfids, REBAL_QUEUE, 0);
     }
 
     $rebal_state = $rebal->save_state;

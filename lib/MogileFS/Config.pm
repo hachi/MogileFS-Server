@@ -16,7 +16,7 @@ $DEFAULT_CONFIG = "/etc/mogilefs/mogilefsd.conf";
 $MOGSTORED_STREAM_PORT = 7501;
 
 use constant FSCK_QUEUE => 1;
-use constant REBAL_QUEUE => 1;
+use constant REBAL_QUEUE => 2;
 use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
 
 my %conf;
