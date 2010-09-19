@@ -62,10 +62,6 @@ lib/MogileFS/HTTPFile.pm
 lib/MogileFS/IOStatWatcher.pm
 lib/MogileFS/Overview.pm
 lib/MogileFS/ProcManager.pm
-lib/MogileFS/RebalancePolicy.pm
-lib/MogileFS/RebalancePolicy/DrainDevices.pm
-lib/MogileFS/RebalancePolicy/PercentFree.pm
-lib/MogileFS/RebalancePolicy/Random.pm
 lib/MogileFS/ReplicationPolicy.pm
 lib/MogileFS/ReplicationPolicy/MultipleHosts.pm
 lib/MogileFS/ReplicationPolicy/Union.pm

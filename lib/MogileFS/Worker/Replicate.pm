@@ -5,8 +5,6 @@ use strict;
 use base 'MogileFS::Worker';
 use fields (
             'fidtodo',   # hashref { fid => 1 }
-            'peerrepl',  # hashref { fid => time() } # when peer started replicating
-            'rebal_pol_obj',    # rebalancer policy object
             );
 
 use List::Util ();
@@ -27,7 +25,6 @@ sub new {
     my $self = fields::new($class);
     $self->SUPER::new($psock);
     $self->{fidtodo} = {};
-    $self->{peerrepl} = {};
     return $self;
 }
 
@@ -214,55 +211,6 @@ sub replicate_using_torepl_table {
     $update_nexttry->( offset => int(($backoff[$todo->{failcount}] || 86400) * (rand(0.4) + 0.8)) );
     $unlock->() if $unlock;
     return 1;
-}
-
-sub rebalance_devices {
-    my $self = shift;
-    my $sto = Mgd::get_store();
-    return 0 unless $sto->server_setting('enable_rebalance');
-    my $pol = $self->rebalance_policy_obj or return 0;
-    unless ($self->run_rebalance_policy_a_bit($pol)) {
-        error("disabling rebalancing due to lack of work");
-        MogileFS::Config->set_server_setting("enable_rebalance", 0);
-    }
-}
-
-sub drain_devices {
-    my $self = shift;
-    my $pol = MogileFS::RebalancePolicy::DrainDevices->instance;
-    my $rv = $self->run_rebalance_policy_a_bit($pol);
-    #error("[$$] drained = $rv\n") if $rv;
-}
-
-# returns number of files rebalanced.
-sub run_rebalance_policy_a_bit {
-    my ($self, $pol) = @_;
-    my $stop_at = time() + 5; # Run for up to 5 seconds, then return.
-    my $n = 0;
-    my %avoid_devids = map { $_->id => 1 } $pol->dest_devs_to_avoid;
-    while (my $dfid = $pol->devfid_to_rebalance) {
-        $self->rebalance_devfid($dfid, avoid_devids => \%avoid_devids);
-        $n++;
-        last if time() >= $stop_at;
-    }
-    return $n;
-}
-
-sub rebalance_policy_obj {
-    my $self = shift;
-    my $rclass = Mgd::get_store()->server_setting('rebalance_policy') ||
-        "MogileFS::RebalancePolicy::PercentFree";
-
-    # return old one, if it's still of the same type.
-    if ($self->{'rebal_pol_obj'} && ref($self->{'rebal_pol_obj'}) eq $rclass) {
-        return $self->{'rebal_pol_obj'};
-    }
-
-    return error("Bogus rebalance_policy setting") unless $rclass =~ /^[\w:\-]+$/;
-    return error("Failed to load $rclass: $@") unless eval "use $rclass; 1;";
-    my $pol = eval { $rclass->new };
-    return error("Failed to instantiate rebalance policy: $@") unless $pol;
-    return $self->{'rebal_pol_obj'} = $pol;
 }
 
 # Return 1 on success, 0 on failure.
