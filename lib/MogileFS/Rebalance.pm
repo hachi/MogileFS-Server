@@ -47,6 +47,8 @@ my %default_state = (
     sdev_current => 0,
     sdev_lastfid => 0,
     sdev_limit => 0,
+    fids_queued => 0,
+    bytes_queued => 0,
 );
 
 sub new {
@@ -207,6 +209,9 @@ sub next_fids_to_rebalance {
         # count the fid or size against device limit.
         $self->_check_limits($fid) or next;
         my $destdevs = $self->_choose_dest_devs($fid, $filtered_destdevs);
+        # Update internal stats.
+        $state->{fids_queued}++;
+        $state->{bytes_queued} += $fid->length;
         push(@devfids, [$fid->id, $sdev->id, $destdevs]);
     }
 
