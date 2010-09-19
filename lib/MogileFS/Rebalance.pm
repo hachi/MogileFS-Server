@@ -211,6 +211,7 @@ sub next_fids_to_rebalance {
     my @devfids = ();
     for my $fid (@fids) {
         # count the fid or size against device limit.
+        next unless $fid->exists;
         $self->_check_limits($fid) or next;
         my $destdevs = $self->_choose_dest_devs($fid, $filtered_destdevs);
         # Update internal stats.
