@@ -1551,7 +1551,7 @@ sub cmd_rebalance_status {
 
     my $rebal_state = MogileFS::Config->server_setting('rebal_state');
     return $self->err_line('no_rebal_state') unless $rebal_state;
-    return $self->ok_line($rebal_state);
+    return $self->ok_line({ state => $rebal_state });
 }
 
 sub cmd_rebalance_start {
