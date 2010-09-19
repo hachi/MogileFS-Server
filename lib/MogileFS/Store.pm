@@ -1336,6 +1336,43 @@ sub get_fidids_by_device {
     return $fidids;
 }
 
+# finds a chunk of fids given a set of constraints:
+# devid, fidid, age (new or old), limit
+# Note that if this function is very slow on your large DB, you're likely
+# sorting by "newfiles" and are missing a new index.
+# returns an arrayref of fidids
+sub get_fidid_chunks_by_device {
+    my ($self, %o) = @_;
+
+    my $dbh = $self->dbh;
+    my $devid = delete $o{devid};
+    croak("must supply at least a devid") unless $devid;
+    my $age   = delete $o{age};
+    my $fidid = delete $o{fidid};
+    my $limit = delete $o{limit};
+    croak("invalid options: " . join(', ', keys %o)) if %o;
+    # If supplied a "previous" fidid, we're paging through.
+    my $fidsort = '';
+    my $order   = '';
+    $age ||= 'old';
+    if ($age eq 'old') {
+        $fidsort = 'AND fid > ?' if $fidid;
+        $order   = 'ASC';
+    } elsif ($age eq 'new') {
+        $fidsort = 'AND fid < ?' if $fidid;
+        $order   = 'DESC';
+    } else {
+        croak("invalid age argument: " . $age);
+    }
+    $limit ||= 100;
+    my @extra = ();
+    push @extra, $fidid if $fidid;
+
+    my $fidids = $dbh->selectcol_arrayref("SELECT fid FROM file_on WHERE devid = ? " .
+        $fidsort . " ORDER BY fid $order LIMIT $limit", undef, $devid, @extra);
+    return $fidids;
+}
+
 # takes two arguments, fidid to be above, and optional limit (default
 # 1,000).  returns up to that that many fidids above the provided
 # fidid.  returns array of MogileFS::FID objects, sorted by fid ids.

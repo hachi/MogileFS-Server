@@ -306,6 +306,10 @@ sub mb_free {
     return $self->{mb_total} - $self->{mb_used};
 }
 
+sub mb_used {
+    return $_[0]->{mb_used};
+}
+
 # currently the same policy, but leaving it open for differences later.
 sub should_get_replicated_files {
     my $dev = shift;
@@ -402,6 +406,17 @@ sub fid_list {
 
     my $sto = Mgd::get_store();
     my $fidids = $sto->get_fidids_by_device($self->devid, $limit);
+    return map {
+        MogileFS::FID->new($_)
+    } @{$fidids || []};
+}
+
+sub fid_chunks {
+    my ($self, %opts) = @_;
+
+    my $sto = Mgd::get_store();
+    # storage function does validation.
+    my $fidids = $sto->get_fidid_chunks_by_device(devid => $self->devid, %opts);
     return map {
         MogileFS::FID->new($_)
     } @{$fidids || []};
