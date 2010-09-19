@@ -1419,6 +1419,12 @@ sub cmd_fsck_start {
     my MogileFS::Worker::Query $self = shift;
     my $sto = Mgd::get_store();
 
+    my $fsck_host  = MogileFS::Config->server_setting("fsck_host");
+    my $rebal_host = MogileFS::Config->server_setting("rebal_host");
+
+    return $self->err_line("fsck_running", "fsck is already running") if $fsck_host;
+    return $self->err_line("rebal_running", "rebalance running; cannot run fsck at same time") if $rebal_host;
+
     # reset position, if a previous fsck was already completed.
     my $intss       = sub { MogileFS::Config->server_setting($_[0]) || 0 };
     my $checked_fid = $intss->("fsck_highest_fid_checked");
@@ -1550,6 +1556,13 @@ sub cmd_rebalance_status {
 
 sub cmd_rebalance_start {
     my MogileFS::Worker::Query $self = shift;
+
+    my $rebal_host = MogileFS::Config->server_setting("rebal_host");
+    my $fsck_host  = MogileFS::Config->server_setting("fsck_host");
+
+    return $self->err_line("rebal_running", "rebalance is already running") if $rebal_host;
+    return $self->err_line("fsck_running", "fsck running; cannot run rebalance at same time") if $fsck_host;
+
     my $rebal_pol   = MogileFS::Config->server_setting('rebal_policy');
     return $self->err_line('no_rebal_policy') unless $rebal_pol;
 
