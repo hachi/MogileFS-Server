@@ -239,10 +239,10 @@ sub _check_limits {
     }
 
     if ($p->{limit_by} eq 'count') {
-        return $limit--;
+        return $$limit--;
     } elsif ($p->{limit_by} eq 'size') {
-        if ($fid->length() < $limit) {
-            $limit -= $fid->length();
+        if ($fid->length() < $$limit) {
+            $$limit -= $fid->length();
             return 1;
         } else {
             return 0;
