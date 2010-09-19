@@ -1280,8 +1280,14 @@ sub enqueue_for_todo {
     my $nexttry = $self->unix_timestamp . " + " . int($in);
 
     $self->retry_on_deadlock(sub {
-        $self->insert_ignore("INTO file_to_queue (fid, type, nexttry) ".
-                             "VALUES (?,?,$nexttry)", undef, $fidid, $type);
+        if (ref($fidid)) {
+            $self->insert_ignore("INTO file_to_queue (fid, devid, arg, type, ".
+                                 "nexttry) VALUES (?,?,?,?,$nexttry)", undef,
+                                 $fidid->[0], $fidid->[1], $fidid->[2], $type);
+        } else {
+            $self->insert_ignore("INTO file_to_queue (fid, type, nexttry) ".
+                                 "VALUES (?,?,$nexttry)", undef, $fidid, $type);
+        }
     });
 }
 
@@ -1289,7 +1295,7 @@ sub enqueue_for_todo {
 sub enqueue_many_for_todo {
     my ($self, $fidids, $type, $in) = @_;
     if (@$fidids > 1 && ! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
-        $self->enqueue_for_todo($_->{fid}, $type, $in) foreach @$fidids;
+        $self->enqueue_for_todo($_, $type, $in) foreach @$fidids;
         return 1;
     }
 
@@ -1298,9 +1304,16 @@ sub enqueue_many_for_todo {
 
     # TODO: convert to prepared statement?
     $self->retry_on_deadlock(sub {
-        $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
-        nexttry) VALUES " .
-        join(",", map { "(" . int($_->{fid}) . ", $type, $nexttry)" } @$fidids));
+        if (ref($fidids->[0]) eq 'ARRAY') {
+            $self->dbh->do($self->insert_ignore(
+                "INTO file_to_queue (fid, devid, arg, type, nexttry) VALUES ".
+                join(',', map { '(' . join(',', @$_, $type, $nexttry) . ') ' }
+                    @$fidids) ));
+        } else {
+            $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
+            nexttry) VALUES " .
+            join(",", map { "(" . int($_->{fid}) . ", $type, $nexttry)" } @$fidids));
+        }
     });
     $self->condthrow;
 }
@@ -1395,22 +1408,15 @@ sub get_fids_above_id {
 }
 
 # Same as above, but returns unblessed hashref.
-sub get_fid_hrefs_above_id {
+sub get_fidids_above_id {
     my ($self, $fidid, $limit) = @_;
     $limit ||= 1000;
     $limit = int($limit);
 
-    my @ret;
     my $dbh = $self->dbh;
-    my $sth = $dbh->prepare("SELECT fid, dmid, dkey, length, classid ".
-                            "FROM   file ".
-                            "WHERE  fid > ? ".
-                            "ORDER BY fid LIMIT $limit");
-    $sth->execute($fidid);
-    while (my $row = $sth->fetchrow_hashref) {
-        push @ret, $row;
-    }
-    return @ret;
+    my $fidids = $dbh->selectcol_arrayref(qq{SELECT fid FROM file WHERE fid > ?
+                     ORDER BY fid LIMIT $limit});
+    return $fidids;
 }
 
 # creates a new domain, given a domain namespace string.  return the dmid on success,
@@ -1538,7 +1544,8 @@ sub grab_files_to_delete2 {
 
 # $extwhere is ugly... but should be fine.
 sub grab_files_to_queued {
-    my ($self, $type, $limit) = @_;
+    my ($self, $type, $what, $limit) = @_;
+    $what ||= 'type, flags';
     return $self->grab_queue_chunk('file_to_queue', $limit,
         'type, flags', 'AND type = ' . $type);
 }

@@ -197,7 +197,7 @@ sub next_fids_to_rebalance {
         # count the fid or size against device limit.
         $self->_check_limits($fid) or next;
         my $destdevs = $self->_choose_dest_devs($fid, $filtered_destdevs);
-        push(@devfids, [$fid->id, $destdevs]);
+        push(@devfids, [$fid->id, $sdev->id, $destdevs]);
     }
 
     # return block of fiddev combos.

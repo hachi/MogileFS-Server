@@ -10,13 +10,18 @@ use fields (
             'fsck_queue_limit',
             'repl_queue_limit',
             'dele_queue_limit',
+            'rebl_queue_limit',
             );
 use MogileFS::Util qw(every error debug eurl);
 
 use constant FSCK_QUEUE => 1;
+use constant REBAL_QUEUE => 1;
 
 use constant DEF_FSCK_QUEUE_MAX => 20_000;
 use constant DEF_FSCK_QUEUE_INJECT => 1000;
+
+use constant DEF_REBAL_QUEUE_MAX => 10_000;
+use constant DEF_REBAL_QUEUE_INJECT => 500;
 
 sub new {
     my ($class, $psock) = @_;
@@ -40,6 +45,7 @@ sub work {
     $self->{fsck_queue_limit} = 100;
     $self->{repl_queue_limit} = 100;
     $self->{dele_queue_limit} = 100;
+    $self->{rebl_queue_limit} = 100;
 
     every(1, sub {
         # 'pings' parent and populates all queues.
@@ -49,6 +55,7 @@ sub work {
         $self->_check_replicate_queues($sto);
         $self->_check_delete_queues($sto);
         $self->_check_fsck_queues($sto);
+        $self->_check_rebal_queues($sto);
     });
 }
 
@@ -115,7 +122,8 @@ sub _check_fsck_queues {
         queue_depth_check($self->queue_depth('fsck'),
         $self->{fsck_queue_limit});
     return unless $need_fetch;
-    my @to_fsck = $sto->grab_files_to_queued(FSCK_QUEUE, $new_limit);
+    my @to_fsck = $sto->grab_files_to_queued(FSCK_QUEUE,
+        'type, flags', $new_limit);
     $self->{fsck_queue_limit} = @to_fsck ? $new_limit : 100;
     return unless @to_fsck;
     for my $todo (@to_fsck) {
@@ -138,8 +146,8 @@ sub _inject_fsck_queues {
     my $to_inject   =
         MogileFS::Config->server_setting_cached('queue_rate_for_fsck', 60) ||
             DEF_FSCK_QUEUE_INJECT;
-    my @fids        = $sto->get_fid_hrefs_above_id($max_checked, $to_inject);
-    unless (@fids) {
+    my $fids        = $sto->get_fidids_above_id($max_checked, $to_inject);
+    unless (@$fids) {
         $sto->set_server_setting("fsck_host", undef);
         $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
         MogileFS::Config->set_server_setting('fsck_highest_fid_checked',
@@ -147,15 +155,88 @@ sub _inject_fsck_queues {
         return;
     }
 
-    $sto->enqueue_many_for_todo(\@fids, FSCK_QUEUE, 0);
+    $sto->enqueue_many_for_todo($fids, FSCK_QUEUE, 0);
 
-    my $nmax = $fids[-1]->{fid};
+    my $nmax = $fids->[-1];
     MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $nmax);
+}
+
+sub _check_rebal_queues {
+    my $self = shift;
+    my $sto  = shift;
+    my $rhost = MogileFS::Config->server_setting('rebal_host');
+    if ($rhost && $rhost eq MogileFS::Config->hostname) {
+        $self->_inject_rebalance_queues($sto);
+    }
+
+    my ($need_fetch, $new_limit) =
+        queue_depth_check($self->queue_depth('rebalance'),
+        $self->{rebal_queue_limit});
+    return unless $need_fetch;
+    # FIXME: will this fetch all of the columns properly?
+    my @to_rebal = $sto->grab_files_to_queued(REBAL_QUEUE,
+        'type, flags, devid, arg', $new_limit);
+    $self->{rebal_queue_limit} = @to_rebal ? $new_limit : 100;
+    return unless @to_rebal;
+    for my $todo (@to_rebal) {
+        $todo->{_type} = 'rebalance';
+        $self->send_to_parent("queue_todo replicate " . _eurl_encode_args($todo));
+    }
+}
+
+sub _inject_rebalance_queues {
+    my $self = shift;
+    my $sto  = shift;
+
+    my $queue_size  = $sto->file_queue_length(REBAL_QUEUE);
+    my $max_queue   =
+        MogileFS::Config->server_setting_cached('queue_size_for_rebal', 60) ||
+            DEF_REBAL_QUEUE_MAX;
+    return if ($queue_size >= $max_queue);
+
+    my $to_inject   =
+        MogileFS::Config->server_setting_cached('queue_rate_for_rebal', 60) ||
+            DEF_REBAL_QUEUE_INJECT;
+
+    # TODO: Cache the rebal object. Requires explicitly blowing it up at the
+    # end of a run or ... I guess whenever the host sees it's not the rebal
+    # host.
+    my $rebal       = MogileFS::Rebalance->new;
+    my $rebal_pol   = MogileFS::Config->server_setting('rebal_policy');
+    my $rebal_state = MogileFS::Config->server_setting('rebal_state');
+    $rebal->policy($rebal_pol);
+
+    if ($rebal_state) {
+        $rebal->load_state($rebal_state);
+    } else {
+        $rebal->init;
+    }
+
+    my @devs = MogileFS::Device->devices;
+    my $devfids = $rebal->next_fids_to_rebalance(\@devs, $sto, $to_inject);
+
+    # undefined means there's no work left.
+    if (! defined $devfids) {
+        # Append some info to a rebalance log table?
+        # Leave state in the system for inspection post-run.
+        # TODO: Emit some sort of syslog/status line.
+        $sto->set_server_setting("rebal_host", undef);
+        return;
+    }
+
+    # Empty means nothing to queue this round.
+    if (@$devfids) {
+        # I wish there was less data serialization in the world.
+        my @fids = map { $_->[2] = join(',', @{$_->[2]}) } @$devfids;
+        $sto->enqueue_many_for_todo(\@fids, FSCK_QUEUE, 0);
+    }
+
+    $rebal_state = $rebal->save_state;
+    MogileFS::Config->set_server_setting("rebal_state", $rebal_state);
 }
 
 # takes the current queue depth and fetch limit
 # returns whether or not to fetch, and new fetch limit.
-# TODO: make the limit cap configurable.
 # TODO: separate a fetch limit from a queue limit...
 # so we don't hammer the DB with giant transactions, but loop
 # fast trying to keep the queue full.
