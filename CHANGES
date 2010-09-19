@@ -1,3 +1,7 @@
+        * New rebalance/drain code. See the docs/wiki for how to use.
+          ***NOTE*** Old drain/rebalance code is disabled. Setting a device
+          into drain mode no longer does what you think it would.
+
 2010-08-13: Release version 2.37
 
         * Make HTTP DELETE's work reliably
