@@ -50,10 +50,12 @@ sub work {
         $self->send_to_parent("queue_depth all");
         my $sto = Mgd::get_store();
         $self->read_from_parent(1);
-        $self->_check_replicate_queues($sto);
-        $self->_check_delete_queues($sto);
-        $self->_check_fsck_queues($sto);
-        $self->_check_rebal_queues($sto);
+        my $active = 0;
+        $active += $self->_check_replicate_queues($sto);
+        $active += $self->_check_delete_queues($sto);
+        $active += $self->_check_fsck_queues($sto);
+        $active += $self->_check_rebal_queues($sto);
+        $_[0]->(0) if $active;
     });
 }
 
@@ -71,6 +73,7 @@ sub _check_delete_queues {
         $self->send_to_parent("queue_todo delete " .
             _eurl_encode_args($todo));
     }
+    return 1;
 }
 
 # NOTE: we only maintain one queue per worker, but we can easily
@@ -99,6 +102,7 @@ sub _check_replicate_queues {
         $self->send_to_parent("queue_todo replicate " .
             _eurl_encode_args($todo));
     }
+    return 1;
 }
 
 # FSCK is going to be a little odd... We still need a single "global"
@@ -127,6 +131,7 @@ sub _check_fsck_queues {
     for my $todo (@to_fsck) {
         $self->send_to_parent("queue_todo fsck " . _eurl_encode_args($todo));
     }
+    return 1;
 }
 
 sub _inject_fsck_queues {
@@ -179,6 +184,7 @@ sub _check_rebal_queues {
         $todo->{_type} = 'rebalance';
         $self->send_to_parent("queue_todo rebalance " . _eurl_encode_args($todo));
     }
+    return 1;
 }
 
 sub _inject_rebalance_queues {

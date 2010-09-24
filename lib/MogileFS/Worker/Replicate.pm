@@ -37,7 +37,7 @@ sub work {
     # give the monitor job 15 seconds to give us an update
     my $warn_after = time() + 15;
 
-    every(2.0, sub {
+    every(1.0, sub {
         # replication doesn't go well if the monitor job hasn't actively started
         # marking things as being available
         unless ($self->monitor_has_run) {
@@ -49,22 +49,16 @@ sub work {
         $self->validate_dbh;
         my $dbh = $self->get_dbh or return 0;
         my $sto = Mgd::get_store();
-
         $self->send_to_parent("worker_bored 100 replicate rebalance");
-        # This is here on account of not being able to block on the parent :(
-        $self->read_from_parent(1);
-        # TODO: might need to sort types or create priority queues in the
-        # parent... would want "replicate" work to happen before rebalance.
+
         my $queue_todo  = $self->queue_todo('replicate');
         my $queue_todo2 = $self->queue_todo('rebalance');
         unless (@$queue_todo || @$queue_todo2) {
-            $self->parent_ping;
             return;
         }
 
         while (my $todo = shift @$queue_todo) {
             my $fid = $todo->{fid};
-            $self->still_alive;
             $self->replicate_using_torepl_table($todo);
         }
         while (my $todo = shift @$queue_todo2) {
@@ -81,11 +75,7 @@ sub work {
             # manually re-run rebalance to retry.
             $sto->delete_fid_from_file_to_queue($todo->{fid}, REBAL_QUEUE);
         }
-        # if replicators are otherwise idle, use them to make the world
-        # better, rebalancing things (if enabled), and draining devices (if
-        # any are marked drain)
-        #$self->rebalance_devices;
-        #$self->drain_devices;
+        $_[0]->(0); # don't sleep.
     });
 }
 

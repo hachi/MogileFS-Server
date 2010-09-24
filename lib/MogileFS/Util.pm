@@ -34,7 +34,6 @@ sub every {
         my $now = Time::HiRes::time();
         my $took = $now - $start;
         my $sleep_for = defined $explicit_sleep ? $explicit_sleep : ($delay - $took);
-        next unless $sleep_for > 0;
 
         # simple case, not in a child process (this never happens currently)
         unless ($psock_fd) {
@@ -42,19 +41,11 @@ sub every {
             next;
         }
 
-        while ($sleep_for > 0) {
-            my $last_time_pre_sleep = $now;
-            $worker->forget_woken_up;
-            if (wait_for_readability($psock_fd, $sleep_for)) {
-                # TODO: uncomment this and watch an idle server and how many wakeups.  could optimize.
-                #local $Mgd::POST_SLEEP_DEBUG = 1;
-                #warn "WOKEN UP FROM SLEEP in $worker [$$]\n";
-                $worker->read_from_parent;
-                next CODERUN if $worker->was_woken_up;
-            }
-            $now = Time::HiRes::time();
-            $sleep_for -= ($now - $last_time_pre_sleep);
-        }
+        Time::HiRes::sleep($sleep_for) if $sleep_for > 0;
+        #local $Mgd::POST_SLEEP_DEBUG = 1;
+        # This calls read_from_parent. Workers used to needlessly call
+        # parent_ping constantly.
+        $worker->parent_ping;
     }
 }
 

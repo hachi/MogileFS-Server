@@ -74,7 +74,7 @@ sub wait_for_monitor {
 sub still_alive {
     my $self = shift;
     my $now = time();
-    if ($now > $self->{last_ping}) {
+    if ($now > $self->{last_ping} + ($self->watchdog_timeout / 4)) {
         $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
         $self->{last_ping} = $now;
     }
@@ -134,6 +134,7 @@ sub read_from_parent {
     # while things are immediately available,
     # (or optionally sleep a bit)
     while (MogileFS::Util::wait_for_readability(fileno($psock), $timeout)) {
+        $timeout = 0; # only wait on the timeout for the first read.
         my $buf;
         my $rv = sysread($psock, $buf, 1024);
         if (!$rv) {

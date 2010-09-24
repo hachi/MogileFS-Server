@@ -24,8 +24,6 @@ sub work {
     my $self = shift;
 
     every(5, sub {
-        $self->parent_ping;
-
         # get db and note we're starting a run
         debug("Reaper running; looking for dead devices");
 
@@ -40,7 +38,7 @@ sub work {
                 $all_empty{$devid} = 1;
                 next;
             }
-            $self->parent_ping;
+            $self->still_alive;
 
             foreach my $fid (@fids) {
                 # order is important here:

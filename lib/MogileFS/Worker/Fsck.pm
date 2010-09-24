@@ -71,7 +71,7 @@ sub work {
     my $sto         = Mgd::get_store();
     my $max_checked = 0;
 
-    every(1.0, sub {
+    every(2.0, sub {
         my $sleep_set = shift;
         $nowish = time();
         local $Mgd::nowish = $nowish;
@@ -87,12 +87,8 @@ sub work {
         }
 
         my $queue_todo = $self->queue_todo('fsck');
-        unless (@{$queue_todo}) {
-            $self->send_to_parent('worker_bored 50 fsck');
-            $self->read_from_parent(1);
-        } else {
-            $self->parent_ping;
-        }
+        # This counts the same as a $self->still_alive;
+        $self->send_to_parent('worker_bored 50 fsck');
 
         my @fids = ();
         while (my $todo = shift @{$queue_todo}) {

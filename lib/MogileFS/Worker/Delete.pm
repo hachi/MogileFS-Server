@@ -153,7 +153,6 @@ sub process_deletes2 {
 
     while (my $todo = shift @$queue_todo) {
         $self->still_alive;
-        $self->read_from_parent;
 
         # load all the devids related to this fid, and delete.
         my $fid    = MogileFS::FID->new($todo->{fid});
@@ -270,7 +269,6 @@ sub process_deletes {
         last if ++$done > PER_BATCH;
 
         $self->still_alive;
-        $self->read_from_parent;
         my ($fid, $devid) = @$dm;
         error("deleting fid $fid, on devid ".($devid || 'NULL')."...") if $Mgd::DEBUG >= 2;
 
