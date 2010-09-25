@@ -1446,20 +1446,23 @@ sub cmd_rebalance_start {
     return $self->err_line("rebal_running", "rebalance is already running") if $rebal_host;
     return $self->err_line("fsck_running", "fsck running; cannot run rebalance at same time") if $fsck_host;
 
-    my $rebal_pol   = MogileFS::Config->server_setting('rebal_policy');
-    return $self->err_line('no_rebal_policy') unless $rebal_pol;
+    my $rebal_state = MogileFS::Config->server_setting('rebal_state');
+    unless ($rebal_state) {
+        my $rebal_pol = MogileFS::Config->server_setting('rebal_policy');
+        return $self->err_line('no_rebal_policy') unless $rebal_pol;
 
-    my $rebal = MogileFS::Rebalance->new;
-    $rebal->policy($rebal_pol);
-    my @devs  = MogileFS::Device->devices;
-    $rebal->init(\@devs);
-    my $sdevs = $rebal->source_devices;
+        my $rebal = MogileFS::Rebalance->new;
+        $rebal->policy($rebal_pol);
+        my @devs  = MogileFS::Device->devices;
+        $rebal->init(\@devs);
+        my $sdevs = $rebal->source_devices;
 
-    my $state = $rebal->save_state;
-    MogileFS::Config->set_server_setting('rebal_state', $state);
+        $rebal_state = $rebal->save_state;
+        MogileFS::Config->set_server_setting('rebal_state', $rebal_state);
+    }
     # TODO: register start time somewhere.
     MogileFS::Config->set_server_setting('rebal_host', MogileFS::Config->hostname);
-    return $self->ok_line({ state => $state });
+    return $self->ok_line({ state => $rebal_state });
 }
 
 sub cmd_rebalance_test {
@@ -1485,14 +1488,23 @@ sub cmd_rebalance_test {
     return $self->ok_line($ret);
 }
 
+sub cmd_rebalance_reset {
+    my MogileFS::Worker::Query $self = shift;
+    my $host = MogileFS::Config->server_setting('rebal_host');
+    if ($host) {
+        return $self->err_line("rebal_running", "rebalance is running") if $host;
+    }
+    MogileFS::Config->set_server_setting('rebal_state', undef);
+    return $self->ok_line;
+}
+
 sub cmd_rebalance_stop {
     my MogileFS::Worker::Query $self = shift;
     my $host = MogileFS::Config->server_setting('rebal_host');
     unless ($host) {
         return $self->err_line('rebal_not_started');
     }
-    # TODO: put stop time somewhere.
-    MogileFS::Config->set_server_setting('rebal_host', undef);
+    MogileFS::Config->set_server_setting('rebal_signal', 'stop');
     return $self->ok_line;
 }
 
@@ -1513,6 +1525,7 @@ sub cmd_rebalance_set_policy {
     }
 
     MogileFS::Config->set_server_setting('rebal_policy', $args->{policy});
+    MogileFS::Config->set_server_setting('rebal_state', undef);
     return $self->ok_line;
 }
 

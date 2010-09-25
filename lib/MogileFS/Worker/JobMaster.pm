@@ -205,6 +205,7 @@ sub _inject_rebalance_queues {
     # end of a run or ... I guess whenever the host sees it's not the rebal
     # host.
     my $rebal       = MogileFS::Rebalance->new;
+    my $signal      = MogileFS::Config->server_setting('rebal_signal');
     my $rebal_pol   = MogileFS::Config->server_setting('rebal_policy');
     my $rebal_state = MogileFS::Config->server_setting('rebal_state');
     $rebal->policy($rebal_pol);
@@ -216,6 +217,17 @@ sub _inject_rebalance_queues {
         $rebal->init(\@devs);
     }
 
+    # Stopping is done via signal so we can note stop time in the state,
+    # and un-drain any devices that should be un-drained.
+    if ($signal && $signal eq 'stop') {
+        $rebal->stop;
+        $rebal_state = $rebal->save_state;
+        $sto->set_server_setting('rebal_signal', undef);
+        $sto->set_server_setting("rebal_host", undef);
+        $sto->set_server_setting('rebal_state', $rebal_state);
+        return;
+    }
+
     my $devfids = $rebal->next_fids_to_rebalance(\@devs, $sto, $to_inject);
 
     # undefined means there's no work left.
@@ -223,6 +235,9 @@ sub _inject_rebalance_queues {
         # Append some info to a rebalance log table?
         # Leave state in the system for inspection post-run.
         # TODO: Emit some sort of syslog/status line.
+        $rebal->finish;
+        $rebal_state = $rebal->save_state;
+        $sto->set_server_setting('rebal_state', $rebal_state);
         $sto->set_server_setting("rebal_host", undef);
         return;
     }

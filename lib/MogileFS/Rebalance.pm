@@ -53,6 +53,9 @@ my %default_state = (
     sdev_limit => 0,
     fids_queued => 0,
     bytes_queued => 0,
+    time_started => 0,
+    time_finished => 0,
+    time_stopped => 0,
 );
 
 sub new {
@@ -83,7 +86,25 @@ sub init {
     # If we don't have an initial source device list, discover them.
     # Used to filter destination devices later.
     $state{source_devs} = $self->filter_source_devices($devs);
+    $state{time_started} = time();
     $self->{state} = \%state;
+}
+
+sub stop {
+    my $self = shift;
+    my $p    = $self->{policy};
+    my $s    = $self->{state};
+    my $sdev = $self->{sdev_current};
+    unless ($p->{leave_in_drain_mode}) {
+        MogileFS::Device->of_devid($sdev)->set_state('alive') if $sdev;
+    }
+    $s->{time_stopped} = time();
+}
+
+sub finish {
+    my $self = shift;
+    my $s    = $self->{state};
+    $s->{time_finished} = time();
 }
 
 # Resume from saved as_string state.
