@@ -406,7 +406,8 @@ sub filter_dest_devices {
 
     # skip anything we would source from.
     # FIXME: ends up not skipping stuff out of completed_devs? :/
-    my %sdevs = map { $_ => 1 } @{$state->{source_devs}};
+    my %sdevs = map { $_ => 1 } @{$state->{source_devs}},
+        @{$state->{completed_devs}}, $state->{sdev_current};
     my @devs  = grep { ! $sdevs{$_} } @$devs;
 
     my @ddevs = ();
