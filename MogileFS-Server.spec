@@ -2,8 +2,8 @@
 
 name:      MogileFS-Server
 summary:   MogileFS-Server - MogileFS Server daemons and utilities.
-version:   2.36
-release:   2%{?dist}
+version:   2.37
+release:   1%{?dist}
 vendor:    Alan Kasindorf <dormando@rydia.net>
 packager:  Jonathan Steinert <hachi@cpan.org>
 license:   Artistic
