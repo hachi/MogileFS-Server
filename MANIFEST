@@ -62,6 +62,7 @@ lib/MogileFS/HTTPFile.pm
 lib/MogileFS/IOStatWatcher.pm
 lib/MogileFS/Overview.pm
 lib/MogileFS/ProcManager.pm
+lib/MogileFS/Rebalance.pm
 lib/MogileFS/ReplicationPolicy.pm
 lib/MogileFS/ReplicationPolicy/MultipleHosts.pm
 lib/MogileFS/ReplicationPolicy/Union.pm
@@ -102,6 +103,7 @@ mogstored
 t/00-startup.t
 t/10-weighting.t
 t/20-filepaths.t
+t/30-rebalance.t
 t/domains-classes.t
 t/fid-stat.t
 t/hosts-devices.t

@@ -1,8 +1,11 @@
+2010-09-28: Release version 2.40
+
         * Optimize worker sleep patterns and worker/parent communications.
 
         * New rebalance/drain code. See the docs/wiki for how to use.
           ***NOTE*** Old drain/rebalance code is disabled. Setting a device
           into drain mode no longer does what you think it would.
+          http://code.google.com/p/mogilefs/wiki/Rebalance
 
 2010-08-13: Release version 2.37
 

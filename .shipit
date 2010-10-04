@@ -1,4 +1,4 @@
 steps = FindVersion, ChangeVersion, CheckChangeLog, DistTest, Commit, Tag, MakeDist, UploadCPAN
 
-svn.tagpattern = mogilefs-server-%v
+git.tagpattern = %v
 
