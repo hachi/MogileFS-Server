@@ -3,14 +3,14 @@
 name:      MogileFS-Server
 summary:   MogileFS-Server - MogileFS Server daemons and utilities.
 version:   2.40
-release:   1%{?dist}
+release:   2%{?dist}
 vendor:    Alan Kasindorf <dormando@rydia.net>
 packager:  Jonathan Steinert <hachi@cpan.org>
 license:   Artistic
 group:     Applications/CPAN
 buildroot: %{_tmppath}/%{name}-%{version}-%(id -u -n)
 buildarch: noarch
-source:    mogilefs-server-%{version}.tar.gz
+source:    MogileFS-Server-%{version}.tar.gz
 autoreq:   no
 requires:  MogileFS-Server-mogilefsd = %{version}-%{release}
 requires:  MogileFS-Server-mogstored = %{version}-%{release}
@@ -26,7 +26,7 @@ This is a dummy package which depends on all the others so you can install them 
 
 %prep
 rm -rf "%{buildroot}"
-%setup -n mogilefs-server-%{version}
+%setup -n MogileFS-Server-%{version}
 
 %build
 %{__perl} Makefile.PL INSTALLDIRS="vendor" PREFIX=%{buildroot}%{_prefix}
