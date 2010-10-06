@@ -1,3 +1,7 @@
+2010-10-06: Release version 2.41
+
+        * One line change that to fix uprading to 2.40
+
 2010-09-28: Release version 2.40
 
         * Optimize worker sleep patterns and worker/parent communications.
