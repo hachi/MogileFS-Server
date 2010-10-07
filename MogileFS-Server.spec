@@ -29,7 +29,7 @@ rm -rf "%{buildroot}"
 %setup -n MogileFS-Server-%{version}
 
 %build
-%{__perl} Makefile.PL INSTALLDIRS="vendor" PREFIX=%{buildroot}%{_prefix}
+%{__perl} Makefile.PL INSTALLDIRS="vendor" PREFIX=%{buildroot}%{_prefix} INSTALL_BASE=
 make all
 make test
 
