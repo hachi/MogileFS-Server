@@ -1,3 +1,5 @@
+2010-10-08: Release version 2.42
+
         * Make FSCK run again (Andre Pascha)
 
         * Fix Postgres schema upgrade issue (hopefully)
