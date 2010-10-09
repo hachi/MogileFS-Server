@@ -293,7 +293,7 @@ sub upgrade_add_device_drain {
 sub upgrade_modify_server_settings_value {
     my $self = shift;
     unless ($self->column_type("server_settings", "value" =~ /text/i)) {
-        $self->dowell("ALTER TABLE server_settings MODIFY COLUMN value TEXT");
+        $self->dowell("ALTER TABLE server_settings ALTER COLUMN value TYPE TEXT");
     }
 }
 
