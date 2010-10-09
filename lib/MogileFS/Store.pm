@@ -1315,7 +1315,7 @@ sub enqueue_many_for_todo {
         } else {
             $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
             nexttry) VALUES " .
-            join(",", map { "(" . int($_->{fid}) . ", $type, $nexttry)" } @$fidids));
+            join(",", map { "(" . int($_) . ", $type, $nexttry)" } @$fidids));
         }
     });
     $self->condthrow;
@@ -1418,7 +1418,7 @@ sub get_fidids_above_id {
 
     my $dbh = $self->dbh;
     my $fidids = $dbh->selectcol_arrayref(qq{SELECT fid FROM file WHERE fid > ?
-                     ORDER BY fid LIMIT $limit});
+        ORDER BY fid LIMIT $limit}, undef, $fidid);
     return $fidids;
 }
 
