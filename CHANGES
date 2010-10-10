@@ -1,3 +1,8 @@
+        * Make over-replication fixable again. (sigh)
+
+        * Fix old bug in MultipleHosts() which would not let you drop from
+          mindev > 1 down to 1.
+
 2010-10-08: Release version 2.42
 
         * Make FSCK run again (Andre Pascha)
