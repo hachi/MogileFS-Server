@@ -204,6 +204,7 @@ sub replicate_using_torepl_table {
 # Return 1 on success, 0 on failure.
 sub rebalance_devfid {
     my ($self, $devfid, $opts) = @_;
+    $opts ||= {};
     MogileFS::Util::okay_args($opts, qw(avoid_devids target_devids));
 
     my $fid = $devfid->fid;
@@ -317,7 +318,7 @@ sub replicate {
     my $sdevid    = delete $opts{'source_devid'};
     my $mask_devids  = delete $opts{'mask_devids'}  || {};
     my $avoid_devids = delete $opts{'avoid_devids'} || {};
-    my $target_devids = delete $opts{'target_devids'}; # inverse of avoid_devids.
+    my $target_devids = delete $opts{'target_devids'} || []; # inverse of avoid_devids.
     die "unknown_opts" if %opts;
     die unless ref $mask_devids eq "HASH";
 
@@ -403,7 +404,7 @@ sub replicate {
     my $copy_err;
 
     my $dest_devs = $devs;
-    if ($target_devids) {
+    if (@$target_devids) {
         $dest_devs = {map { $_ => $devs->{$_} } @$target_devids};
     }
 
