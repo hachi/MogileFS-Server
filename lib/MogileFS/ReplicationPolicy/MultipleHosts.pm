@@ -44,7 +44,7 @@ sub replicate_to {
     my $already_on = @$on_devs;
 
     # a silly special case, bail out early.
-    return ALL_GOOD if $min == 1 && $already_on;
+    return ALL_GOOD if $min == 1 && $already_on == 1;
 
     # total disks available which are candidates for having files on them
     my $total_disks = scalar grep { $_->dstate->should_have_files } values %$all_devs;
