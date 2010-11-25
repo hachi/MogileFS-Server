@@ -51,6 +51,7 @@ my %default_state = (
     sdev_current => 0,
     sdev_lastfid => 0,
     sdev_limit => 0,
+    limit => 0,
     fids_queued => 0,
     bytes_queued => 0,
     time_started => 0,
