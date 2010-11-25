@@ -13,7 +13,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 40;
+    plan tests => 53;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -182,6 +182,14 @@ if ($@) {
 #print Dumper($saved_state), "\n";
 #print Dumper($devfids2), "\n";
 
+# ensure all devices are still marked alive.
+ok($tmptrack->mogadm("device", "mark", "hostA", 1, "alive"), "dev1 alive");
+ok($tmptrack->mogadm("device", "mark", "hostA", 2, "alive"), "dev2 alive");
+ok($tmptrack->mogadm("device", "mark", "hostB", 3, "alive"), "dev3 alive");
+ok($tmptrack->mogadm("device", "mark", "hostB", 4, "alive"), "dev4 alive");
+ok($tmptrack->mogadm("device", "mark", "hostC", 5, "alive"), "dev5 alive");
+ok($tmptrack->mogadm("device", "mark", "hostC", 6, "alive"), "dev6 alive");
+
 use MogileFS::Admin;
 my $moga = MogileFS::Admin->new(
                                  domain => "testdom",
@@ -190,6 +198,21 @@ my $moga = MogileFS::Admin->new(
 
 ok(! defined $moga->rebalance_stop);
 my $res;
+
+# Quickly test the "no dupes" policy.
+# ensures that source devices are properly filtered.
+my $rebal_pol_dupes = "from_devices=1";
+ok($res = $moga->rebalance_set_policy($rebal_pol_dupes));
+if (! defined $res) {
+    print "Admin error: ", $moga->errstr, "\n";
+}
+ok($res = $moga->rebalance_test);
+{
+    for my $dev (sort split /,/, $res->{ddevs}) {
+        ok($dev != 1);
+    }
+}
+
 ok($res = $moga->rebalance_set_policy($rebal_pol));
 if (! defined $res) {
     print "Admin error: ", $moga->errstr, "\n";

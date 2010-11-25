@@ -429,7 +429,7 @@ sub filter_dest_devices {
     # FIXME: ends up not skipping stuff out of completed_devs? :/
     my %sdevs = map { $_ => 1 } @{$state->{source_devs}},
         @{$state->{completed_devs}}, $state->{sdev_current};
-    my @devs  = grep { ! $sdevs{$_} } @$devs;
+    my @devs  = grep { ! $sdevs{$_->id} } @$devs;
 
     my @ddevs = ();
     for my $dev (@devs) {

@@ -1,3 +1,6 @@
+        * Fix issue with rebalance not filtering source devs from the
+          destination list.
+
 2010-10-10: Release version 2.43
 
         * Make over-replication fixable again. (sigh)
