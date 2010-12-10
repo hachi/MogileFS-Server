@@ -108,7 +108,6 @@ sub work {
                 # some connectivity problem... retry this fid later.
                 # (don't dequeue it)
                 $self->still_alive;
-                sleep 5;
                 next;
             }
             $sto->delete_fid_from_file_to_queue($fid->id, FSCK_QUEUE);
@@ -210,6 +209,12 @@ sub check_fid {
         my ($dfid, $disk_size) = @_;
         if (! defined $disk_size) {
             my $dev  = $dfid->device;
+            # We end up checking is_perm_dead twice, but that's the way the
+            # flow goes...
+            if ($dev->dstate->is_perm_dead) {
+                $err = "needfix";
+                return 0;
+            }
             error("Connectivity problem reaching device " . $dev->id . " on host " . $dev->host->ip . "\n");
             $err = "stalled";
             return 0;
@@ -272,6 +277,12 @@ sub fix_fid {
         foreach my $dfid (@dfids) {
             my $dev = $dfid->device;
             next if $already_checked{$dev->id}++;
+
+            # Got a dead link, but reaper hasn't cleared it yet?
+            if ($dev->dstate->is_perm_dead) {
+                push @bad_devs, $dev;
+                next;
+            }
 
             my $disk_size = $self->size_on_disk($dfid);
             die "dev " . $dev->id . " unreachable" unless defined $disk_size;
@@ -420,6 +431,7 @@ sub init_size_checker {
 # else size of file on disk (after HTTP HEAD or mogstored stat)
 sub size_on_disk {
     my ($self, $dfid) = @_;
+    return undef if $dfid->device->dstate->is_perm_dead;
     return $dfid->size_on_disk;
     # Mass checker is disabled for now... doesn't run on our production
     # hosts due to massive gaps in the fids. Instead we make the process
