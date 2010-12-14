@@ -30,6 +30,7 @@ sub dsn_of_root {
 
 sub can_replace { 1 }
 sub can_insertignore { 0 }
+sub can_for_update { 0 }
 sub unix_timestamp { "strftime('%s','now')" }
 
 # DBD::SQLite doesn't really have any table meta info methods

@@ -124,6 +124,7 @@ sub grant_privileges {
 sub can_replace      { 0 }
 sub can_insertignore { 0 }
 sub can_insert_multi { 0 }
+sub can_for_update   { 1 }
 
 sub unix_timestamp { die "No function in $_[0] to return DB's unixtime." }
 
@@ -1506,15 +1507,16 @@ sub grab_queue_chunk {
     eval {
         $dbh->begin_work;
         my $ut  = $self->unix_timestamp;
-        my $sth = $dbh->prepare(qq{
+        my $query = qq{
             SELECT $fields
             FROM $queue
             WHERE nexttry <= $ut
             $extwhere
             ORDER BY nexttry
             LIMIT $limit
-            FOR UPDATE
-        });
+        };
+        $query .= "FOR UPDATE\n" if $self->can_for_update;
+        my $sth = $dbh->prepare($query);
         $sth->execute;
         $work = $sth->fetchall_hashref('fid');
         # Nothing to work on.
