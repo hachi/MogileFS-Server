@@ -4,6 +4,9 @@ use base 'Mogstored::ChildProcess';
 
 my $docroot;
 
+my $iostat_cmd = "iostat -dx 1 30";
+if ($^O =~ /darwin/) { $iostat_cmd =~ s/x// }
+
 sub pre_exec_init {
     my $class = shift;
 
@@ -48,7 +51,7 @@ sub run {
 
     my $get_iostat_fh = sub {
         while (1) {
-            if ($iostat_pid = open (my $fh, "iostat -dx 1 30|")) {
+            if ($iostat_pid = open (my $fh, "$iostat_cmd|")) {
                 return $fh;
             }
             # TODO: try and find other paths to iostat
