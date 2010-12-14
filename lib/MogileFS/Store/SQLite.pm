@@ -77,6 +77,7 @@ sub was_duplicate_error {
 
 sub new_temp {
     my ($fh, $filename) = File::Temp::tempfile();
+    close($fh);
 
     system("$FindBin::Bin/../mogdbsetup", "--type=SQLite", "--yes", "--dbname=$filename")
         and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
