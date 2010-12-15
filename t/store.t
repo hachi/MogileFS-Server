@@ -11,7 +11,7 @@ use MogileFS::Test;
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 12;
+    plan tests => 14;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -63,3 +63,37 @@ is(scalar @on, 2, "FID 101 on 2 devices");
     is($errc, "dup", "got a dup into tempfile")
         or die "Got error: $@\n";
 }
+
+my $ignore_replace_match = {
+    base     => { pattern => undef, dies => 1 },
+    MySQL    => { pattern => qr/INSERT IGNORE/, dies => 0 },
+    SQLite   => { pattern => qr/REPLACE/, dies => 0 },
+    Postgres => { pattern => undef, dies => 1 },
+};
+
+my $prx = eval { $sto->ignore_replace } || '';
+my $sto_driver = ( split( /::/, ref($sto) ) )[2] || 'base';
+my $match_spec = $ignore_replace_match->{ $sto_driver }
+    or die "Test not configured for '$sto_driver' storage driver";
+
+
+ok(
+    ref( $match_spec->{pattern} ) eq 'Regexp'?
+        ( $prx =~ $match_spec->{pattern} ) :
+        ( !$prx ),
+    sprintf(
+        "ignore_replace %s return value for storage type '%s'",
+        ref( $match_spec->{pattern} ) eq 'Regexp'?
+            'should' : 'should not',
+        $sto_driver
+    )
+) or diag "Got value: $prx";
+
+ok(
+    $match_spec->{dies}? $@ : !$@,
+    sprintf(
+        "ignore_replace %s die for storage type '%s'",
+        $match_spec->{dies}? 'should' : 'should not',
+        $sto_driver
+    )
+) or diag "Got exception: $@";
