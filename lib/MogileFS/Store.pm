@@ -381,9 +381,7 @@ sub retry_on_deadlock {
     while ($tries-- > 0) {
         $rv = eval { $code->(); };
         next if ($self->was_deadlock_error);
-        if ($@) {
-            croak($@) unless $self->dbh->err;
-        }
+        croak($@) if $@;
         last;
     }
     return $rv;
