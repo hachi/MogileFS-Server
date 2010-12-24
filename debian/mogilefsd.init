@@ -69,7 +69,7 @@ do_start()
 
 	fi
 
-	start-stop-daemon --start --quiet --exec $DAEMON -b --name $NAME -- chuid $MOGILEFSD_RUNASUSER
+	start-stop-daemon --start --quiet --exec $DAEMON -b --name $NAME --chuid $MOGILEFSD_RUNASUSER -- $MOGILEFSD_EXTRA_OPTS
 }
 
 #
