@@ -15,7 +15,8 @@ DAEMON=/usr/bin/mogilefsd
 NAME=mogilefsd
 DESC=mogilefsd
 DEFAULTS=/etc/default/$NAME
-PIDFILE=/var/run/$NAME.pid
+PIDDIR=/var/run/$NAME
+PIDFILE=$PIDDIR/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME
 
 # Exit if the package is not installed
@@ -47,6 +48,13 @@ set -e
 #
 do_start()
 {
+
+	if ! test -d ${PIDDIR}
+	then
+		mkdir ${PIDDIR}
+		chown ${MOGILEFSD_RUNASUSER} ${PIDDIR}
+	fi
+
 	if [ -e $PIDFILE ]
 		then
 
@@ -61,7 +69,7 @@ do_start()
 
 	fi
 
-	start-stop-daemon --start --quiet --exec $DAEMON --pidfile $PIDFILE -b -m --name $NAME --chuid $MOGILEFSD_RUNASUSER
+	start-stop-daemon --start --quiet --exec $DAEMON -b --name $NAME -- chuid $MOGILEFSD_RUNASUSER
 }
 
 #

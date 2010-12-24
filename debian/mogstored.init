@@ -15,7 +15,8 @@ DAEMON=/usr/bin/mogstored
 NAME=mogstored
 DESC=mogstored
 DEFAULTS=/etc/default/$NAME
-PIDFILE=/var/run/$NAME.pid
+PIDDIR=/var/run/$NAME
+PIDFILE=$PIDDIR/$NAME.pid
 SCRIPTNAME=/etc/init.d/$NAME
 
 # Exit if the package is not installed
@@ -47,6 +48,12 @@ set -e
 #
 do_start()
 {
+	if ! test -d ${PIDDIR}
+	then
+		mkdir ${PIDDIR}
+		chown ${MOGSTORED_RUNASUSER} ${PIDDIR}
+	fi
+
 	if [ -e $PIDFILE ]
 		then
 

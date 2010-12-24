@@ -19,6 +19,6 @@ fi
 
 #DEBHELPER#
 
-	rm -f /var/run/mogstored.pid
+	rm -fr /var/run/mogstored
 
 
