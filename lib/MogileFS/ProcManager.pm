@@ -524,6 +524,7 @@ sub process_worker_queues {
             # allow workers to grab a linear range of work.
             while (@$queue && $worker->wants_todo($job)) {
                 $worker->write(":queue_todo $job " . shift(@$queue) . "\r\n");
+                $Stats{'work_sent_to_' . $job}++;
             }
             next JOB unless @$queue;
         }
@@ -565,6 +566,11 @@ sub ProcessQueues {
         # so we're writing a string of the form:
         #     123-455 10.2.3.123 get_paths foo=bar&blah=bar\r\n
         $worker->write("$worker->{pid}-$worker->{reqid} $clref->[1]\r\n");
+    }
+
+    if (@PendingQueries) {
+        # Don't like the name. Feel free to change if you find better.
+        $Stats{times_out_of_qworkers}++;
     }
 }
 
