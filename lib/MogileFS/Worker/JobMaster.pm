@@ -48,6 +48,7 @@ sub work {
     every(1, sub {
         # 'pings' parent and populates all queues.
         $self->send_to_parent("queue_depth all");
+        $self->validate_dbh;
         my $sto = Mgd::get_store();
         $self->read_from_parent(1);
         my $active = 0;
