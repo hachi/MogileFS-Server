@@ -995,10 +995,10 @@ sub file_row_from_fidid {
 # return an arrayref of rows containing columns "fid, dmid, dkey, length,
 # classid, devcount" provided a pair of $fidid or undef if no rows.
 sub file_row_from_fidid_range {
-    my ($self, $fromfid, $tofid) = @_;
+    my ($self, $fromfid, $count) = @_;
     my $sth = $self->dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
-                                  "FROM file WHERE fid BETWEEN ? AND ?");
-    $sth->execute($fromfid,$tofid);
+                                  "FROM file WHERE fid > ? LIMIT ?");
+    $sth->execute($fromfid,$count);
     return $sth->fetchall_arrayref({});
 }
 
