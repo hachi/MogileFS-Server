@@ -45,9 +45,6 @@ sub work {
             return;
         }
 
-        $self->validate_dbh;
-        my $dbh = $self->get_dbh or return 0;
-        my $sto = Mgd::get_store();
         $self->send_to_parent("worker_bored 100 replicate rebalance");
 
         my $queue_todo  = $self->queue_todo('replicate');
@@ -55,6 +52,10 @@ sub work {
         unless (@$queue_todo || @$queue_todo2) {
             return;
         }
+
+        $self->validate_dbh;
+        my $dbh = $self->get_dbh or return 0;
+        my $sto = Mgd::get_store();
 
         while (my $todo = shift @$queue_todo) {
             my $fid = $todo->{fid};
