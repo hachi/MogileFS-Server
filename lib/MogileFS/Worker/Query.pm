@@ -506,6 +506,39 @@ sub cmd_delete {
     return $self->ok_line;
 }
 
+sub cmd_file_info {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+
+    $args->{dmid} = $self->check_domain($args)
+        or return $self->err_line('domain_not_found');
+
+    # validate parameters
+    my $dmid = $args->{dmid};
+    my $key = $args->{key} or return $self->err_line("no_key");
+
+    my $fid;
+    Mgd::get_store()->slaves_ok(sub {
+        $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key);
+    });
+    $fid or return $self->err_line("unknown_key");
+
+    my $ret = {};
+    $ret->{fid}      = $fid->id;
+    $ret->{domain}   = MogileFS::Domain->name_of_id($fid->dmid);
+    $ret->{class}    = MogileFS::Class->class_name($fid->dmid, $fid->classid);
+    $ret->{key}      = $key;
+    $ret->{'length'} = $fid->length;
+    $ret->{devcount} = $fid->devcount;
+    # Only if requested, also return the raw devids.
+    # Caller should use get_paths if they intend to fetch the file.
+    if ($args->{devices}) {
+        $ret->{devids} = join(',', $fid->devids);
+    }
+
+    return $self->ok_line($ret);
+}
+
 sub cmd_list_fids {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
