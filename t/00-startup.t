@@ -20,7 +20,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 70;
+    plan tests => 72;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -316,6 +316,30 @@ foreach my $t (qw(file file_on file_to_delete)) {
     ok(try_for(5, sub {
         return $dbh->selectrow_array("SELECT COUNT(*) FROM $t") == 0;
     }), "table $t is empty");
+}
+
+# Test some broken client modes.
+{
+    my $c = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001',
+        Timeout => 3);
+    die "Failed to connect to test tracker" unless $c;
+    # Pretend to upload a file, then tell the server weird things.
+    # Not trying to be defensable to all sorts of things, but ensuring we're
+    # safe against double close, bad destdev, etc.
+    print $c "create_open "
+        . "domain=testdom&fid=0&class=&multi_dest=1&key=fufufu\n";
+    my $res = <$c>;
+    my $fidid;
+    ok($res =~ m/fid=(\d+)/, "bare create_open worked");
+    $fidid = $1;
+    # Pretend we uploaded something.
+    print $c "create_close "
+        . "domain=testdom&fid=$fidid&devid=4&size=0&key=fufufu"
+        . "&path=http://127.0.1.2:7500/dev4/0/000/000/0000000$fidid.fid\n";
+    my $res2 = <$c>;
+    ok($res2 =~ m/invalid_destdev/, "cannot upload to unlisted destdev");
+
+    # TODO: test double closing, etc.
 }
 
 sub try_for {

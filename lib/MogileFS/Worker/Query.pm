@@ -368,15 +368,45 @@ sub cmd_create_close {
 
     # find the temp file we're closing and making real.  If another worker
     # already has it, bail out---the client closed it twice.
+    # this is racy, but the only expected use case is a client retrying.
+    # should still be fixed better once more scalable locking is available.
     my $trow = $sto->delete_and_return_tempfile_row($fidid) or
         return $self->err_line("no_temp_file");
+
+    # Protect against leaving orphaned uploads.
+    my $failed = sub {
+        $dfid->add_to_db;
+        $fid->delete;
+    };
+
+    unless ($trow->{devids} =~ m/\b$devid\b/) {
+        $failed->();
+        return $self->err_line("invalid_destdev", "File uploaded to invalid dest $devid. Valid devices were: " . $trow->{devids});
+    }
 
     # if a temp file is closed without a provided-key, that means to
     # delete it.
     unless (defined $key && length($key)) {
-        $dfid->add_to_db;
-        $fid->delete;
+        $failed->();
         return $self->ok_line;
+    }
+
+    # get size of file and verify that it matches what we were given, if anything
+    my $size = MogileFS::HTTPFile->at($path)->size;
+
+    # size check is optional? Needs to support zero byte files.
+    $args->{size} = -1 unless $args->{size};
+    if (!defined($size) || $size == MogileFS::HTTPFile::FILE_MISSING) {
+        # storage node is unreachable or the file is missing
+        my $type    = defined $size ? "missing" : "cantreach";
+        my $lasterr = MogileFS::Util::last_error();
+        $failed->();
+        return $self->err_line("size_verify_error", "Expected: $args->{size}; actual: 0 ($type); path: $path; error: $lasterr")
+    }
+
+    if ($args->{size} > -1 && ($args->{size} != $size)) {
+        $failed->();
+        return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
     }
 
     # see if we have a fid for this key already
@@ -389,21 +419,6 @@ sub cmd_create_close {
 
         $old_fid->delete;
     }
-
-    # get size of file and verify that it matches what we were given, if anything
-    my $size = MogileFS::HTTPFile->at($path)->size;
-
-    # size check is optional? Needs to support zero byte files.
-    $args->{size} = -1 unless $args->{size};
-    if (!defined($size) || $size == MogileFS::HTTPFile::FILE_MISSING) {
-        # storage node is unreachable or the file is missing
-        my $type    = defined $size ? "missing" : "cantreach";
-        my $lasterr = MogileFS::Util::last_error();
-        return $self->err_line("size_verify_error", "Expected: $args->{size}; actual: 0 ($type); path: $path; error: $lasterr")
-    }
-
-    return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
-        if $args->{size} > -1 && ($args->{size} != $size);
 
     # TODO: check for EIO?
 

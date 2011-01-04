@@ -1034,7 +1034,7 @@ sub fid_devids_multiple {
 # return hashref of columns classid, dmid, dkey, given a $fidid, or return undef
 sub tempfile_row_from_fid {
     my ($self, $fidid) = @_;
-    return $self->dbh->selectrow_hashref("SELECT classid, dmid, dkey ".
+    return $self->dbh->selectrow_hashref("SELECT classid, dmid, dkey, devids ".
                                          "FROM tempfile WHERE fid=?",
                                          undef, $fidid);
 }
