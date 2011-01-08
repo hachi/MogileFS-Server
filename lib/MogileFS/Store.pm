@@ -1587,6 +1587,24 @@ sub note_done_replicating {
     my ($self, $fidid) = @_;
 }
 
+sub find_fid_from_file_to_replicate {
+    my ($self, $fidid) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, nexttry, fromdevid, failcount, flags FROM file_to_replicate WHERE fid = ?",
+        undef, $fidid); 
+}
+
+sub find_fid_from_file_to_delete2 {
+    my ($self, $fidid) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, nexttry, failcount FROM file_to_delete2 WHERE fid = ?",
+        undef, $fidid);
+}
+
+sub find_fid_from_file_to_queue {
+    my ($self, $fidid, $type) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, devid, type, nexttry, failcount, flags, arg FROM file_to_queue WHERE fid = ? AND type = ?",
+        undef, $fidid, $type);
+}
+
 sub delete_fid_from_file_to_replicate {
     my ($self, $fidid) = @_;
     $self->retry_on_deadlock(sub {

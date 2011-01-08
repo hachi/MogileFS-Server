@@ -10,6 +10,7 @@ use MogileFS::Util qw(error error_code first weighted_list
                       device_state eurl decode_url_args);
 use MogileFS::HTTPFile;
 use MogileFS::Rebalance;
+use MogileFS::Config;
 
 sub new {
     my ($class, $psock) = @_;
@@ -504,6 +505,69 @@ sub cmd_delete {
     $fid->delete;
 
     return $self->ok_line;
+}
+
+# Takes either domain/dkey or fid and tries to return as much as possible.
+sub cmd_file_debug {
+    my MogileFS::Worker::Query $self = shift;
+    my $args = shift;
+    # Talk to the master since this is "debug mode"
+    my $sto = Mgd::get_store();
+    my $ret = {};
+
+    # If a FID is provided, just use that.
+    my $fid;
+    my $fidid;
+    if ($args->{fid}) {
+        $fidid = $args->{fid}+0;
+        # It's not fatal if we don't find the row here.
+        $fid = $sto->file_row_from_fidid($args->{fid}+0);
+    } else {
+        # If not, require dmid/dkey and pick up the fid from there.
+        $args->{dmid} = $self->check_domain($args)
+            or return $self->err_line('domain_not_found');
+        return $self->err_line("no_key") unless $args->{key};
+        $fid = $sto->file_row_from_dmid_key($args->{dmid}, $args->{key});
+        return $self->err_line("unknown_key") unless $fid;
+        $fidid = $fid->{fid};
+    }
+
+    if ($fid) {
+        $fid->{domain}   = MogileFS::Domain->name_of_id($fid->{dmid});
+        $fid->{class}    = MogileFS::Class->class_name($fid->{dmid},
+            $fid->{classid});
+    }
+
+    # Fetch all of the queue data.
+    my $tfile = $sto->tempfile_row_from_fid($fidid);
+    my $repl  = $sto->find_fid_from_file_to_replicate($fidid);
+    my $del   = $sto->find_fid_from_file_to_delete2($fidid);
+    my $reb   = $sto->find_fid_from_file_to_queue($fidid, REBAL_QUEUE);
+    my $fsck  = $sto->find_fid_from_file_to_queue($fidid, FSCK_QUEUE);
+
+    # Fetch file_on rows, and turn into paths.
+    my @devids = $sto->fid_devids($fidid);
+    for my $devid (@devids) {
+        # Won't matter if we can't make the path (dev is dead/deleted/etc)
+        eval {
+            my $dfid = MogileFS::DevFID->new($devid, $fidid);
+            my $path = $dfid->get_url;
+            $ret->{'devpath_' . $devid} = $path;
+        };
+    }
+    $ret->{devids} = join(',', @devids) if @devids;
+
+    # Return file row (if found) and all other data.
+    my %toret = (fid => $fid, tempfile => $tfile, replqueue => $repl,
+        delqueue => $del, rebqueue => $reb, fsckqueue => $fsck);
+    while (my ($key, $hash) = each %toret) {
+        while (my ($name, $val) = each %$hash) {
+            $ret->{$key . '_' . $name} = $val;
+        }
+    }
+
+    return $self->err_line("unknown_fid") unless keys %$ret;
+    return $self->ok_line($ret);
 }
 
 sub cmd_file_info {
