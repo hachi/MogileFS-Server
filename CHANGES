@@ -1,3 +1,47 @@
+2011-01-08: Release version 2.45
+
+   * file_debug command (dormando <dormando@rydia.net>)
+
+   * add "file_info" command for fetching metadata. (dormando <dormando@rydia.net>)
+
+   * don't allow clients to upload to the wrong dev (dormando <dormando@rydia.net>)
+
+   * validate database handles in the right places (dormando <dormando@rydia.net>)
+
+   * only dbh->ping if not used in over a minute (dormando <dormando@rydia.net>)
+
+   * make list_fids work with gaps (dormando <dormando@rydia.net>)
+
+   * Postgres enqueue_fids_* cleanup (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Fixes MogileFS::Store::retry_on_deadlock to honor non-deadlock exceptions (Jason Mills <jmmills@cpan.org>)
+
+   * Implements tests for MogileFS::Store::retry_on_deadlock (Jason Mills <jmmills@cpan.org>)
+
+   * Implements tests for MogileFS::Store::ignore_replace (Jason Mills <jmmills@cpan.org>)
+
+   * job_master was never revalidating its dbh handle. (dormando <dormando@rydia.net>)
+
+   * add a couple useful stats (dormando <dormando@rydia.net>)
+
+   * Correct iostat command on darwin (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * Fix test db creation with SQLite (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * Fix SQLite so tracker at least starts (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * additional debian packaging fixes (kad <kad@blegh.net>)
+
+   * debian packaging updates. (Andre Bohr <andrepascha@googlemail.com>)
+
+   * Documentation updates. (Pyry Hakulinen <pyh@iki.fi>)
+
+   * HTTPFile returns -1 if the file is missing from the device. Content-Length: 0 is valid and it should return BLEN not MISS. (Pyry Hakulinen <pyh@iki.fi>)
+
+   * some further editing of the info file. (dormando <dormando@rydia.net>)
+
+   * Changed repository metadata (Tomas Doran <bobtfish@bobtfish.net>)
+
 2010-11-25: Release version 2.44
 
         * Fix issue with rebalance not filtering source devs from the
