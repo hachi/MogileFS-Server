@@ -396,7 +396,7 @@ sub replicate {
 
     # if they requested a specific source, that source must be up.
     if ($sdevid && ! grep { $_ == $sdevid} @on_up_devid) {
-        return $retunlock->(0, "source_down", "Requested replication source device $sdevid not available");
+        return $retunlock->(0, "source_down", "Requested replication source device $sdevid not available for $fidid");
     }
 
     my %dest_failed;    # devid -> 1 for each devid we were asked to copy to, but failed.
