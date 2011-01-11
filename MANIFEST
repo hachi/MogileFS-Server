@@ -1,4 +1,7 @@
 CHANGES
+examples/testapp/testapp-perlbal.conf
+examples/testapp/testapp.psgi
+examples/testapp/README
 doc/fsck-notes.txt
 doc/memcache-support.txt
 doc/pluggable-replication-policies.txt
