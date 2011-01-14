@@ -1,3 +1,14 @@
+2011-01-13: Release version 2.46
+
+   * Fix job_master crash under postgres (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Revert "only dbh->ping if not used in over a minute" (dormando <dormando@rydia.net>)
+      *IMPORTANT FIX* if you're using 2.45, you should upgrade to this.
+
+   * Example application. (dormando <dormando@rydia.net>)
+
+   * missing $fidid for source_down error message (dormando <dormando@rydia.net>)
+
 2011-01-08: Release version 2.45
 
    * file_debug command (dormando <dormando@rydia.net>)
