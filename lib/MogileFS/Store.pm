@@ -52,8 +52,6 @@ sub new_from_dsn_user_pass {
         slave_list_cache     => [],
         recheck_req_gen  => 0,  # incremented generation, of recheck of dbh being requested
         recheck_done_gen => 0,  # once recheck is done, copy of what the request generation was
-        recheck_after    => 60, # ->ping at most once per minute.
-        last_used        => 0,  # how stale is the handle?
         handles_left     => 0,  # amount of times this handle can still be verified
         server_setting_cache => {}, # value-agnostic db setting cache.
     }, $subclass;
@@ -266,22 +264,16 @@ sub recheck_dbh {
 
 sub dbh {
     my $self = shift;
-    my $now  = time();
     
     if ($self->{dbh}) {
-        if ($self->{last_used} < $now - $self->{recheck_after}) {
-            $self->{dbh} = undef unless $self->{dbh}->ping;
-        }
         if ($self->{recheck_done_gen} != $self->{recheck_req_gen}) {
+            $self->{dbh} = undef unless $self->{dbh}->ping;
             # Handles a memory leak under Solaris/Postgres.
             $self->{dbh} = undef if ($self->{max_handles} &&
                 $self->{handles_left}-- < 0);
             $self->{recheck_done_gen} = $self->{recheck_req_gen};
         }
-        if ($self->{dbh}) {
-            $self->{last_used} = $now;
-            return $self->{dbh};
-        }
+        return $self->{dbh} if $self->{dbh};
     }
 
     $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
@@ -293,7 +285,6 @@ sub dbh {
         die "Failed to connect to database: " . DBI->errstr;
     $self->post_dbi_connect;
     $self->{handles_left} = $self->{max_handles} if $self->{max_handles};
-    $self->{last_used}    = $now;
     return $self->{dbh};
 }
 
