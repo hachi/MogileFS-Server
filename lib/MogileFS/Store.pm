@@ -1296,7 +1296,7 @@ sub enqueue_for_todo {
 # return 1 on success.  die otherwise.
 sub enqueue_many_for_todo {
     my ($self, $fidids, $type, $in) = @_;
-    if (@$fidids > 1 && ! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
+    if (! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
         $self->enqueue_for_todo($_, $type, $in) foreach @$fidids;
         return 1;
     }
