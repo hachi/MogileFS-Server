@@ -717,10 +717,7 @@ sub delete_fidid {
     $self->condthrow;
     $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
     $self->condthrow;
-    $self->insert_or_ignore(
-        insert => "INSERT INTO file_to_delete (fid) VALUES (?)",
-        insert_vals => [ $fidid ],
-    );
+    $self->enqueue_for_delete2($fidid, 0);
     $self->condthrow;
 }
 
