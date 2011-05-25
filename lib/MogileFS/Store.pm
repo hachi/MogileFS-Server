@@ -1179,11 +1179,25 @@ sub rename_file {
     return 1;
 }
 
+sub get_domainid_by_name {
+    my $self = shift;
+    my ($dmid) = $self->dbh->selectrow_array('SELECT dmid FROM domain WHERE namespace = ?',
+        undef, $_[0]);
+    return $dmid;
+}
+
 # returns a hash of domains. Key is namespace, value is dmid.
 sub get_all_domains {
     my ($self) = @_;
     my $domains = $self->dbh->selectall_arrayref('SELECT namespace, dmid FROM domain');
     return map { ($_->[0], $_->[1]) } @{$domains || []};
+}
+
+sub get_classid_by_name {
+    my $self = shift;
+    my ($classid) = $self->dbh->selectrow_array('SELECT classid FROM class WHERE dmid = ? AND classname = ?',
+        undef, $_[0], $_[1]);
+    return $classid;
 }
 
 # returns an array of hashrefs, one hashref per row in the 'class' table

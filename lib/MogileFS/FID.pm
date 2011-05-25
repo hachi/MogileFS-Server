@@ -189,7 +189,7 @@ sub devfids {
 # return FID's class
 sub class {
     my $self = shift;
-    return MogileFS::Class->of_fid($self);
+    return Mgd::class_factory()->get_by_id($self->dmid, $self->classid);
 }
 
 # Get reloaded the next time we're bothered.

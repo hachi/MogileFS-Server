@@ -85,7 +85,7 @@ sub work {
         }
 
         $iow->set_hosts(keys %{$self->{seen_hosts}});
-        $self->send_to_parent(":monitor_just_ran");
+        #$self->send_to_parent(":monitor_just_ran");
 
         # Make sure we sleep for at least 2.5 seconds before running again.
         # If there's a die above, the monitor will be restarted.
@@ -110,7 +110,7 @@ sub work {
 
         $self->{prev_data} = $new_data;
         $self->send_events_to_parent;
-        Danga::Socket->AddTimer(10, $db_monitor);
+        Danga::Socket->AddTimer(4, $db_monitor);
         print STDERR "New monitor for db finished\n";
     };
 
@@ -142,6 +142,8 @@ sub work {
         # Set the IOWatcher hosts (once old monitor code has been disabled)
 
         $self->send_events_to_parent;
+
+        $self->send_to_parent(":monitor_just_ran");
         Danga::Socket->AddTimer(2.5, $new_monitor);
         print STDERR "New monitor finished\n";
     };
@@ -346,7 +348,8 @@ sub check_device2 {
     }
 
     # next if we're not going to try this now
-    return if ($self->{last_test_write}{$devid} || 0) + UPDATE_DB_EVERY > $now;
+    # FIXME: Uncomment this to throttle test writes again.
+    #return if ($self->{last_test_write}{$devid} || 0) + UPDATE_DB_EVERY > $now;
     $self->{last_test_write}{$devid} = $now;
 
     # now we want to check if this device is writeable

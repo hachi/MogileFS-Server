@@ -164,7 +164,7 @@ sub check_domain {
     return $self->err_line("no_domain") unless defined $domain && length $domain;
 
     # validate domain
-    my $dmid = MogileFS::Domain->id_of_name($domain) or
+    my $dmid = eval { Mgd::domain_factory()->get_by_name($domain)->id } or
         return $self->err_line("unreg_domain");
 
     return $dmid;
@@ -188,10 +188,7 @@ sub cmd_clear_cache {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    MogileFS::Device->invalidate_cache if $args->{devices} || $args->{all};
-    MogileFS::Host->invalidate_cache   if $args->{hosts}   || $args->{all};
-    MogileFS::Class->invalidate_cache  if $args->{class}   || $args->{all};
-    MogileFS::Domain->invalidate_cache if $args->{domain}  || $args->{all};
+    # TODO: Use this to tell Monitor worker to rebroadcast all state
 
     return $self->ok_line;
 }
@@ -234,7 +231,7 @@ sub cmd_create_open {
     my $class = $args->{class} || "";
     my $classid = 0;
     if (length($class)) {
-        $classid = MogileFS::Class->class_id($dmid, $class)
+        $classid = eval { Mgd::class_factory()->get_by_name($dmid, $class)->id }
             or return $self->err_line("unreg_class");
     }
 
@@ -464,7 +461,7 @@ sub cmd_updateclass {
     my $key   = $args->{key}        or return $self->err_line("no_key");
     my $class = $args->{class}      or return $self->err_line("no_class");
 
-    my $classid = MogileFS::Class->class_id($dmid, $class)
+    my $classid = eval { Mgd::class_factory()->get_by_name($dmid, $class)->id }
         or return $self->err_line('class_not_found');
 
     my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
@@ -533,9 +530,9 @@ sub cmd_file_debug {
     }
 
     if ($fid) {
-        $fid->{domain}   = MogileFS::Domain->name_of_id($fid->{dmid});
-        $fid->{class}    = MogileFS::Class->class_name($fid->{dmid},
-            $fid->{classid});
+        $fid->{domain}   = Mgd::domain_factory()->get_by_id->($fid->{dmid})->name;
+        $fid->{class}    = Mgd::class_factory()->get_by_id->($fid->{dmid},
+            $fid->{classid})->name;
     }
 
     # Fetch all of the queue data.
@@ -589,8 +586,9 @@ sub cmd_file_info {
 
     my $ret = {};
     $ret->{fid}      = $fid->id;
-    $ret->{domain}   = MogileFS::Domain->name_of_id($fid->dmid);
-    $ret->{class}    = MogileFS::Class->class_name($fid->dmid, $fid->classid);
+    $ret->{domain}   = Mgd::domain_factory->get_by_id($fid->dmid)->name;
+    $ret->{class}    = Mgd::class_factory->get_by_id($fid->dmid,
+        $fid->classid)->name;
     $ret->{key}      = $key;
     $ret->{'length'} = $fid->length;
     $ret->{devcount} = $fid->devcount;
@@ -627,8 +625,10 @@ sub cmd_list_fids {
         $ct++;
         my $fid = $r->{fid};
         $ret->{"fid_${ct}_fid"} = $fid;
-        $ret->{"fid_${ct}_domain"} = ($domains{$r->{dmid}} ||= MogileFS::Domain->name_of_id($r->{dmid}));
-        $ret->{"fid_${ct}_class"} = ($classes{$r->{dmid}}{$r->{classid}} ||= MogileFS::Class->class_name($r->{dmid}, $r->{classid}));
+        $ret->{"fid_${ct}_domain"} = ($domains{$r->{dmid}} ||=
+            Mgd::domain_factory->get_by_id($r->{dmid})->name);
+        $ret->{"fid_${ct}_class"} = ($classes{$r->{dmid}}{$r->{classid}} ||=
+            Mgd::class_factory->get_by_id($r->{dmid}, $r->{classid})->name);
         $ret->{"fid_${ct}_key"} = $r->{dkey};
         $ret->{"fid_${ct}_length"} = $r->{length};
         $ret->{"fid_${ct}_devcount"} = $r->{devcount};
@@ -782,9 +782,7 @@ sub cmd_create_domain {
     my $domain = $args->{domain} or
         return $self->err_line('no_domain');
 
-    # TODO: auth/permissions?
-
-    my $dom = eval { MogileFS::Domain->create($domain); };
+    my $dom = eval { Mgd::get_store()->create_domain($domain); };
     if ($@) {
         if (error_code($@) eq "dup") {
             return $self->err_line('domain_exists');
@@ -802,10 +800,11 @@ sub cmd_delete_domain {
     my $domain = $args->{domain} or
         return $self->err_line('no_domain');
 
-    my $dom = MogileFS::Domain->of_namespace($domain) or
+    my $sto = Mgd::get_store();
+    my $dmid = $sto->get_domainid_by_name($domain) or
         return $self->err_line('domain_not_found');
 
-    if (eval { $dom->delete }) {
+    if (eval { $sto->delete_domain($dmid) }) {
         return $self->ok_line({ domain => $domain });
     }
 
@@ -835,20 +834,29 @@ sub cmd_create_class {
         return $self->err_line('invalid_replpolicy', $@) if $@;
     }
 
-    my $dom  = MogileFS::Domain->of_namespace($domain) or
+    my $sto = Mgd::get_store();
+    my $dmid  = $sto->get_domainid_by_name($domain) or
         return $self->err_line('domain_not_found');
 
-    my $cls = $dom->class($class);
+    my $clsid = $sto->get_classid_by_name($dmid, $class);
     if ($args->{update}) {
-        return $self->err_line('class_not_found') if ! $cls;
-        $cls->set_name($class);
+        return $self->err_line('class_not_found') if ! $clsid;
+        $sto->update_class_name(dmid => $dmid, classid => $clsid,
+            classname => $class);
     } else {
-        return $self->err_line('class_exists') if $cls;
-        $cls = $dom->create_class($class);
+        $clsid = eval { $sto->create_class($dmid, $class); };
+        if ($@) {
+            if (error_code($@) eq "dup") {
+                return $self->err_line('class_exists');
+            }
+            return $self->err_line('failure', "$@");
+        }
     }
-    $cls->set_mindevcount($mindevcount);
+    $sto->update_class_mindevcount(dmid => $dmid, classid => $clsid,
+        mindevcount => $mindevcount);
     # don't erase an existing replpolicy if we're not setting a new one.
-    $cls->set_replpolicy($replpolicy) if $replpolicy;
+    $sto->update_class_replpolicy(dmid => $dmid, classid => $clsid,
+        replpolicy => $replpolicy) if $replpolicy;
 
     # return success
     return $self->ok_line({ class => $class, mindevcount => $mindevcount, domain => $domain });
@@ -871,12 +879,13 @@ sub cmd_delete_class {
     my $class = $args->{class};
     return $self->err_line('no_class') unless length $domain;
 
-    my $dom  = MogileFS::Domain->of_namespace($domain) or
+    my $sto = Mgd::get_store();
+    my $dmid  = $sto->get_domainid_by_name($domain) or
         return $self->err_line('domain_not_found');
-    my $cls = $dom->class($class) or
+    my $clsid = $sto->get_classid_by_name($dmid, $class) or
         return $self->err_line('class_not_found');
 
-    if (eval { $cls->delete }) {
+    if (eval { Mgd::get_store()->delete_class($dmid, $clsid) }) {
         return $self->ok_line({ domain => $domain, class => $class });
     }
 
@@ -960,11 +969,9 @@ sub cmd_get_domains {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    MogileFS::Domain->invalidate_cache;
-
     my $ret = {};
     my $dm_n = 0;
-    foreach my $dom (MogileFS::Domain->domains) {
+    for my $dom (Mgd::domain_factory()->get_all) {
         $dm_n++;
         $ret->{"domain${dm_n}"} = $dom->name;
         my $cl_n = 0;
@@ -1245,13 +1252,13 @@ sub cmd_edit_file {
     # Take first remaining device from list
     my $devid = $list[0];
 
-    my $class = MogileFS::Class->of_fid($fid);
+    my $classid = $fid->classid;
     my $newfid = eval {
         Mgd::get_store()->register_tempfile(
             fid     => undef,   # undef => let the store pick a fid
             dmid    => $dmid,
             key     => $key,    # This tempfile will ultimately become this key
-            classid => $class->classid,
+            classid => $classid,
             devids  => $devid,
         );
     };
@@ -1279,7 +1286,7 @@ sub cmd_edit_file {
     $ret->{newpath} = $paths[1];
     $ret->{fid} = $newfid;
     $ret->{devid} = $devid;
-    $ret->{class} = $class->classid;
+    $ret->{class} = $classid;
     return $self->ok_line($ret);
 }
 

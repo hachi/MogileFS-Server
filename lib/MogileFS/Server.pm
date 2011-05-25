@@ -267,6 +267,22 @@ sub set_store {
     $store_pid = $$;
 }
 
+sub domain_factory {
+    return MogileFS::Factory::Domain->get_factory;
+}
+
+sub class_factory {
+    return MogileFS::Factory::Class->get_factory;
+}
+
+sub host_factory {
+    return MogileFS::Factory::Host->get_factory;
+}
+
+sub device_factory {
+    return MogileFS::Factory::Device->get_factory;
+}
+
 # log stuff to syslog or the screen
 sub log {
     # simple logging functionality
