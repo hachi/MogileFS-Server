@@ -41,7 +41,7 @@ ok($domfac != $classfac, "factories are not the same singleton");
     is($dom->name, 'toast', 'domain namespace is toast');
 
     # Add in a test class.
-    my $cls = $classfac->set($dom, { classid => 1, dmid => 1, mindevcount => 3,
+    my $cls = $classfac->set({ classid => 1, dmid => 1, mindevcount => 3,
         replpolicy => '', classname => 'fried'});
     ok($cls, "got a class object");
     is($cls->id, 1, "class id is 1");
@@ -53,11 +53,11 @@ ok($domfac != $classfac, "factories are not the same singleton");
 # Add a few more classes and domains.
 {
     my $dom2 = $domfac->set({ dmid => 2, namespace => 'harro' });
-    $classfac->set($dom2, { classid => 1, dmid => 2, mindevcount => 2,
+    $classfac->set({ classid => 1, dmid => 2, mindevcount => 2,
         replpolicy => '', classname => 'red' });
-    $classfac->set($dom2, { classid => 2, dmid => 2, mindevcount => 3,
+    $classfac->set({ classid => 2, dmid => 2, mindevcount => 3,
         replpolicy => 'MultipleHosts(2)', classname => 'green' });
-    $classfac->set($dom2, { classid => 3, dmid => 2, mindevcount => 4,
+    $classfac->set({ classid => 3, dmid => 2, mindevcount => 4,
         replpolicy => 'MultipleHosts(5)', classname => 'blue' });
 }
 

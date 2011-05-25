@@ -6,6 +6,7 @@ use Symbol;
 use Socket;
 use MogileFS::Connection::Client;
 use MogileFS::Connection::Worker;
+use MogileFS::Util qw(apply_state_events);
 
 # This class handles keeping lists of workers and clients and
 # assigning them to each other when things happen.  You don't actually
@@ -682,6 +683,14 @@ sub HandleChildRequest {
     } elsif ($cmd eq ":still_alive") {
         # a no-op
 
+    } elsif ($cmd =~ /^:monitor_events/) {
+        # Apply the state locally, so when we fork children they have a
+        # pre-parsed factory.
+        # Also replay the event back where it came, so the same mechanism
+        # applies and uses local changes.
+        apply_state_events(\$cmd);
+        MogileFS::ProcManager->send_to_all_children($cmd);
+
     } elsif ($cmd eq ":monitor_just_ran") {
         send_monitor_has_run($child);
 
@@ -819,7 +828,7 @@ sub send_to_all_children {
     my ($pkg, $msg, $exclude) = @_;
     foreach my $child (values %child) {
         next if $exclude && $child == $exclude;
-        $child->write("$msg\r\n");
+        $child->write($msg . "\r\n");
     }
 }
 

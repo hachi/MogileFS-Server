@@ -13,7 +13,9 @@ MogileFS::NewHost - host class
 =cut
 
 # Centralized here instead of three places.
-my @fields = qw/hostid hostname hostip status http_port http_get_port altip altmask/;
+my @observed_fields = qw/observed_state/;
+my @fields = (qw/hostid hostname hostip status http_port http_get_port altip altmask/,
+    @observed_fields);
 
 # TODO: Validate a few things: state, observed state.
 sub new_from_args {
@@ -62,6 +64,10 @@ sub fields {
     my $self = shift;
     my @tofetch = @_ ? @_ : @fields;
     return { map { $_ => $self->{$_} } @tofetch };
+}
+
+sub observed_fields {
+    return $_[0]->fields(@observed_fields);
 }
 
 sub should_get_new_files {

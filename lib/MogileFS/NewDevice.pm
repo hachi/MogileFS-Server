@@ -16,8 +16,9 @@ BEGIN {
     eval "sub TESTING () { $testing }";
 }
 
-my @fields = qw/hostid status weight observed_state mb_total mb_used mb_asof
-utilization devid/;
+my @observed_fields = qw/observed_state utilization/;
+my @fields = (qw/hostid status weight mb_total mb_used mb_asof devid/,
+    @observed_fields);
 
 sub new_from_args {
     my ($class, $args, $host_factory) = @_;
@@ -26,10 +27,11 @@ sub new_from_args {
         %{$args},
     }, $class;
 
-    $self->host || die "No host for $self->{devid} (host $self->{hostid})";
+    # FIXME: No guarantee (as of now?) that hosts get loaded before devs.
+    #$self->host || die "No host for $self->{devid} (host $self->{hostid})";
 
     croak "invalid device observed state '$self->{observed_state}', valid: writeable, readable, unreachable"
-        if $self->{observed_state} !~ /^(?:writeable|readable|unreachable)$/;
+        if $self->{observed_state} && $self->{observed_state} !~ /^(?:writeable|readable|unreachable)$/;
 
     return $self;
 }
@@ -83,6 +85,10 @@ sub fields {
     my @tofetch = @_ ? @_ : @fields;
     my $ret = { map { $_ => $self->{$_} } @tofetch };
     return $ret;
+}
+
+sub observed_fields {
+    return $_[0]->fields(@observed_fields);
 }
 
 sub observed_utilization {

@@ -64,6 +64,15 @@ use MogileFS::Worker::Monitor;
 use MogileFS::Worker::Fsck;
 use MogileFS::Worker::JobMaster;
 
+use MogileFS::Factory::Domain;
+use MogileFS::Factory::Class;
+use MogileFS::Factory::Host;
+use MogileFS::Factory::Device;
+use MogileFS::NewDomain;
+use MogileFS::NewClass;
+use MogileFS::NewHost;
+use MogileFS::NewDevice;
+
 use MogileFS::HTTPFile;
 use MogileFS::Class;
 use MogileFS::Device;

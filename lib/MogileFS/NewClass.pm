@@ -23,6 +23,7 @@ sub new_from_args {
 sub id   { $_[0]{classid} }
 sub name { $_[0]{classname} }
 sub mindevcount { $_[0]{mindevcount} }
+sub dmid { $_[0]{dmid} }
 
 sub repl_policy_string {
     my $self = shift;

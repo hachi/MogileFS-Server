@@ -12,7 +12,7 @@ use fields (
             'dele_queue_limit',
             'rebl_queue_limit',
             );
-use MogileFS::Util qw(every error debug eurl);
+use MogileFS::Util qw(every error debug encode_url_args);
 use MogileFS::Config;
 
 use constant DEF_FSCK_QUEUE_MAX => 20_000;
@@ -72,7 +72,7 @@ sub _check_delete_queues {
     return unless @to_del;
     for my $todo (@to_del) {
         $self->send_to_parent("queue_todo delete " .
-            _eurl_encode_args($todo));
+            encode_url_args($todo));
     }
     return 1;
 }
@@ -101,7 +101,7 @@ sub _check_replicate_queues {
     for my $todo (@to_repl) {
         $todo->{_type} = 'replicate'; # could be 'drain', etc.
         $self->send_to_parent("queue_todo replicate " .
-            _eurl_encode_args($todo));
+            encode_url_args($todo));
     }
     return 1;
 }
@@ -130,7 +130,7 @@ sub _check_fsck_queues {
     $self->{fsck_queue_limit} = @to_fsck ? $new_limit : 100;
     return unless @to_fsck;
     for my $todo (@to_fsck) {
-        $self->send_to_parent("queue_todo fsck " . _eurl_encode_args($todo));
+        $self->send_to_parent("queue_todo fsck " . encode_url_args($todo));
     }
     return 1;
 }
@@ -183,7 +183,7 @@ sub _check_rebal_queues {
     return unless @to_rebal;
     for my $todo (@to_rebal) {
         $todo->{_type} = 'rebalance';
-        $self->send_to_parent("queue_todo rebalance " . _eurl_encode_args($todo));
+        $self->send_to_parent("queue_todo rebalance " . encode_url_args($todo));
     }
     return 1;
 }
@@ -272,12 +272,6 @@ sub queue_depth_check {
         return (1, $limit);
     }
     return (0, $limit);
-}
-
-# TODO: Move this into Util.pm?
-sub _eurl_encode_args {
-    my $args = shift;
-    return join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
 }
 
 1;

@@ -40,7 +40,6 @@ sub get_factory {
 sub set {
     my $self = shift;
     my $obj  = shift;
-
     $self->{by_id}->{$obj->id} = $obj;
     $self->{by_name}->{$obj->name} = $obj;
     return $obj;

@@ -11,7 +11,7 @@ use fields ('psock',              # socket for parent/child communications
             'queue_todo',         # aref of hrefs of work sent from parent
             );
 
-use MogileFS::Util qw(error eurl decode_url_args);
+use MogileFS::Util qw(error eurl decode_url_args apply_state_events);
 use MogileFS::Server;
 
 use vars (
@@ -260,6 +260,11 @@ sub process_generic_command {
         # where $1 is one of {"domain", "device", "host", "class"}
         my $class = "MogileFS::" . ucfirst(lc($1));
         $class->invalidate_cache;
+        return 1;
+    }
+
+    if ($$lineref =~ /^:monitor_events/) {
+        apply_state_events($lineref);
         return 1;
     }
 

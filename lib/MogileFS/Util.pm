@@ -11,7 +11,43 @@ our @EXPORT_OK = qw(
                     error undeferr debug fatal daemonize weighted_list every
                     wait_for_readability wait_for_writeability throw error_code
                     max min first okay_args device_state eurl decode_url_args
+                    encode_url_args apply_state_events
                     );
+
+# Applies monitor-job-supplied state events against the factory singletons.
+# Sad this couldn't be an object method, but ProcManager doesn't base off
+# anything common.
+sub apply_state_events {
+    my @events = split(/\s/, ${$_[0]});
+    shift @events; # pop the :monitor_events part
+
+    # This will needlessly fetch domain/class/host most of the time.
+    # Maybe replace with something that "caches" factories?
+    my %factories = ( 'domain' => MogileFS::Factory::Domain->get_factory,
+        'class'  => MogileFS::Factory::Class->get_factory,
+        'host'   => MogileFS::Factory::Host->get_factory,
+        'device' => MogileFS::Factory::Device->get_factory, );
+
+    for my $ev (@events) {
+        my $args = decode_url_args($ev);
+        my $mode = delete $args->{ev_mode};
+        my $type = delete $args->{ev_type};
+        my $id   = delete $args->{ev_id};
+
+        my $old = $factories{$type}->get_by_id($id);
+        if ($mode eq 'setstate') {
+            # Host/Device only.
+            # FIXME: Make objects slightly mutable and directly set fields?
+            $factories{$type}->set({ %{$old->fields}, %$args });
+        } elsif ($mode eq 'set') {
+            # Re-add any observed data.
+            my $observed = $old ? $old->observed_fields : {};
+            $factories{$type}->set({ %$args, %$observed });
+        } elsif ($mode eq 'remove') {
+            $factories{$type}->remove($old) if $old;
+        }
+    }
+}
 
 sub every {
     my ($delay, $code) = @_;
@@ -253,6 +289,11 @@ sub eurl {
     $a =~ s/([^a-zA-Z0-9_\,\-.\/\\\: ])/uc sprintf("%%%02x",ord($1))/eg;
     $a =~ tr/ /+/;
     return $a;
+}
+
+sub encode_url_args {
+    my $args = shift;
+    return join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
 }
 
 sub decode_url_args {
