@@ -1242,6 +1242,21 @@ sub remove_fidid_from_devid {
     return $rv;
 }
 
+# Test if host exists.
+sub get_hostid_by_id {
+    my $self = shift;
+    my ($hostid) = $self->dbh->selectrow_array('SELECT hostid FROM host WHERE hostid = ?',
+        undef, $_[0]);
+    return $hostid;
+}
+
+sub get_hostid_by_name {
+    my $self = shift;
+    my ($hostid) = $self->dbh->selectrow_array('SELECT hostid FROM host WHERE hostname = ?',
+        undef, $_[0]);
+    return $hostid;
+}
+
 # get all hosts from database, returns them as list of hashrefs, hashrefs being the row contents.
 sub get_all_hosts {
     my ($self) = @_;

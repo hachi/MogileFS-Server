@@ -702,18 +702,15 @@ sub cmd_get_hosts {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    MogileFS::Host->invalidate_cache;
-
     my $ret = { hosts => 0 };
-    foreach my $host (MogileFS::Host->hosts) {
+    for my $host (Mgd::host_factory()->get_all) {
         next if defined $args->{hostid} && $host->id != $args->{hostid};
         my $n = ++$ret->{hosts};
-        foreach my $key (qw(hostid status hostname hostip
-                            http_port http_get_port
-                            altip altmask))
-        {
+        my $fields = $host->fields(qw(hostid status hostname hostip http_port
+            http_get_port altip altmask));
+        while (my ($key, $val) = each %$fields) {
             # must be regular data so copy it in
-            $ret->{"host${n}_$key"} = $host->field($key);
+            $ret->{"host${n}_$key"} = $val;
         }
     }
 
@@ -749,24 +746,20 @@ sub cmd_create_device {
     my $devid = $args->{devid};
     return $self->err_line("invalid_devid") unless $devid && $devid =~ /^\d+$/;
 
-    my ($host, $hostid);
+    my $hostid;
 
-    MogileFS::Host->check_cache;
+    my $sto = Mgd::get_store();
     if ($args->{hostid} && $args->{hostid} =~ /^\d+$/) {
-        $hostid = $args->{hostid};
-        $host = MogileFS::Host->of_hostid($hostid);
-        return $self->err_line("unknown_hostid") unless $host && $host->exists;
+        $hostid = $sto->get_hostid_by_id($args->{hostid});
+        return $self->err_line("unknown_hostid") unless $hostid;
     } elsif (my $hname = $args->{hostname}) {
-        $host = MogileFS::Host->of_hostname($hname);
-        return $self->err_line("unknown_host") unless $host;
-        $hostid = $host->id;
+        $hostid = $sto->get_hostid_by_name($hname);
+        return $self->err_line("unknown_host") unless $hostid;
     } else {
         return $self->err_line("bad_args", "No hostid/hostname parameter");
     }
 
-    if (eval { MogileFS::Device->create(devid  => $devid,
-                                        hostid => $hostid,
-                                        status => $status) }) {
+    if (eval { $sto->create_device($devid, $hostid, $status) }) {
         return $self->ok_line;
     }
 
@@ -901,14 +894,15 @@ sub cmd_create_host {
     my $hostname = $args->{host} or
         return $self->err_line('no_host');
 
-    my $host = MogileFS::Host->of_hostname($hostname);
+    my $sto = Mgd::get_store();
+    my $hostid = $sto->get_hostid_by_name($hostname);
 
     # if we're creating a new host, require ip/port, and default to
     # host being down if client didn't specify
     if ($args->{update}) {
-        return $self->err_line('host_not_found') unless $host;
+        return $self->err_line('host_not_found') unless $hostid;
     } else {
-        return $self->err_line('host_exists') if $host;
+        return $self->err_line('host_exists') if $hostid;
         return $self->err_line('no_ip') unless $args->{ip};
         return $self->err_line('no_port') unless $args->{port};
         $args->{status} ||= 'down';
@@ -916,26 +910,23 @@ sub cmd_create_host {
 
     if ($args->{status}) {
         return $self->err_line('unknown_state')
-            unless MogileFS::Host->valid_initial_state($args->{status});
+            unless MogileFS::Host->valid_state($args->{status});
     }
 
     # arguments all good, let's do it.
 
-    $host ||= MogileFS::Host->create($hostname, $args->{ip});
-    my %setter = (
-                  status  => "set_status",
-                  ip      => "set_ip",
-                  port    => "set_http_port",
-                  getport => "set_http_get_port",
-                  altip   => "set_alt_ip",
-                  altmask => "set_alt_mask",
-                  );
-    while (my ($f, $meth) = each %setter) {
-        $host->$meth($args->{$f}) if exists $args->{$f};
-    }
+    $hostid ||= $sto->create_host($hostname, $args->{ip});
+
+    # Protocol mismatch data fixup.
+    $args->{hostip} = delete $args->{ip} if exists $args->{ip};
+    $args->{http_port} = delete $args->{port} if exists $args->{port};
+    $args->{http_get_port} = delete $args->{getport} if exists $args->{getport};
+    my @toupdate = grep { exists $args->{$_} } qw(status hostip http_port
+        http_get_port altip altmask);
+    $sto->update_host($hostid, { map { $_ => $args->{$_} } @toupdate });
 
     # return success
-    return $self->ok_line($host->overview_hashref);
+    return $self->ok_line({ hostid => $hostid, hostname => $hostname });
 }
 
 sub cmd_update_host {
@@ -950,17 +941,17 @@ sub cmd_delete_host {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    my $host   = MogileFS::Host->of_hostname($args->{host})
+    my $sto = Mgd::get_store();
+    my $hostid = $sto->get_hostid_by_name($args->{host})
         or return $self->err_line('unknown_host');
 
-    my $hostid = $host->id;
-
-    foreach my $dev (MogileFS::Device->devices) {
+    # TODO: $sto->delete_host should have a "has_devices" test internally
+    for my $dev ($sto->get_all_devices) {
         return $self->err_line('host_not_empty')
-            if $dev->hostid == $hostid;
+            if $dev->{hostid} == $hostid;
     }
 
-    $host->delete;
+    $sto->delete_host($hostid);
 
     return $self->ok_line;
 }
