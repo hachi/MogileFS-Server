@@ -68,17 +68,13 @@ use MogileFS::Factory::Domain;
 use MogileFS::Factory::Class;
 use MogileFS::Factory::Host;
 use MogileFS::Factory::Device;
-use MogileFS::NewDomain;
-use MogileFS::NewClass;
-use MogileFS::NewHost;
-use MogileFS::NewDevice;
+use MogileFS::Domain;
+use MogileFS::Class;
+use MogileFS::Host;
+use MogileFS::Device;
 
 use MogileFS::HTTPFile;
-use MogileFS::Class;
-use MogileFS::Device;
-use MogileFS::Host;
 use MogileFS::FID;
-use MogileFS::Domain;
 use MogileFS::DevFID;
 
 use MogileFS::Store;

@@ -69,9 +69,11 @@ sub rr {
     my ($state) = @_;
     my $ostate = $state; # original
 
-    MogileFS::Host->t_wipe_singletons;
-    MogileFS::Device->t_wipe_singletons;
+    MogileFS::Factory::Host->t_wipe;
+    MogileFS::Factory::Device->t_wipe;
     MogileFS::Config->set_config_no_broadcast("min_free_space", 100);
+    my $hfac = MogileFS::Factory::Host->get_factory;
+    my $dfac = MogileFS::Factory::Device->get_factory;
 
     my $min = 2;
     if ($state =~ s/^\bmin=(\d+)\b//) {
@@ -90,17 +92,19 @@ sub rr {
         $opts ||= "";
         die "dup host $n" if $hosts->{$n};
 
-        my $h = $hosts->{$n} = MogileFS::Host->of_hostid($n);
-        $h->t_init($opts || "alive");
+        my $h = $hosts->{$n} = $hfac->set({ hostid => $n,
+            status => ($opts || "alive"), observed_state => "reachable",
+            hostname => $n });
 
         foreach my $ddecl (split(/\s+/, $devstr)) {
             $ddecl =~ /^d(\d+)=([_X])(?:,(\w+))?$/
                 or $parse_error->();
             my ($dn, $on_not, $status) = ($1, $2, $3);
             die "dup device $dn" if $devs->{$dn};
-            my $d = $devs->{$dn} = MogileFS::Device->of_devid($dn);
-            $status ||= "alive";
-            $d->t_init($h->id, $status);
+            my $d = $devs->{$dn} = $dfac->set({ devid => $dn,
+                hostid => $h->id, observed_state => "writeable",
+                status => ($status || "alive"), mb_total => 1000,
+                mb_used => 100, });
             if ($on_not eq "X" && $d->dstate->should_have_files) {
                 push @$on_devs, $d;
             }

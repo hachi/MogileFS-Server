@@ -529,8 +529,8 @@ sub cmd_file_debug {
     }
 
     if ($fid) {
-        $fid->{domain}   = Mgd::domain_factory()->get_by_id->($fid->{dmid})->name;
-        $fid->{class}    = Mgd::class_factory()->get_by_id->($fid->{dmid},
+        $fid->{domain}   = Mgd::domain_factory()->get_by_id($fid->{dmid})->name;
+        $fid->{class}    = Mgd::class_factory()->get_by_id($fid->{dmid},
             $fid->{classid})->name;
     }
 
@@ -585,8 +585,8 @@ sub cmd_file_info {
 
     my $ret = {};
     $ret->{fid}      = $fid->id;
-    $ret->{domain}   = Mgd::domain_factory->get_by_id($fid->dmid)->name;
-    $ret->{class}    = Mgd::class_factory->get_by_id($fid->dmid,
+    $ret->{domain}   = Mgd::domain_factory()->get_by_id($fid->dmid)->name;
+    $ret->{class}    = Mgd::class_factory()->get_by_id($fid->dmid,
         $fid->classid)->name;
     $ret->{key}      = $key;
     $ret->{'length'} = $fid->length;

@@ -11,8 +11,8 @@ use MogileFS::Test;
 use MogileFS::Factory;
 use MogileFS::Factory::Domain;
 use MogileFS::Factory::Class;
-use MogileFS::NewDomain;
-use MogileFS::NewClass;
+use MogileFS::Domain;
+use MogileFS::Class;
 
 use Data::Dumper qw/Dumper/;
 
@@ -46,7 +46,7 @@ ok($domfac != $classfac, "factories are not the same singleton");
     ok($cls, "got a class object");
     is($cls->id, 1, "class id is 1");
     is($cls->name, 'fried', 'class name is fried');
-    is(ref($cls->domain), 'MogileFS::NewDomain',
+    is(ref($cls->domain), 'MogileFS::Domain',
         'class can find a domain object');
 }
 
@@ -76,7 +76,7 @@ ok($domfac != $classfac, "factories are not the same singleton");
     my @doms = $domfac->get_all;
     is(scalar(@doms), 2, 'got two domains back from get_all');
     for (@doms) {
-        is(ref($_), 'MogileFS::NewDomain', 'and both are domains');
+        is(ref($_), 'MogileFS::Domain', 'and both are domains');
     }
     isnt($doms[0]->id, $doms[1]->id, 'and both are not the same');
 }
@@ -97,7 +97,8 @@ ok($domfac != $classfac, "factories are not the same singleton");
 {
     my $dom = $domfac->get_by_name('harro');
     my @classes = $dom->classes;
-    is(scalar(@classes), 2, 'found two classes');
+    # Magic "default" class is included
+    is(scalar(@classes), 3, 'found three classes');
 
     ok($dom->class('blue'), 'found the blue class');
     ok(!$dom->class('fried'), 'did not find the fried class');

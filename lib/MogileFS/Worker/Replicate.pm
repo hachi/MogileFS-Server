@@ -10,7 +10,6 @@ use fields (
 use List::Util ();
 use MogileFS::Util qw(error every debug);
 use MogileFS::Config;
-use MogileFS::Class;
 use MogileFS::ReplicationRequest qw(rr_upgrade);
 
 # setup the value used in a 'nexttry' field to indicate that this item will never

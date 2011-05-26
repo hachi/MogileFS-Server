@@ -17,10 +17,10 @@ if ($sto) {
     exit 0;
 }
 
-my $dom = MogileFS::Domain->create("foo");
-ok($dom, "created a domain");
-my $cls = $dom->create_class("classA");
-ok($cls, "created a class");
+my $dmid = $sto->create_domain("foo");
+ok($dmid, "created a domain");
+my $clsid = $sto->create_class($dmid, "classA");
+ok($clsid, "created a class");
 
 my $df = MogileFS::DevFID->new(100, 200);
 ok($df, "made devfid");
@@ -42,9 +42,9 @@ is(scalar @on, 2, "FID 101 on 2 devices");
 {
     my $fidid = $sto->register_tempfile(
                                         fid     => undef,
-                                        dmid    => $dom->id,
+                                        dmid    => $dmid,
                                         key     => "my_tempfile",
-                                        classid => $cls->classid,
+                                        classid => $clsid,
                                         devids  => join(',', 1,2,3),
                                         );
     ok($fidid, "got a fidid");
@@ -52,9 +52,9 @@ is(scalar @on, 2, "FID 101 on 2 devices");
     my $fidid2 = eval {
         $sto->register_tempfile(
                                 fid     => $fidid,
-                                dmid    => $dom->id,
+                                dmid    => $dmid,
                                 key     => "my_tempfile",
-                                classid => $cls->classid,
+                                classid => $clsid,
                                 devids  => join(',', 1,2,3),
                                 );
     };

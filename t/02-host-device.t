@@ -11,8 +11,8 @@ use MogileFS::Test;
 use MogileFS::Factory;
 use MogileFS::Factory::Host;
 use MogileFS::Factory::Device;
-use MogileFS::NewHost;
-use MogileFS::NewDevice;
+use MogileFS::Host;
+use MogileFS::Device;
 
 use Data::Dumper qw/Dumper/;
 
@@ -79,6 +79,8 @@ observed_state => 'writeable'});
         'updated dev1 DB entry');
     ok($sto->update_device(2, { mb_total => 100, mb_used => 3,
         status => 'dead' }), 'updated dev2 DB entry');
+
+    # Test duplication errors.
 }
 
 {

@@ -36,6 +36,12 @@ sub get_factory {
     return $singleton{$class};
 }
 
+# Allow unit tests to blow us up.
+sub t_wipe {
+    my $class = shift;
+    delete $singleton{$class}; 
+}
+
 # because 'add' means bail if already exists.
 sub set {
     my $self = shift;

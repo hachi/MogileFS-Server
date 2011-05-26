@@ -69,15 +69,11 @@ sub work {
         debug("Monitor running; checking DB for updates");
         $self->validate_dbh;
 
-        my $new_data  = {};
-        my $prev_data = $self->{prev_data};
         my $db_data   = $self->grab_all_data;
 
-        # Stack this up to ship back later.
-        my @events = ();
-        $self->diff_data($db_data, $prev_data, $new_data, \@events);
+        # Stack diffs to ship back later
+        $self->diff_data($db_data);
 
-        $self->{prev_data} = $new_data;
         $self->send_events_to_parent;
         $self->send_to_parent(":monitor_just_ran");
         Danga::Socket->AddTimer(4, $db_monitor);
@@ -98,7 +94,6 @@ sub work {
         my $dev_factory = MogileFS::Factory::Device->get_factory();
 
         my $cur_iow = {};
-        my @events  = ();
         # Run check_devices to test host/devs. diff against old values.
         for my $dev ($dev_factory->get_all) {
             if (my $state = $self->is_iow_diff($dev)) {
@@ -106,7 +101,7 @@ sub work {
             }
             $cur_iow->{$dev->id} = $self->{devutil}->{cur}->{$dev->id};
             next if $self->{skip_host}{$dev->hostid};
-            $self->check_device($dev, \@events);
+            $self->check_device($dev);
         }
 
         $self->{devutil}->{prev} = $cur_iow;
@@ -141,7 +136,8 @@ sub send_events_to_parent {
     }
     return unless @flat;
     $self->{events} = [];
-    print STDERR "SENDING STATE CHANGES ", join(' ', ':monitor_events', @flat), "\n";
+    # TODO: Maybe wasting too much CPU building this debug line every time...
+    debug("sending state changes " . join(' ', ':monitor_events', @flat), 2);
     $self->send_to_parent(join(' ', ':monitor_events', @flat));
 }
 
@@ -172,8 +168,10 @@ sub is_iow_diff {
 }
 
 sub diff_data {
-    my ($self, $db_data, $prev_data, $new_data, $ev) = @_;
+    my ($self, $db_data) = @_;
 
+    my $new_data  = {};
+    my $prev_data = $self->{prev_data};
     for my $type (keys %{$db_data}) {
         my $d_data = $db_data->{$type};
         my $p_data = $prev_data->{$type};
@@ -199,6 +197,7 @@ sub diff_data {
 
         $new_data->{$type} = $n_data;
     }
+    $self->{prev_data} = $new_data;
 }
 
 # returns 1 if the hashes are different.
@@ -208,11 +207,12 @@ sub diff_hash {
     my %keys = ();
     map { $keys{$_}++ } keys %$old, keys %$new;
     for my $k (keys %keys) {
-        return 1 unless ((exists $old->{$k} &&
-            exists $new->{$k}) &&
-            ( (! defined $old->{$k} && ! defined $new->{$k}) ||
-            ($old->{$k} eq $new->{$k}) )
-            );
+        return 1 if (exists $old->{$k} && ! exists $new->{$k});
+        return 1 if (exists $new->{$k} && ! exists $old->{$k});
+        return 1 if (defined $old->{$k} && ! defined $new->{$k});
+        return 1 if (defined $new->{$k} && ! defined $old->{$k});
+        return 0 if (! defined $new->{$k} && ! defined $old->{$k});
+        return 1 if ($old->{$k} ne $new->{$k});
     }
     return 0;
 }
@@ -244,7 +244,7 @@ sub ua {
 }
 
 sub check_device {
-    my ($self, $dev, $ev) = @_;
+    my ($self, $dev) = @_;
 
     my $devid = $dev->id;
     my $host  = $dev->host;

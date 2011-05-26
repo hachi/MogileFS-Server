@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use base 'MogileFS::Factory';
 
-use MogileFS::NewClass;
+use MogileFS::Class;
 
 # This class is a reimplementation since classids and classnames
 # are not globally unique... uses the same interface.
@@ -12,7 +12,7 @@ sub set {
     my ($self, $args) = @_;
     my $domain_factory = MogileFS::Factory::Domain->get_factory;
 
-    my $class = MogileFS::NewClass->new_from_args($args, $domain_factory);
+    my $class = MogileFS::Class->new_from_args($args, $domain_factory);
     my $dmid = $class->dmid;
     $self->{by_id}->{$dmid}->{$class->id}     = $class;
     $self->{by_name}->{$dmid}->{$class->name} = $class;
