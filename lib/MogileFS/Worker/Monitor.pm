@@ -57,8 +57,8 @@ sub work {
             # This does hit the DB every time a device does not exist, so
             # perhaps should add negative caching in the future.
             $self->{devutil}->{cur}->{$devid} = $util;
-            my $dev = MogileFS::Device->of_devid($devid);
-            next unless $dev->exists;
+            my $dev = Mgd::device_factory()->get_by_id($devid);
+            next unless $dev;
             $dev->set_observed_utilization($util);
         }
     });

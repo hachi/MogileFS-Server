@@ -13,7 +13,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 53;
+    plan tests => 48;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -78,17 +78,12 @@ ok($tmptrack->mogadm("host", "add", "hostC", "--ip=$hostC_ip", "--status=alive")
 ok($tmptrack->mogadm("device", "add", "hostC", 5), "created dev5 on hostC");
 ok($tmptrack->mogadm("device", "add", "hostC", 6), "created dev6 on hostC");
 
-ok($tmptrack->mogadm("device", "mark", "hostA", 1, "alive"), "dev1 alive");
-ok($tmptrack->mogadm("device", "mark", "hostA", 2, "alive"), "dev2 alive");
-ok($tmptrack->mogadm("device", "mark", "hostB", 3, "alive"), "dev3 alive");
-ok($tmptrack->mogadm("device", "mark", "hostB", 4, "alive"), "dev4 alive");
-ok($tmptrack->mogadm("device", "mark", "hostC", 5, "alive"), "dev5 alive");
-ok($tmptrack->mogadm("device", "mark", "hostC", 6, "alive"), "dev6 alive");
-
 # wait for monitor
 {
     my $was = $be->{timeout};  # can't use local on phash :(
     $be->{timeout} = 10;
+    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+        or die "Failed to wait for monitor";
     ok($be->do_request("do_monitor_round", {}), "waited for monitor")
         or die "Failed to wait for monitor";
     $be->{timeout} = $was;
@@ -127,15 +122,21 @@ use MogileFS::Device;
 use MogileFS::Host;
 use MogileFS::Config;
 use MogileFS::Rebalance;
+use MogileFS::Factory::Host;
+use MogileFS::Factory::Device;
 use Data::Dumper qw/Dumper/;
 
-my @devs = MogileFS::Device->devices;
-my @hosts = MogileFS::Host->hosts;
+my $dfac = MogileFS::Factory::Device->get_factory;
+my $hfac = MogileFS::Factory::Host->get_factory;
+
+map { $hfac->set($_) } $sto->get_all_hosts;
+map { $dfac->set($_) } $sto->get_all_devices;
+my @devs = $dfac->get_all;
 
 ### Hacks to make tests work :/
 $MogileFS::Config::skipconfig = 1;
 MogileFS::Config->load_config;
-for my $h (@hosts) {
+for my $h ($hfac->get_all) {
     print "hostid: ", $h->id, " name: ", $h->hostname, "\n";
     $h->{observed_state} = "reachable";
 }

@@ -28,7 +28,7 @@ sub work {
         debug("Reaper running; looking for dead devices");
 
         foreach my $dev (grep { $_->dstate->is_perm_dead }
-                         MogileFS::Device->devices)
+                         Mgd::device_factory()->get_all)
         {
             my $devid = $dev->id;
             next if $all_empty{$devid};

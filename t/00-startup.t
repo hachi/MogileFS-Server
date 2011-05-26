@@ -20,7 +20,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 72;
+    plan tests => 73;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -110,16 +110,20 @@ ok($tmptrack->mogadm("device", "add", "hostB", 4), "created dev4 on hostB");
     $be->{timeout} = 10;
     ok($be->do_request("do_monitor_round", {}), "waited for monitor")
         or die "Failed to wait for monitor";
+    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+        or die "Failed to wait for monitor";
     $be->{timeout} = $was;
 }
 
 {
     my $fh = $mogc->new_file('no_content', "2copies");
+    die "Error: " . $mogc->errstr unless $fh;
     ok(close($fh), "closed file");
 }
 
 {
     my $fh = $mogc->new_file('no_content', "2copies");
+    die "Error: " . $mogc->errstr unless $fh;
     ok(close($fh), "closed file");
 }
 
@@ -273,7 +277,7 @@ ok($tmptrack->mogadm("device", "add", "hostC", 5), "created dev5 on hostC");
 ok($tmptrack->mogadm("device", "add", "hostC", 6), "created dev6 on hostC");
 
 # let it be discovered
-sleep(3);  # FIXME: make an explicit "rescan" or "remonitor" job to mogilefsd, just for test suite
+sleep(5);  # FIXME: make an explicit "rescan" or "remonitor" job to mogilefsd, just for test suite
 
 ok($tmptrack->mogadm("device", "mark", "hostB", 3, "dead"), "marked device B/3 dead");
 ok($tmptrack->mogadm("device", "mark", "hostB", 4, "dead"), "marked device B/4 dead");

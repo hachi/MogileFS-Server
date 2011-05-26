@@ -27,7 +27,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 16;
+    plan tests => 17;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -80,6 +80,8 @@ ok($tmptrack->mogadm("device", "add", "hostB", 2), "created dev2 on hostB");
 {
     my $was = $be->{timeout};  # can't use local on phash :(
     $be->{timeout} = 10;
+    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+        or die "Failed to wait for monitor";
     ok($be->do_request("do_monitor_round", {}), "waited for monitor")
         or die "Failed to wait for monitor";
     $be->{timeout} = $was;

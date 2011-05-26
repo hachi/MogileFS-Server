@@ -45,7 +45,7 @@ sub host_id {
 # return MogileFS::Device object
 sub device {
     my $self = shift;
-    return MogileFS::Device->of_devid($self->device_id);
+    return Mgd::device_factory()->get_by_id($self->device_id);
 }
 
 # return MogileFS::Host object

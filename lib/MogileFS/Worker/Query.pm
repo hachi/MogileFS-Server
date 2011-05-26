@@ -245,8 +245,8 @@ sub cmd_create_open {
 
     my @devices;
 
-    unless (MogileFS::run_global_hook('cmd_create_open_order_devices', [MogileFS::Device->devices], \@devices)) {
-        @devices = sort_devs_by_freespace(MogileFS::Device->devices);
+    unless (MogileFS::run_global_hook('cmd_create_open_order_devices', [Mgd::device_factory()->get_all], \@devices)) {
+        @devices = sort_devs_by_freespace(Mgd::device_factory()->get_all);
     }
 
     # find suitable device(s) to put this file on.
@@ -327,7 +327,6 @@ sub sort_devs_by_freespace {
     } sort {
         $b->percent_free <=> $a->percent_free;
     } grep {
-        $_->exists &&
         $_->should_get_new_files;
     } @_;
 
@@ -722,11 +721,11 @@ sub cmd_get_devices {
     my $args = shift;
 
     my $ret = { devices => 0 };
-    foreach my $dev (MogileFS::Device->devices) {
+    for my $dev (Mgd::device_factory()->get_all) {
         next if defined $args->{devid} && $dev->id != $args->{devid};
         my $n = ++$ret->{devices};
 
-        my $sum = $dev->overview_hashref;
+        my $sum = $dev->fields;
         while (my ($key, $val) = each %$sum) {
             $ret->{"dev${n}_$key"} = $val;
         }
@@ -1032,7 +1031,7 @@ sub cmd_get_paths {
     # add to memcache, if needed.  for an hour.
     $memc->add($mogfid_memkey, $fid->id, 3600) if $need_fid_in_memcache;
 
-    my $dmap = MogileFS::Device->map;
+    my $dmap = Mgd::device_factory()->map_by_id;
 
     my $ret = {
         paths => 0,
@@ -1187,7 +1186,7 @@ sub cmd_edit_file {
     # add to memcache, if needed.  for an hour.
     $memc->add($mogfid_memkey, $fid->id, 3600) if $need_fid_in_memcache;
 
-    my $dmap = MogileFS::Device->map;
+    my $dmap = Mgd::device_factory()->map_by_id;
 
     my @devices_with_weights;
 
@@ -1290,8 +1289,10 @@ sub cmd_set_weight {
     return $self->err_line('bad_params')
         unless $hostname && $devid && $weight >= 0;
 
-    my $dev = MogileFS::Device->from_devid_and_hostname($devid, $hostname)
-        or return $self->err_line('host_mismatch');
+    my $dev = Mgd::device_factory()->get_by_id($devid);
+    return $self->err_line('no_device') unless $dev;
+    return $self->err_line('host_mismatch')
+        unless $dev->host->hostname eq $hostname;
 
     $dev->set_weight($weight);
 
@@ -1309,14 +1310,16 @@ sub cmd_set_state {
     return $self->err_line('bad_params')
         unless $hostname && $devid && $dstate;
 
-    my $dev = MogileFS::Device->from_devid_and_hostname($devid, $hostname)
-        or return $self->err_line('host_mismatch');
+    my $dev = Mgd::device_factory()->get_by_id($devid);
+    return $self->err_line('no_device') unless $dev;
+    return $self->err_line('host_mismatch')
+        unless $dev->host->hostname eq $hostname;
 
     # make sure the destination state isn't too high
     return $self->err_line('state_too_high')
         unless $dev->can_change_to_state($state);
 
-    $dev->set_state($state);
+    Mgd::get_store()->set_device_state($dev->id, $state);
     return $self->ok_line;
 }
 
@@ -1561,7 +1564,7 @@ sub cmd_rebalance_start {
 
         my $rebal = MogileFS::Rebalance->new;
         $rebal->policy($rebal_pol);
-        my @devs  = MogileFS::Device->devices;
+        my @devs  = Mgd::device_factory()->get_all;
         $rebal->init(\@devs);
         my $sdevs = $rebal->source_devices;
 
@@ -1580,7 +1583,7 @@ sub cmd_rebalance_test {
     return $self->err_line('no_rebal_policy') unless $rebal_pol;
 
     my $rebal = MogileFS::Rebalance->new;
-    my @devs  = MogileFS::Device->devices;
+    my @devs  = Mgd::device_factory()->get_all;
     $rebal->policy($rebal_pol);
     $rebal->init(\@devs);
 
@@ -1683,6 +1686,7 @@ sub err_line {
         'key_exists' => "Target key name already exists; can't overwrite.",
         'no_class' => "No class provided",
         'no_devices' => "No devices found to store file",
+        'no_device' => "Device not found",
         'no_domain' => "No domain provided",
         'no_host' => "No host provided",
         'no_ip' => "IP required to create host",

@@ -177,7 +177,7 @@ sub devids {
 
 sub devs {
     my $self = shift;
-    return map { MogileFS::Device->of_devid($_) } $self->devids;
+    return map { Mgd::device_factory()->get_by_id($_) } $self->devids;
 }
 
 sub devfids {
@@ -207,7 +207,7 @@ sub devids_meet_policy {
 
     my $polobj = $cls->repl_policy_obj;
 
-    my $alldev = MogileFS::Device->map
+    my $alldev = Mgd::device_factory()->map_by_id
         or die "No global device map";
 
     my @devs = $self->devs;

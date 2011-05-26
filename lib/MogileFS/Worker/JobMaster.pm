@@ -211,7 +211,7 @@ sub _inject_rebalance_queues {
     my $rebal_state = MogileFS::Config->server_setting('rebal_state');
     $rebal->policy($rebal_pol);
 
-    my @devs = MogileFS::Device->devices;
+    my @devs = Mgd::device_factory()->get_all;
     if ($rebal_state) {
         $rebal->load_state($rebal_state);
     } else {

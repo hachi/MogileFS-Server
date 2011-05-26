@@ -320,7 +320,7 @@ sub fix_fid {
         @dfids = List::Util::shuffle(
                                      map  { MogileFS::DevFID->new($_, $fid)  }
                                      grep { $_->dstate->should_fsck_search_on }
-                                     MogileFS::Device->devices
+                                     Mgd::device_factory()->get_all
                                      );
         $check_dfids->("desperate");
 

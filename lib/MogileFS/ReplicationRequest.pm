@@ -26,7 +26,7 @@ sub rr_upgrade {
 # for ideal replications
 sub replicate_to {
     my ($class, @devs) = @_;
-    @devs = map { ref $_ ? $_ : MogileFS::Device->of_devid($_) } @devs;
+    @devs = map { ref $_ ? $_ : Mgd::device_factory()->get_by_id($_) } @devs;
     return bless {
         ideal_next => \@devs,
     }, $class;

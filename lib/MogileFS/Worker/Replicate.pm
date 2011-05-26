@@ -181,7 +181,7 @@ sub replicate_using_torepl_table {
         my $devfid;
         # First one we can delete from, we try to rebalance away from.
         for (@devs) {
-            my $dev = MogileFS::Device->of_devid($_);
+            my $dev = Mgd::device_factory()->get_by_id($_);
             # Not positive 'can_read_from' needs to be here.
             # We must be able to delete off of this dev so the fid can
             # move.
@@ -361,7 +361,7 @@ sub replicate {
     };
 
     # hashref of devid -> MogileFS::Device
-    my $devs = MogileFS::Device->map
+    my $devs = Mgd::device_factory()->map_by_id
         or die "No device map";
 
     return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock for fid $fidid")
@@ -380,7 +380,7 @@ sub replicate {
     my @on_up_devid;     # subset of @on_devs:  just devs that are readable
 
     foreach my $devid ($fid->devids) {
-        my $d = MogileFS::Device->of_devid($devid)
+        my $d = Mgd::device_factory()->get_by_id($devid)
             or next;
         push @on_devs, $d;
         if ($d->dstate->should_have_files && ! $mask_devids->{$devid}) {
@@ -571,11 +571,11 @@ sub http_copy {
     };
 
     # get some information we'll need
-    my $sdev = MogileFS::Device->of_devid($sdevid);
-    my $ddev = MogileFS::Device->of_devid($ddevid);
+    my $sdev = Mgd::device_factory()->get_by_id($sdevid);
+    my $ddev = Mgd::device_factory()->get_by_id($ddevid);
 
     return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid")
-        unless $sdev && $ddev && $sdev->exists && $ddev->exists;
+        unless $sdev && $ddev;
 
     my $s_dfid = MogileFS::DevFID->new($sdev, $fid);
     my $d_dfid = MogileFS::DevFID->new($ddev, $fid);

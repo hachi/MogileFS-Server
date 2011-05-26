@@ -162,9 +162,9 @@ sub process_deletes2 {
 
 
         for my $devid (@devids) {
-            my $dev = $devid ? MogileFS::Device->of_devid($devid) : undef;
+            my $dev = $devid ? Mgd::device_factory()->get_by_id($devid) : undef;
             error("deleting fid $fidid, on devid ".($devid || 'NULL')."...") if $Mgd::DEBUG >= 2;
-            unless ($dev && $dev->exists) {
+            unless ($dev) {
                 next;
             }
             if ($dev->dstate->is_perm_dead) {
@@ -310,7 +310,7 @@ sub process_deletes {
         # CASE: devid is marked dead or doesn't exist: consider it deleted on this devid.
         # (Note: we're tolerant of '0' as a devid, due to old buggy version which
         # would sometimes put that in there)
-        my $dev = $devid ? MogileFS::Device->of_devid($devid) : undef;
+        my $dev = $devid ? Mgd::device_factory()->get_by_id($devid) : undef;
         unless ($dev && $dev->exists) {
             $done_with_devid->("devid_doesnt_exist");
             next;

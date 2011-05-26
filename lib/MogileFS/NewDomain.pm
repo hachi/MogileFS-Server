@@ -38,4 +38,8 @@ sub class {
     return $self->{class_factory}->get_by_name($self, $_[0]);
 }
 
+sub observed_fields {
+    return {};
+}
+
 1;

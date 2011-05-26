@@ -39,6 +39,7 @@ sub new_from_args {
 # Instance methods
 
 sub id     { return $_[0]{devid} }
+sub devid  { return $_[0]{devid} }
 sub name   { return $_[0]{devid} }
 sub status { return $_[0]{status} }
 sub weight { return $_[0]{weight} }
@@ -83,7 +84,8 @@ sub percent_full {
 sub fields {
     my $self = shift;
     my @tofetch = @_ ? @_ : @fields;
-    my $ret = { map { $_ => $self->{$_} } @tofetch };
+    my $ret = { (map { $_ => $self->{$_} } @tofetch),
+        'mb_free' => $self->mb_free };
     return $ret;
 }
 
@@ -155,7 +157,8 @@ sub should_get_new_files {
 
 sub mb_free {
     my $self = shift;
-    return $self->{mb_total} - $self->{mb_used};
+    return $self->{mb_total} - $self->{mb_used}
+        if $self->{mb_total} && $self->{mb_used};
 }
 
 sub mb_used {
@@ -169,8 +172,8 @@ sub should_get_replicated_files {
 
 sub not_on_hosts {
     my ($self, @hosts) = @_;
-    my @hostids   = map { ref($_) ? $_->hostid : $_ } @hosts;
-    my $my_hostid = $self->hostid;
+    my @hostids   = map { ref($_) ? $_->id : $_ } @hosts;
+    my $my_hostid = $self->id;
     return (grep { $my_hostid == $_ } @hostids) ? 0 : 1;
 }
 
@@ -297,6 +300,11 @@ sub vivify_directories {
     $self->create_directory("/dev$devid/$p1");
     $self->create_directory("/dev$devid/$p1/$p2");
     $self->create_directory("/dev$devid/$p1/$p2/$p3");
+}
+
+# FIXME: Remove this once vestigial code is removed.
+sub set_observed_utilization {
+    return 1;
 }
 
 1;

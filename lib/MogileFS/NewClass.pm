@@ -52,4 +52,8 @@ sub has_files {
     return Mgd::get_store()->class_has_files($self->{dmid}, $self->id);
 }
 
+sub observed_fields {
+    return {};
+}
+
 1;
