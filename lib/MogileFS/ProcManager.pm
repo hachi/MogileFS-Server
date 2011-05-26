@@ -627,10 +627,6 @@ sub HandleChildRequest {
         # pass it on to our error handler, prefaced with the child's job
         Mgd::debug("[" . $child->job . "(" . $child->pid . ")] $1");
 
-    } elsif ($cmd =~ /^:state_change (\w+) (\d+) (\w+)/) {
-        my ($what, $whatid, $state) = ($1, $2, $3);
-        state_change($what, $whatid, $state, $child);
-
     } elsif ($cmd =~ /^queue_depth (\w+)/) {
         my $job   = $1;
         if ($job eq 'all') {
@@ -707,14 +703,6 @@ sub HandleChildRequest {
         # and this will rebroadcast it to all other children
         # (including the one that just set it to us, but eh)
         MogileFS::Config->set_config($1, $2);
-    } elsif (my ($devid, $util) = $cmd =~ /^:set_dev_utilization (\d+) (.+)/) {
-        $dev_util{$devid} = $util;
-
-        # time to rebroadcast dev utilization messages to all children?
-        if ($nowish > $last_util_spray + 3) {
-            $last_util_spray = $nowish;
-            MogileFS::ProcManager->send_to_all_children(":set_dev_utilization " . join(" ", %dev_util));
-        }
     } else {
         # unknown command
         my $show = $cmd;
@@ -797,21 +785,6 @@ sub job_needs_reduction {
 
 sub is_child {
     return $IsChild;
-}
-
-sub state_change {
-    my ($what, $whatid, $state, $exclude) = @_;
-    my $key = "$what-$whatid";
-    my $now = time();
-    foreach my $child (values %child) {
-        my $old = $child->{known_state}{$key} || "";
-        if (!$old || $old->[1] ne $state || $old->[0] < $now - 300) {
-            $child->{known_state}{$key} = [$now, $state];
-
-            $child->write(":state_change $what $whatid $state\r\n")
-                unless $exclude && $child == $exclude;
-        }
-    }
 }
 
 sub wake_a {

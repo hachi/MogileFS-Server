@@ -188,39 +188,6 @@ sub parent_ping {
     }
 }
 
-sub broadcast_device_writeable {
-    $_[0]->_broadcast_state("device", $_[1], "writeable");
-}
-sub broadcast_device_readable {
-    $_[0]->_broadcast_state("device", $_[1], "readable");
-}
-sub broadcast_device_unreachable {
-    $_[0]->_broadcast_state("device", $_[1], "unreachable");
-}
-sub broadcast_host_reachable {
-    $_[0]->_broadcast_state("host", $_[1], "reachable");
-}
-sub broadcast_host_unreachable {
-    $_[0]->_broadcast_state("host", $_[1], "unreachable");
-}
-
-sub _broadcast_state {
-    my ($self, $what, $whatid, $state) = @_;
-    if ($what eq "host") {
-        MogileFS::Host->of_hostid($whatid)->set_observed_state($state);
-    } elsif ($what eq "device") {
-        MogileFS::Device->of_devid($whatid)->set_observed_state($state);
-    }
-    my $key = "$what-$whatid";
-    my $laststate = $self->{last_bcast_state}{$key};
-    my $now = time();
-    # broadcast on initial discovery, state change, and every 10 seconds
-    if (!$laststate || $laststate->[1] ne $state || $laststate->[0] < $now - 10) {
-        $self->send_to_parent(":state_change $what $whatid $state");
-        $self->{last_bcast_state}{$key} = [$now, $state];
-    }
-}
-
 sub invalidate_meta {
     my ($self, $what) = @_;
     return if $Mgd::INVALIDATE_NO_PROPOGATE;  # anti recursion
@@ -235,16 +202,6 @@ sub process_generic_command {
     my ($self, $lineref) = @_;
     return 0 unless $$lineref =~ /^:/;  # all generic commands start with colon
 
-    if ($$lineref =~ /^:state_change (\w+) (\d+) (\w+)/) {
-        my ($what, $whatid, $state) = ($1, $2, $3);
-        if ($what eq "host") {
-            MogileFS::Host->of_hostid($whatid)->set_observed_state($state);
-        } elsif ($what eq "device") {
-            MogileFS::Device->of_devid($whatid)->set_observed_state($state);
-        }
-        return 1;
-    }
-
     if ($$lineref =~ /^:shutdown/) {
         $$got_live_vs_die = 1 if $got_live_vs_die;
         exit 0;
@@ -252,14 +209,6 @@ sub process_generic_command {
 
     if ($$lineref =~ /^:stay_alive/) {
         $$got_live_vs_die = 1 if $got_live_vs_die;
-        return 1;
-    }
-
-    if ($$lineref =~ /^:invalidate_meta_once (\w+)/) {
-        local $Mgd::INVALIDATE_NO_PROPOGATE = 1;
-        # where $1 is one of {"domain", "device", "host", "class"}
-        my $class = "MogileFS::" . ucfirst(lc($1));
-        $class->invalidate_cache;
         return 1;
     }
 
@@ -281,18 +230,6 @@ sub process_generic_command {
     if ($$lineref =~ /^:set_config_from_parent (\S+) (.+)/) {
         # the 'no_broadcast' API keeps us from looping forever.
         MogileFS::Config->set_config_no_broadcast($1, $2);
-        return 1;
-    }
-
-    # :set_dev_utilization dev# 45.2 dev# 45.2 dev# 45.2 dev# 45.2 dev 45.2\n
-    # (dev#, utilz%)+
-    if (my ($devid, $util) = $$lineref =~ /^:set_dev_utilization (.+)/) {
-        my %pairs = split(/\s+/, $1);
-        local $MogileFS::Device::util_no_broadcast = 1;
-        while (my ($devid, $util) = each %pairs) {
-            my $dev = eval { MogileFS::Device->of_devid($devid) } or next;
-            $dev->set_observed_utilization($util);
-        }
         return 1;
     }
 

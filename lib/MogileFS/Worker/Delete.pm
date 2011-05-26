@@ -352,7 +352,6 @@ sub process_deletes {
                                          Timeout => 2);
         unless ($sock) {
             # timeout or something, mark this device as down for now and move on
-            $self->broadcast_host_unreachable($dev->hostid);
             $reschedule_fid->(60 * 60 * 2, "no_sock_to_hostid");
             next;
         }

@@ -239,17 +239,11 @@ sub size {
 
     # did we timeout?
     unless (wait_for_writeability(fileno($httpsock), $time_remain)) {
-        if (my $worker = MogileFS::ProcManager->is_child) {
-            $worker->broadcast_host_unreachable($self->host_id);
-        }
         return undeferr("get_file_size() connect timeout for HTTP HEAD for size of $path");
     }
 
     # did we fail to connect?  (got a RST, etc)
     unless (getpeername($httpsock)) {
-        if (my $worker = MogileFS::ProcManager->is_child) {
-            $worker->broadcast_device_unreachable($self->device_id);
-        }
         return undeferr("get_file_size() connect failure for HTTP HEAD for size of $path");
     }
 
