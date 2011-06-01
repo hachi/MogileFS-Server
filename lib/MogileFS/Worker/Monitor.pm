@@ -318,8 +318,7 @@ sub check_device {
     }
 
     # next if we're not going to try this now
-    # FIXME: Uncomment this to throttle test writes again.
-    #return if ($self->{last_test_write}{$devid} || 0) + UPDATE_DB_EVERY > $now;
+    return if ($self->{last_test_write}{$devid} || 0) + UPDATE_DB_EVERY > $now;
     $self->{last_test_write}{$devid} = $now;
 
     # now we want to check if this device is writeable
