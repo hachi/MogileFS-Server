@@ -78,6 +78,11 @@ lib/MogileFS/Store/SQLite.pm
 lib/MogileFS/Sys.pm
 lib/MogileFS/Test.pm
 lib/MogileFS/Util.pm
+lib/MogileFS/Factory.pm
+lib/MogileFS/Factory/Domain.pm
+lib/MogileFS/Factory/Class.pm
+lib/MogileFS/Factory/Host.pm
+lib/MogileFS/Factory/Device.pm
 lib/MogileFS/Worker.pm
 lib/MogileFS/Worker/Delete.pm
 lib/MogileFS/Worker/Fsck.pm
@@ -104,12 +109,12 @@ mogdbsetup
 mogilefsd
 mogstored
 t/00-startup.t
+t/01-domain-class.t
+t/02-host-device.t
 t/10-weighting.t
 t/20-filepaths.t
 t/30-rebalance.t
-t/domains-classes.t
 t/fid-stat.t
-t/hosts-devices.t
 t/mogstored-shutdown.t
 t/multiple-hosts-replpol.t
 t/replpolicy-parsing.t
