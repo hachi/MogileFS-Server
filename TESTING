@@ -34,3 +34,13 @@ MOGTEST_DBUSER
 MOGTEST_DBPASS
 MOGTEST_DBROOTUSER
 MOGTEST_DBROOTPASS
+
+Other use test notes:
+---------------------
+- Running the tests should be done with equally new versions of MogileFS-Utils
+  and perl-MogileFS-Client. If you have all 3 git repos checked out in
+  parallel, set:
+  "PATH=../MogileFS-Utils/:$PATH PERL5LIB=../perl-MogileFS-Client/lib" 
+- You can control the disk space used for the test mogstored's by setting
+  TMPDIR.
+
