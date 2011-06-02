@@ -1,3 +1,9 @@
+   * New test env variables: MOGTEST_DBROOT{USER,PASS} for easier test usage. (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Document test variables. (Robin H. Johnson <robbat2@gentoo.org>)
+   
+   * Support inclusion of custom lighttpd config. (Jason Mills <jmmills@cpan.org>)
+
 2011-01-13: Release version 2.46
 
    * Fix job_master crash under postgres (Robin H. Johnson <robbat2@gentoo.org>)
