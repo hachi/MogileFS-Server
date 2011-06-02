@@ -203,10 +203,15 @@ sub new_temp {
     # allow MyISAM in the test suite.
     $ENV{USE_UNSAFE_MYSQL} = 1 unless defined $ENV{USE_UNSAFE_MYSQL};
 
-    system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname",
-        "--dbhost=$host", "--dbport=$port", "--dbrootuser=$rootuser",
-        "--dbrootpass=$rootpass", "--dbuser=$user", "--dbpass=$pass")
-        and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
+    my @args = ("$FindBin::Bin/../mogdbsetup", "--yes", 
+        "--dbname=$dbname", "--type=MySQL",
+        "--dbhost=$host", "--dbport=$port", 
+        "--dbrootuser=$rootuser", 
+        "--dbuser=$user", );
+    push @args, "--dbpass=$pass" unless $pass eq ''; 
+    push @args, "--dbrootpass=$rootpass" unless $rootpass eq '';
+    system(@args) 
+        and die "Failed to run mogdbsetup (".join(' ',map { "'".$_."'" } @args).").";
 
     if($user ne $rootuser) {
         $sto = MogileFS::Store->new_from_dsn_user_pass(
