@@ -191,9 +191,11 @@ sub new_temp {
     my $port = $args{dbport} || 3306;
     my $user = $args{dbuser} || 'root';
     my $pass = $args{dbpass} || '';
+    my $rootuser = $args{dbrootuser} || $args{dbuser} || 'root';
+    my $rootpass = $args{dbrootpass} || $args{dbpass} || '';
     my $sto =
     MogileFS::Store->new_from_dsn_user_pass("DBI:mysql:database=$dbname;host=$host;port=$port",
-        $user, $pass);
+        $rootuser, $rootpass);
 
     my $dbh = $sto->dbh;
     _create_mysql_db($dbh, $dbname);
@@ -202,9 +204,16 @@ sub new_temp {
     $ENV{USE_UNSAFE_MYSQL} = 1 unless defined $ENV{USE_UNSAFE_MYSQL};
 
     system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname",
-        "--dbhost=$host", "--dbport=$port", "--dbrootuser=$user",
-        "--dbrootpass=$pass", "--dbuser=$user", "--dbpass=$pass")
+        "--dbhost=$host", "--dbport=$port", "--dbrootuser=$rootuser",
+        "--dbrootpass=$rootpass", "--dbuser=$user", "--dbpass=$pass")
         and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
+
+    if($user ne $rootuser) {
+        $sto = MogileFS::Store->new_from_dsn_user_pass(
+                "DBI:mysql:database=$dbname;host=$host;port=$port",
+                $user, $pass);
+        $dbh = $sto->dbh;
+    }
 
     $dbh->do("use $dbname");
     return $sto;
