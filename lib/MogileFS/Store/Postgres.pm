@@ -34,7 +34,7 @@ sub want_raise_errors { 1 }
 # if it it's made, or already exists.  die otherwise.
 sub create_db_if_not_exists {
     my ($pkg, $rdbh, $dbname) = @_;
-    if(not $rdbh->do("CREATE DATABASE $dbname")) {
+    if(not $rdbh->do("CREATE DATABASE $dbname TEMPLATE template0 ENCODING 'UTF-8'" )) {
         die "Failed to create database '$dbname': " . $rdbh->errstr . "\n" if ($rdbh->errstr !~ /already exists/);
     }
 }
