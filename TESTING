@@ -10,12 +10,13 @@ Testing under Postgresql:
 -------------------------
 Database setup:
 # createuser -SRlD mogile
-# createdb -E UTF8 -O mogile tmp_mogiletest
+# createdb --template template0 -E UTF8 -O mogile tmp_mogiletest
 
 To run the tests:
 # make test \
 	MOGTEST_DBUSER=mogile \
 	MOGTEST_DBNAME=tmp_mogiletest \
+	MOGTEST_DBROOTUSER=postgres \
 	MOGTEST_DBTYPE=Postgres
 
 Testing under SQLite:
@@ -24,3 +25,12 @@ Testing under SQLite:
 	MOGTEST_DBUSER=mogile \
 	MOGTEST_DBNAME=tmp_mogiletest \
 	MOGTEST_DBTYPE=SQLite
+
+Available test variables:
+-------------------------
+MOGTEST_DBNAME
+MOGTEST_DBTYPE
+MOGTEST_DBUSER
+MOGTEST_DBPASS
+MOGTEST_DBROOTUSER
+MOGTEST_DBROOTPASS

@@ -470,26 +470,42 @@ sub fid_type {
 # --------------------------------------------------------------------------
 
 sub new_temp {
-    my $dbname = "tmp_mogiletest";
-    _drop_db($dbname);
-
-    system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname", "--type=Postgres", "--dbrootuser=postgres")
-        and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
+    my $self = shift;
+    my %args = @_;
+    my $dbname = $args{dbname} || "tmp_mogiletest";
+    my $user = $args{dbuser} || 'mogile';
+    my $pass = $args{dbpass} || '';
+    my $rootuser = $args{dbrootuser} || $args{dbuser} || 'postgres';
+    my $rootpass = $args{dbrootpass} || $args{dbpass} || '';
+    _drop_db($dbname,$rootuser,$rootpass);
+   
+    my @args = ( "$FindBin::Bin/../mogdbsetup", "--yes", 
+            "--dbname=$dbname", "--type=Postgres", 
+            "--dbuser=$user", 
+            "--dbrootuser=$rootuser", );
+    push @args, "--dbpass=$pass" unless $pass eq ''; 
+    push @args, "--dbrootpass=$rootpass" unless $rootpass eq '';
+    system(@args) 
+        and die "Failed to run mogdbsetup (".join(' ',map { "'".$_."'" } @args).").";
 
     return MogileFS::Store->new_from_dsn_user_pass("dbi:Pg:dbname=$dbname",
-                                                   "mogile",
-                                                   "");
+                                                   $user,
+                                                   $pass);
 }
 
 my $rootdbh;
 sub _root_dbh {
-    return $rootdbh ||= DBI->connect("DBI:Pg:dbname=postgres", "postgres", "", { RaiseError => 1 })
-        or die "Couldn't connect to local PostgreSQL database as postgres";
+    my $rootuser = shift;
+    my $rootpass = shift;
+    return $rootdbh ||= DBI->connect("DBI:Pg:dbname=postgres", $rootuser, $rootpass, { RaiseError => 1 })
+        or die "Couldn't connect to local PostgreSQL database as $rootuser";
 }
 
 sub _drop_db {
     my $dbname = shift;
-    my $root_dbh = _root_dbh();
+    my $rootuser = shift;
+    my $rootpass = shift;
+    my $root_dbh = _root_dbh($rootuser, $rootpass);
     eval {
         $root_dbh->do("DROP DATABASE $dbname");
     };
