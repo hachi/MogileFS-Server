@@ -103,17 +103,22 @@ for my $n (1..$n_files) {
 pass("Created a ton of files");
 
 # wait for replication to go down
+# We need to wait for BOTH queues to be empty before we continue to rebalance.
+# If there is anything left w/ a devid that we rebalance away from, there would
+# be a failure when the HTTP delete happens simultaenously to the replication.
+# This will manifest as subtest 48 failing often...
 {
     my $iters = 30;
-    my $to_repl_rows;
+    my ($to_repl_rows, $to_queue_rows);
     while ($iters) {
         $iters--;
         $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_replicate");
-        last if ! $to_repl_rows;
-        diag("Files to replicate: $to_repl_rows");
+        $to_queue_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue");
+        last if $to_repl_rows eq 0 && $to_queue_rows eq 0;
+        diag("Files to replicate: file_to_replicate=$to_repl_rows file_to_queue=$to_queue_rows");
         sleep 1;
     }
-    die "Failed to replicate all $n_files files" if $to_repl_rows;
+    die "Failed to replicate all $n_files files" if $to_repl_rows || $to_queue_rows;
     pass("Replicated all $n_files files");
 }
 
@@ -233,19 +238,21 @@ if ($res) {
 #    print "Start results: ", Dumper($res), "\n\n";
 }
 
-sleep 5;
+# This sleep is not needed anymore, the rebalance is pretty damn fast.
+#sleep 5;
 
 {
     my $iters = 30;
-    my $to_repl_rows;
+    my ($to_repl_rows, $to_queue_rows);
     while ($iters) {
         $iters--;
-        $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue");
-        last if ! $to_repl_rows;
-        diag("Files to rebalance: $to_repl_rows");
+        $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_replicate");
+        $to_queue_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue");
+        last if $to_repl_rows eq 0 && $to_queue_rows eq 0;
+        diag("Files to rebalance: file_to_replicate=$to_repl_rows file_to_queue=$to_queue_rows");
         sleep 1;
     }
-    die "Failed to rebalance all files" if $to_repl_rows;
+    die "Failed to rebalance all files" if $to_repl_rows || $to_queue_rows;
     pass("Replicated all files");
 }
 
