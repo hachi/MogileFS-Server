@@ -238,8 +238,10 @@ if ($res) {
 #    print "Start results: ", Dumper($res), "\n\n";
 }
 
-# This sleep is not needed anymore, the rebalance is pretty damn fast.
-#sleep 5;
+# This sleep should be replaced with a "rebalance status" check to confirm
+# it's been started. Otherwise there's up to two seconds where JobMaster might
+# not have seen the start request yet. Lowered the sleep from 5 to 3.
+sleep 3;
 
 {
     my $iters = 30;
