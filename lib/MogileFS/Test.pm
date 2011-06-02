@@ -47,6 +47,8 @@ sub temp_store {
     my $user = $ENV{MOGTEST_DBUSER} || '';
     my $pass = $ENV{MOGTEST_DBPASS} || '';
     my $name = $ENV{MOGTEST_DBNAME} || '';
+    my $rootuser = $ENV{MOGTEST_DBROOTUSER} || '';
+    my $rootpass = $ENV{MOGTEST_DBROOTPASS} || '';
 
     # default to mysql, but make sure DBD::MySQL is installed
     unless ($type) {
@@ -61,8 +63,12 @@ sub temp_store {
     if ($@) {
         die "Failed to load $store: $@\n";
     }
-    my $sto = $store->new_temp(dbhost => $host, dbport => $port,
-        dbuser => $user, dbpass => $pass, dbname => $name);
+    my %opts = ( dbhost => $host, dbport => $port, 
+                 dbuser => $user, dbpass => $pass, 
+                 dbname => $name);
+    $opts{dbrootuser} = $rootuser unless $rootuser eq '';
+    $opts{dbrootpass} = $rootpass unless $rootpass eq '';
+    my $sto = $store->new_temp(%opts);
     Mgd::set_store($sto);
     return $sto;
 }
