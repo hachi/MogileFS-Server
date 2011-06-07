@@ -271,7 +271,7 @@ sub create_table {
     # don't alter an existing table up to InnoDB from MyISAM...
     # could be costly.  but on new tables, no problem...
     unless ($existed) {
-        $dbh->do("ALTER TABLE $table TYPE=InnoDB");
+        $dbh->do("ALTER TABLE $table ENGINE=InnoDB");
         warn "DBI reported an error of: '" . $dbh->errstr . "' when trying to " .
             "alter table type of $table to InnoDB\n" if $dbh->err;
     }
