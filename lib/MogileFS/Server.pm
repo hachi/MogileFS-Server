@@ -78,7 +78,6 @@ use MogileFS::FID;
 use MogileFS::DevFID;
 
 use MogileFS::Store;
-use MogileFS::Store::MySQL;  # FIXME: don't load this until after reading their config, but before fork.
 
 use MogileFS::ReplicationPolicy::MultipleHosts;
 
