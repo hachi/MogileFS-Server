@@ -31,9 +31,6 @@ sub work {
     my $old_queue_check   = 0; # next time to check the old queue.
     my $old_queue_backoff = 0; # backoff index
 
-    # wait for one pass of the monitor
-    $self->wait_for_monitor;
-
     while (1) {
         $self->send_to_parent("worker_bored 50 delete");
         $self->read_from_parent(1);

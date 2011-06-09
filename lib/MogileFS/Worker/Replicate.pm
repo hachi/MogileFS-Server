@@ -32,18 +32,7 @@ sub watchdog_timeout { 90; }
 sub work {
     my $self = shift;
 
-    # give the monitor job 15 seconds to give us an update
-    my $warn_after = time() + 15;
-
     every(1.0, sub {
-        # replication doesn't go well if the monitor job hasn't actively started
-        # marking things as being available
-        unless ($self->monitor_has_run) {
-            error("waiting for monitor job to complete a cycle before beginning replication")
-                if time() > $warn_after;
-            return;
-        }
-
         $self->send_to_parent("worker_bored 100 replicate rebalance");
 
         my $queue_todo  = $self->queue_todo('replicate');

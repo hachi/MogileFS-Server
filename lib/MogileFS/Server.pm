@@ -104,13 +104,7 @@ sub run {
     MogileFS::Config->check_database;
     daemonize() if MogileFS->config("daemonize");
 
-    MogileFS::ProcManager->set_min_workers('queryworker' => MogileFS->config('query_jobs'));
-    MogileFS::ProcManager->set_min_workers('delete'      => MogileFS->config('delete_jobs'));
-    MogileFS::ProcManager->set_min_workers('replicate'   => MogileFS->config('replicate_jobs'));
-    MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
-    MogileFS::ProcManager->set_min_workers('monitor'     => MogileFS->config('monitor_jobs'));
-    MogileFS::ProcManager->set_min_workers('fsck'        => MogileFS->config('fsck_jobs'));
-    MogileFS::ProcManager->set_min_workers('job_master'  => 1);
+    MogileFS::ProcManager->set_min_workers('monitor'     => 1);
 
     # open up our log
     Sys::Syslog::openlog('mogilefsd', 'pid', 'daemon');

@@ -44,8 +44,7 @@ my @prefork_cleanup;  # subrefs to run to clean stuff up before we make a new ch
 
 *error = \&Mgd::error;
 
-my %dev_util;         # devid -> utilization
-my $last_util_spray = 0;  # time we lost spread %dev_util to children
+my $monitor_good = 0; # ticked after monitor executes once after startup
 
 my $nowish;  # updated approximately once per second
 
@@ -299,6 +298,10 @@ sub foreach_pending_query {
     }
 }
 
+sub is_monitor_good {
+    return $monitor_good;
+}
+
 sub is_valid_job {
     my ($class, $job) = @_;
     return defined $jobs{$job};
@@ -311,7 +314,7 @@ sub valid_jobs {
 sub request_job_process {
     my ($class, $job, $n) = @_;
     return 0 unless $class->is_valid_job($job);
-    return 0 if $job eq 'job_master' && $n > 1; # ghetto special case
+    return 0 if ($job =~ /^(?:job_master|monitor)$/i && $n > 1); # ghetto special case
 
     $jobs{$job}->[0] = $n;
     $allkidsup = 0;
@@ -807,7 +810,18 @@ sub send_to_all_children {
 
 sub send_monitor_has_run {
     my $child = shift;
-    for my $type (qw(replicate fsck queryworker delete)) {
+    # Gas up other workers if monitor's completed for the first time.
+    if (! $monitor_good) {
+        MogileFS::ProcManager->set_min_workers('queryworker' => MogileFS->config('query_jobs'));
+        MogileFS::ProcManager->set_min_workers('delete'      => MogileFS->config('delete_jobs'));
+        MogileFS::ProcManager->set_min_workers('replicate'   => MogileFS->config('replicate_jobs'));
+        MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
+        MogileFS::ProcManager->set_min_workers('fsck'        => MogileFS->config('fsck_jobs'));
+        MogileFS::ProcManager->set_min_workers('job_master'  => 1);
+        $monitor_good = 1;
+        $allkidsup    = 0;
+    }
+    for my $type (qw(queryworker)) {
         MogileFS::ProcManager->ImmediateSendToChildrenByJob($type, ":monitor_has_run", $child);
     }
 }

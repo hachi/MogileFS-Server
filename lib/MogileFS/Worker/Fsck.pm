@@ -37,8 +37,6 @@ sub watchdog_timeout { 120 }
 sub work {
     my $self = shift;
 
-    my $run_count = 0;
-
     # this can be CPU-intensive.  let's nice ourselves down.
     POSIX::nice(10);
 
@@ -75,16 +73,6 @@ sub work {
         my $sleep_set = shift;
         $nowish = time();
         local $Mgd::nowish = $nowish;
-
-        # checking doesn't go well if the monitor job hasn't actively started
-        # marking things as being available
-        unless ($self->monitor_has_run) {
-            # only warn on runs after the first.  gives the monitor job some time to work
-            # before we throw a message.
-            debug("waiting for monitor job to complete a cycle before beginning")
-                if $run_count++ > 0;
-            return;
-        }
 
         my $queue_todo = $self->queue_todo('fsck');
         # This counts the same as a $self->still_alive;

@@ -63,6 +63,10 @@ sub work {
         }
     });
 
+    # We announce "monitor_just_ran" every time the device checks are run, but
+    # only if the DB has been checked inbetween.
+    my $db_monitor_ran = 0;
+
     my $db_monitor;
     $db_monitor = sub {
         $self->parent_ping;
@@ -75,7 +79,7 @@ sub work {
         $self->diff_data($db_data);
 
         $self->send_events_to_parent;
-        $self->send_to_parent(":monitor_just_ran");
+        $db_monitor_ran++;
         Danga::Socket->AddTimer(4, $db_monitor);
     };
 
@@ -110,6 +114,10 @@ sub work {
         $self->send_events_to_parent;
 
         $iow->set_hosts(keys %{$self->{seen_hosts}});
+        if ($db_monitor_ran) {
+            $self->send_to_parent(":monitor_just_ran");
+            $db_monitor_ran = 0;
+        }
         Danga::Socket->AddTimer(2.5, $main_monitor);
     };
 

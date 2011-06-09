@@ -88,12 +88,16 @@ sub handle_admin_command {
             $count = 500 if $count > 500;
 
             # now make sure it's a real job
-            if (MogileFS::ProcManager->is_valid_job($job)) {
-                MogileFS::ProcManager->request_job_process($job, $count);
-                push @out, "Now desiring $count children doing '$job'.";
+            if (MogileFS::ProcManager->is_monitor_good) {
+                if (MogileFS::ProcManager->is_valid_job($job)) {
+                    MogileFS::ProcManager->request_job_process($job, $count);
+                    push @out, "Now desiring $count children doing '$job'.";
+                } else {
+                    my $classes = join(", ", MogileFS::ProcManager->valid_jobs);
+                    push @out, "ERROR: Invalid class '$job'.  Valid classes: $classes";
+                }
             } else {
-                my $classes = join(", ", MogileFS::ProcManager->valid_jobs);
-                push @out, "ERROR: Invalid class '$job'.  Valid classes: $classes";
+                push @out, "ERROR: Monitor has not completed initial run yet\n";
             }
         } else {
             push @out, "ERROR: usage: !want <count> <jobclass>";
