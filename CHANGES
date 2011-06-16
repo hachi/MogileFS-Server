@@ -1,3 +1,5 @@
+2011-01-13: Release version 2.50
+
    * Completely rewire meta object caches. Device/Host/Class/Domain caches are
      now asynchronously loaded via the Monitor worker. This should drastically
      reduce the number of small queries issued against the master database.
