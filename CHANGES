@@ -1,3 +1,20 @@
+   * Completely rewire meta object caches. Device/Host/Class/Domain caches are
+     now asynchronously loaded via the Monitor worker. This should drastically
+     reduce the number of small queries issued against the master database.
+     (dormando <dormando@rydia.net>)
+
+   * Don't run workers until Monitor runs once (dormando <dormando@rydia.net>)
+
+   * s/TYPE/ENGINE/ for innodb initialization (dormando <dormando@rydia.net>)
+
+   * Create mogile database explicitly with UTF-8 encoding. (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Actually use the MOGTEST_* variables for Postgres testing... (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Add support for config file includes for Mogstored under lighttpd (Jason Mills <jmmills@cpan.org>)
+
+   * Make postgres use new delete worker code (Robin H. Johnson <robbat2@gentoo.org>)
+
    * New test env variables: MOGTEST_DBROOT{USER,PASS} for easier test usage. (Robin H. Johnson <robbat2@gentoo.org>)
 
    * Document test variables. (Robin H. Johnson <robbat2@gentoo.org>)
