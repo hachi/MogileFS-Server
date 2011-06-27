@@ -1,4 +1,10 @@
-2011-01-13: Release version 2.50
+2011-06-27: Release version 2.51
+
+   * Add minor backcompat for ZoneLocal and friends (dormando <dormando@rydia.net>)
+
+   * Only monitor a device if we should monitor it. (dormando <dormando@rydia.net>)
+
+2011-06-15: Release version 2.50
 
    * Completely rewire meta object caches. Device/Host/Class/Domain caches are
      now asynchronously loaded via the Monitor worker. This should drastically
