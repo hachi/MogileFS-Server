@@ -105,7 +105,7 @@ sub work {
             }
             $cur_iow->{$dev->id} = $self->{devutil}->{cur}->{$dev->id};
             next if $self->{skip_host}{$dev->hostid};
-            $self->check_device($dev);
+            $self->check_device($dev) if $dev->dstate->should_monitor;
         }
 
         $self->{devutil}->{prev} = $cur_iow;
