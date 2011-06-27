@@ -291,4 +291,13 @@ sub set_observed_utilization {
     return 1;
 }
 
+# Compatibility interface since this old routine is unfortunately called
+# internally within plugins. This data should be passed into any hooks which
+# may need it?
+# Currently an issue with MogileFS::Network + ZoneLocal
+# Remove this in 2012.
+sub devices {
+    return Mgd::device_factory()->get_all;
+}
+
 1;
