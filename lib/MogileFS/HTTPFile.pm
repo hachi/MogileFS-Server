@@ -6,11 +6,10 @@ use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
 use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability);
 
 # (caching the connection used for HEAD requests)
-my %http_socket;                # host:port => [$pid, $time, $socket]
+my $user_agent;
 
-# get size of file, return 0 on error.
-# tries to finish in 2.5 seconds, under the client's default 3 second timeout.  (configurable)
-my %last_stream_connect_error;  # host => $hirestime.
+my %size_check_retry_after; # host => $hirestime.
+my %size_check_failcount;   # host => $count.
 
 # create a new MogileFS::HTTPFile instance from a URL.  not called
 # "new" because I don't want to imply that it's creating anything.
@@ -79,7 +78,6 @@ sub delete {
                 next;
             }
             unless ($rescode == 204) {
-                delete $http_socket{"$host:$port"};
                 die "Bad response from $host:$port: [$line]";
             }
             $did_del = 1;
@@ -92,199 +90,43 @@ sub delete {
     return 1;
 }
 
-# returns size of file, (doing a HEAD request and looking at content-length, or side-channel to mogstored)
-# returns -1 on file missing (404 or -1 from sidechannel),
+# returns size of file, (doing a HEAD request and looking at content-length)
+# returns -1 on file missing (404),
 # returns undef on connectivity error
 use constant FILE_MISSING => -1;
 sub size {
     my $self = shift;
     my ($host, $port, $uri, $path) = map { $self->{$_} } qw(host port uri url);
 
+    return undef if (exists $size_check_retry_after{$host}
+        && $size_check_retry_after{$host} > Time::HiRes::time());
+
     # don't SIGPIPE us
     my $flag_nosignal = MogileFS::Sys->flag_nosignal;
     local $SIG{'PIPE'} = "IGNORE" unless $flag_nosignal;
 
-    # setup for sending size request to cached host
-    my $req = "size $uri\r\n";
-    my $reqlen = length $req;
-    my $rv = 0;
-
-    my $mogconn = $self->host->mogstored_conn;
-    my $sock    = $mogconn->sock_if_connected;
-
-    my $start_time = Time::HiRes::time();
-
-    my $httpsock;
-    my $start_connecting_to_http = sub {
-        return if $httpsock;  # don't allow starting connecting twice
-
-        # try to reuse cached socket
-        if (my $cached = $http_socket{"$host:$port"}) {
-            my ($pid, $conntime, $cachesock) = @{ $cached };
-            # see if it's still connected
-            if ($pid == $$ && getpeername($cachesock) &&
-                $conntime > $start_time - 15 &&
-                # readability would indicated conn closed, or garbage:
-                ! wait_for_readability(fileno($cachesock), 0.00))
-            {
-                $httpsock = $cachesock;
-                return;
-            }
-        }
-
-        socket $httpsock, PF_INET, SOCK_STREAM, IPPROTO_TCP;
-        IO::Handle::blocking($httpsock, 0);
-        connect $httpsock, Socket::sockaddr_in($port, Socket::inet_aton($host));
-    };
-
-    # sub to parse the response from $sock.  returns undef on error,
-    # or otherwise the size of the $path in bytes.
     my $node_timeout = MogileFS->config("node_timeout");
-    my $stream_response_timeout = 1.0;
-    my $read_timed_out = 0;
-
-    # returns defined on a real answer (-1 = file missing, >=0 = file length),
-    # returns undef on connectivity problems.
-    my $parse_response = sub {
-        # give the socket 1 second to become readable until we get
-        # scared of no reply and start connecting to HTTP to do a HEAD
-        # request.  if both timeout, we know the machine is gone, but
-        # we don't want to wait 2 seconds + 2 seconds... prefer to do
-        # connects in parallel to reduce overall latency.
-        unless (wait_for_readability(fileno($sock), $stream_response_timeout)) {
-            $start_connecting_to_http->();
-            # give the socket its final time to get to 2 seconds
-            # before we really give up on it
-            unless (wait_for_readability(fileno($sock), $node_timeout - $stream_response_timeout)) {
-                $read_timed_out = 1;
-                close($sock);
-                return undef;
-            }
+    # Hardcoded connection cache size of 20 :(
+    $user_agent ||= LWP::UserAgent->new(timeout => $node_timeout, keep_alive => 20);
+    my $res = $user_agent->head($path);
+    if ($res->is_success) {
+        delete $size_check_failcount{$host} if exists $size_check_failcount{$host};
+        return $res->header('content-length');
+    } else {
+        if ($res->code == 404) {
+            delete $size_check_failcount{$host} if exists $size_check_failcount{$host};
+            return FILE_MISSING;
         }
-
-        # now we know there's readable data (pseudo-gross: we assume
-        # if we were readable, the whole line is ready.  this is a
-        # poor mix of low-level IO and buffered, blocking stdio but in
-        # practice it works...)
-        my $line = <$sock>;
-        return undef unless defined $line;
-        return undef unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
-        return undeferr("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
-            if $1 ne $uri;
-        # backchannel sends back -1 on non-existent file, which we map to the defined value '-1'
-        return FILE_MISSING if $2 < 0;
-        # otherwise, return byte size of file
-        return $2+0;
-    };
-
-    my $conn_timeout = MogileFS->config("conn_timeout") || 2;
-
-    # try using the cached socket
-    if ($sock) {
-        $rv = send($sock, $req, $flag_nosignal);
-        if ($!) {
-            $mogconn->mark_dead;
-        } elsif ($rv != $reqlen) {
-            # FIXME: perhaps we shouldn't error here, but instead
-            # treat the cached socket as bogus and reconnect?  never
-            # seen that happen, though.
-            return undeferr("send() didn't return expected length ($rv, not $reqlen) for $path");
-        } else {
-            # success
-            my $size = $parse_response->();
-            return $size if defined $size;
-            $mogconn->mark_dead;
+        if ($res->message =~ m/connect:/) {
+            my $count = $size_check_failcount{$host};
+            $count ||= 1;
+            $count *= 2 unless $count > 360;
+            $size_check_retry_after{$host} = Time::HiRes::time() + $count;
+            $size_check_failcount{$host}   = $count;
         }
+        return undeferr("Failed HEAD check for $path (" . $res->code . "): "
+            . $res->message); 
     }
-    # try creating a connection to the stream
-    elsif (($last_stream_connect_error{$host} ||= 0) < $start_time - 15.0)
-    {
-        $sock = $mogconn->sock($conn_timeout);
-
-        if ($sock) {
-            $rv = send($sock, $req, $flag_nosignal);
-            if ($!) {
-                return undeferr("error talking to mogstored stream ($path): $!");
-            } elsif ($rv != $reqlen) {
-                return undeferr("send() didn't return expected length ($rv, not $reqlen) for $path");
-            } else {
-                # success
-                my $size = $parse_response->();
-                return $size if defined $size;
-                $mogconn->mark_dead;
-            }
-        } else {
-            # see if we timed out connecting.
-            my $elapsed = Time::HiRes::time() - $start_time;
-            if ($elapsed > $conn_timeout - 0.2) {
-                return undeferr("node $host seems to be down in get_file_size");
-            } else {
-                # cache that we can't connect to the mogstored stream
-                # port for people using only apache/lighttpd (dav) on
-                # the storage nodes
-                $last_stream_connect_error{$host} = Time::HiRes::time();
-            }
-
-        }
-    }
-
-    # failure case: use a HEAD request to get the size of the file:
-    # give them 2 seconds to connect to server, unless we'd already timed out earlier
-    my $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
-    return undeferr("timed out on stream size check of $path, not doing HEAD")
-        if $time_remain <= 0;
-
-    # try HTTP (this will only work once anyway, if we already started above)
-    $start_connecting_to_http->();
-
-    # did we timeout?
-    unless (wait_for_writeability(fileno($httpsock), $time_remain)) {
-        return undeferr("get_file_size() connect timeout for HTTP HEAD for size of $path");
-    }
-
-    # did we fail to connect?  (got a RST, etc)
-    unless (getpeername($httpsock)) {
-        return undeferr("get_file_size() connect failure for HTTP HEAD for size of $path");
-    }
-
-    $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
-    return undeferr("no time remaining to write HEAD request to $path") if $time_remain <= 0;
-
-    $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
-    # FIXME: we don't even look at $rv ?
-    return undeferr("get_file_size() read timeout ($time_remain) for HTTP HEAD for size of $path")
-        unless wait_for_readability(fileno($httpsock), $time_remain);
-
-    my $first = <$httpsock>;
-    return undeferr("get_file_size()'s HEAD request hung up on us")
-        unless $first;
-    my ($code) = $first =~ m!^HTTP/1\.\d (\d\d\d)! or
-        return undeferr("HEAD response to get_file_size looks bogus");
-    return FILE_MISSING if $code == 404;
-    return undeferr("get_file_size()'s HEAD request wasn't a 200 OK, got: $code")
-        unless $code == 200;
-
-    # FIXME: this could block too probably, if we don't get a whole
-    # line.  in practice, all headers will come at once, though in same packet/read.
-    my $cl = undef;
-    my $keep_alive = 0;
-    while (defined (my $line = <$httpsock>)) {
-        if ($line eq "\r\n") {
-            if ($keep_alive) {
-                $http_socket{"$host:$port"} = [ $$, Time::HiRes::time(), $httpsock ];
-            } else {
-                delete $http_socket{"$host:$port"};
-            }
-            return $cl;
-        }
-        $cl = $1        if $line =~ /^Content-length: (\d+)/i;
-        $keep_alive = 1 if $line =~ /^Connection:.+\bkeep-alive\b/i;
-    }
-    delete $http_socket{"$host:$port"};
-
-    # no content length found?
-    return undeferr("get_file_size() found no content-length header in response for $path");
 }
-
 
 1;
