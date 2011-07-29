@@ -18,7 +18,8 @@ use List::Util ();
 # 12: adds 'file_to_delete2' table
 # 13: modifies 'server_settings.value' to TEXT for wider values
 #     also adds a TEXT 'arg' column to file_to_queue for passing arguments
-use constant SCHEMA_VERSION => 13;
+# 14: modifies 'device' mb_total, mb_used to INT for devs > 16TB
+use constant SCHEMA_VERSION => 14;
 
 sub new {
     my ($class) = @_;
@@ -435,6 +436,7 @@ sub setup_database {
     $sto->upgrade_add_class_replpolicy;
     $sto->upgrade_modify_server_settings_value;
     $sto->upgrade_add_file_to_queue_arg;
+    $sto->upgrade_modify_device_size;
 
     return 1;
 }
@@ -625,8 +627,8 @@ sub TABLE_device {
     status  ENUM('alive','dead','down'),
     weight  MEDIUMINT DEFAULT 100,
 
-    mb_total   MEDIUMINT UNSIGNED,
-    mb_used    MEDIUMINT UNSIGNED,
+    mb_total   INT UNSIGNED,
+    mb_used    INT UNSIGNED,
     mb_asof    INT UNSIGNED,
     PRIMARY KEY (devid),
     INDEX   (status)
@@ -719,6 +721,7 @@ sub upgrade_add_device_readonly { 1 }
 sub upgrade_add_device_drain { die "Not implemented in $_[0]" }
 sub upgrade_modify_server_settings_value { die "Not implemented in $_[0]" }
 sub upgrade_add_file_to_queue_arg { die "Not implemented in $_[0]" }
+sub upgrade_modify_device_size { die "Not implemented in $_[0]" }
 
 sub upgrade_add_class_replpolicy {
     my ($self) = @_;

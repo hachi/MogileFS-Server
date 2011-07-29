@@ -304,6 +304,11 @@ sub upgrade_add_file_to_queue_arg {
     }
 }
 
+# Postgres doesn't have or never used a MEDIUMINT for device.
+sub upgrade_modify_device_size {
+    return 1;
+}
+
 # return 1 on success.  die otherwise.
 sub enqueue_fids_to_delete {
     # My kingdom for a real INSERT IGNORE implementation!

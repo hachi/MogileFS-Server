@@ -131,8 +131,8 @@ sub TABLE_device {
     status  ENUM('alive','dead','down','readonly','drain'),
     weight  MEDIUMINT DEFAULT 100,
 
-    mb_total   MEDIUMINT UNSIGNED,
-    mb_used    MEDIUMINT UNSIGNED,
+    mb_total   INT UNSIGNED,
+    mb_used    INT UNSIGNED,
     mb_asof    INT UNSIGNED,
     PRIMARY KEY (devid),
     INDEX   (status)

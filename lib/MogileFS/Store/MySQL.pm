@@ -387,6 +387,15 @@ sub upgrade_add_file_to_queue_arg {
     }
 }
 
+sub upgrade_modify_device_size {
+    my $self = shift;
+    for my $col ('mb_total', 'mb_used') {
+        if ($self->column_type("device", $col) =~ m/mediumint/i) {
+            $self->dowell("ALTER TABLE device MODIFY COLUMN $col INT UNSIGNED");
+        }
+    }
+}
+
 sub pre_daemonize_checks {
     my $self = shift;
     # Jay Buffington, from the mailing lists, writes:
