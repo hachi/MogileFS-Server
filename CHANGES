@@ -1,3 +1,17 @@
+2011-07-30: Release version 2.52
+
+   * Plugins (such as FilePaths) might want to be run in info/debug commands (Michael Baehr <mbaehr@plos.org>)
+
+   * schema version 14; support devices > 16TB (dormando <dormando@rydia.net>)
+
+   * Make FSCK worker handle dead devices (dormando <dormando@rydia.net>)
+
+   * Throw out old HTTPFile->size code and use LWP (dormando <dormando@rydia.net>)
+
+   * Remove forced loading of DBD::mysql (dormando <dormando@rydia.net>)
+
+   * Don't test write on readonly devices (Akzhan Abdulin <akzhan.abdulin@gmail.com>)
+
 2011-06-27: Release version 2.51
 
    * Add minor backcompat for ZoneLocal and friends (dormando <dormando@rydia.net>)
