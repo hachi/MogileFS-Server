@@ -1,3 +1,7 @@
+2011-08-12: Release version 2.53
+
+   * Fix host status not updating for trackers (important)
+
 2011-07-30: Release version 2.52
 
    * Plugins (such as FilePaths) might want to be run in info/debug commands (Michael Baehr <mbaehr@plos.org>)
