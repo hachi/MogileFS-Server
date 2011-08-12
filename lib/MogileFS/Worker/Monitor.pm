@@ -219,7 +219,7 @@ sub diff_hash {
         return 1 if (exists $new->{$k} && ! exists $old->{$k});
         return 1 if (defined $old->{$k} && ! defined $new->{$k});
         return 1 if (defined $new->{$k} && ! defined $old->{$k});
-        return 0 if (! defined $new->{$k} && ! defined $old->{$k});
+        next     if (! defined $new->{$k} && ! defined $old->{$k});
         return 1 if ($old->{$k} ne $new->{$k});
     }
     return 0;
