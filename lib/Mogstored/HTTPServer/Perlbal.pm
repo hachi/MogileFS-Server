@@ -44,6 +44,7 @@ SERVER max_connections = $self->{maxconns}
    SET mogstored.enable_delete = 1
    SET mogstored.min_put_directory = 1
    SET mogstored.persist_client = 1
+   SET mogstored.max_chunked_request_size = 0
 ENABLE mogstored
 
 ";
