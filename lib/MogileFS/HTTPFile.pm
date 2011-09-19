@@ -112,7 +112,14 @@ sub size {
     my $res = $user_agent->head($path);
     if ($res->is_success) {
         delete $size_check_failcount{$host} if exists $size_check_failcount{$host};
-        return $res->header('content-length');
+        my $size = $res->header('content-length');
+        if (! defined $size &&
+            $res->header('server') =~ m/^lighttpd/) {
+            # lighttpd 1.4.x (main release) does not return content-length for
+            # 0 byte files.
+            return 0;
+        }
+        return $size;
     } else {
         if ($res->code == 404) {
             delete $size_check_failcount{$host} if exists $size_check_failcount{$host};
