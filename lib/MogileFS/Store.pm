@@ -969,8 +969,11 @@ sub register_tempfile {
         return $exists ? 1 : 0;
     };
 
+    # See notes in MogileFS::Config->check_database
+    my $min_fidid = MogileFS::Config->config('min_fidid');
+
     # if the fid is in use, do something
-    while ($fid_in_use->($fid)) {
+    while ($fid_in_use->($fid) || $fid <= $min_fidid) {
         throw("dup") if $explicit_fid_used;
 
         # be careful of databases which reset their

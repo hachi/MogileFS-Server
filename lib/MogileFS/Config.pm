@@ -42,6 +42,7 @@ sub set_config_no_broadcast {
 }
 
 set_config('default_mindevcount', 2);
+set_config('min_fidid', 0);
 
 our (
     %cmdline,
@@ -236,6 +237,17 @@ Details: [sto=$sto, err=$@]
     }
 
     $sto->pre_daemonize_checks;
+
+    # If MySQL gets restarted InnoDB may reset its auto_increment counter. If
+    # the first few fids have been deleted, the "reset to max on duplicate"
+    # code won't fire immediately.
+    # Instead, we also trigger it if a configured "min_fidid" is higher than
+    # what we got from innodb.
+    # For bonus points: This value should be periodically updated, in case the
+    # trackers don't go down as often as the database.
+    my $min_fidid = $sto->max_fidid;
+    $min_fidid = 0 unless $min_fidid;
+    set_config('min_fidid', $min_fidid);
 }
 
 # set_server_setting( key, value )
