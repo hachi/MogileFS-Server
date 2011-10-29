@@ -143,7 +143,7 @@ sub should_get_new_files {
 sub mb_free {
     my $self = shift;
     return $self->{mb_total} - $self->{mb_used}
-        if $self->{mb_total} && $self->{mb_used};
+        if $self->{mb_total} && defined $self->{mb_used};
 }
 
 sub mb_used {
