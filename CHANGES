@@ -1,3 +1,21 @@
+2011-10-29: Release version 2.54
+
+   * Issue 36: Further insulate from mysql restarts resetting the fid counter (dormando <dormando@rydia.net>)
+
+   * Allow default class to be overridden again. (dormando <dormando@rydia.net>)
+
+   * Fix crash in old delete worker code (Daniel Frett <daniel.frett@ccci.org>)
+
+   * Fix mb_free() counting empty device as missing (git.user <git.user@gmail.com>)
+
+   * sqlite: fix mogdbsetup failure on new setups (Eric Wong <normalperson@yhbt.net>)
+
+   * fid size workaround for lighttpd 1.4.x (dormando <dormando@rydia.net>)
+
+   * Fix various issues in the new mogilefs server query worker. (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * Allow chunked PUT's of unlimited size (dormando <dormando@rydia.net>)
+
    * Fix listing FIDs.
    * Fix fsck fixing a file from logging a message which appears to be
      two commands (due to spurious \n). Also fix debug function to
