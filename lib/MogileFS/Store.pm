@@ -776,17 +776,22 @@ sub create_class {
     my $maxid = $dbh->selectrow_array
         ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
 
+    my $clsid = $maxid + 1;
+    if ($classname eq 'default') {
+        $clsid = 0;
+    }
+
     # now insert the new class
     my $rv = eval {
         $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                 undef, $dmid, $maxid + 1, $classname, 2);
+                 undef, $dmid, $clsid, $classname, 2);
     };
     if ($@ || $dbh->err) {
         if ($self->was_duplicate_error) {
             throw("dup");
         }
     }
-    return $maxid + 1 if $rv;
+    return $clsid if $rv;
     $self->condthrow;
     die;
 }

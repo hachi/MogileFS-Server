@@ -844,8 +844,11 @@ sub cmd_create_class {
         return $self->err_line('domain_not_found');
 
     my $clsid = $sto->get_classid_by_name($dmid, $class);
+    if (!defined $clsid && $args->{update} && $class eq 'default') {
+        $args->{update} = 0;
+    }
     if ($args->{update}) {
-        return $self->err_line('class_not_found') if ! $clsid;
+        return $self->err_line('class_not_found') if ! defined $clsid;
         $sto->update_class_name(dmid => $dmid, classid => $clsid,
             classname => $class);
     } else {
@@ -884,11 +887,13 @@ sub cmd_delete_class {
     my $class = $args->{class};
     return $self->err_line('no_class') unless length $domain;
 
+    return $self->err_line('nodel_default_class') if $class eq 'default';
+
     my $sto = Mgd::get_store();
     my $dmid  = $sto->get_domainid_by_name($domain) or
         return $self->err_line('domain_not_found');
-    my $clsid = $sto->get_classid_by_name($dmid, $class) or
-        return $self->err_line('class_not_found');
+    my $clsid = $sto->get_classid_by_name($dmid, $class);
+    return $self->err_line('class_not_found') unless defined $clsid;
 
     if (eval { Mgd::get_store()->delete_class($dmid, $clsid) }) {
         return $self->ok_line({ domain => $domain, class => $class });
@@ -1715,6 +1720,7 @@ sub err_line {
         'rebal_not_started' => "Rebalance not running",
         'no_rebal_state' => "No available rebalance status",
         'no_rebal_policy' => "No rebalance policy available",
+        'nodel_default_class' => "Cannot delete the default class",
     }->{$err_code} || $err_code;
 
     my $delay = '';
