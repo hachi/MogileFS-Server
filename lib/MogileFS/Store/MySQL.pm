@@ -127,6 +127,18 @@ sub release_lock {
     return $rv;
 }
 
+sub lock_queue {
+    my ($self, $type) = @_;
+    my $lock = $self->get_lock('mfsd:' . $type, 30);
+    return $lock ? 1 : 0;
+}
+
+sub unlock_queue {
+    my ($self, $type) = @_;
+    my $lock = $self->release_lock('mfsd:' . $type);
+    return $lock ? 1 : 0;
+}
+
 # clears everything from the fsck_log table
 # return 1 on success.  die otherwise.
 # Under MySQL 4.1+ this is actually fast.
