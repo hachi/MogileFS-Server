@@ -432,7 +432,7 @@ sub cmd_create_close {
                             );
 
     # mark it as needing replicating:
-    $fid->enqueue_for_replication(from_device => $devid);
+    $fid->enqueue_for_replication();
 
     if ($fid->update_devcount) {
         # call the hook - if this fails, we need to back the file out
