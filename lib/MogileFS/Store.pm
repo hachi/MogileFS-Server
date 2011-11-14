@@ -1325,8 +1325,10 @@ sub update_classid {
 sub enqueue_for_replication {
     my ($self, $fidid, $from_devid, $in) = @_;
 
-    $in = 0 unless $in;
-    my $nexttry = $self->unix_timestamp . " + " . int($in);
+    my $nexttry = 0;
+    if ($in) {
+        $nexttry = $self->unix_timestamp . " + " . int($in);
+    }
 
     $self->retry_on_deadlock(sub {
         $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
