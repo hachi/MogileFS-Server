@@ -1,3 +1,19 @@
+2011-11-14: Release version 2.55
+
+   * fixed sources in replication are now a suggestion (dormando <dormando@rydia.net>)
+
+   * More stats to help troubleshoot rebalance (dormando <dormando@rydia.net>)
+
+   * return 1 from condthrow if all is well (dormando <dormando@rydia.net>)
+
+   * schedule fsck replications for the future. (dormando <dormando@rydia.net>)
+
+   * stop enforcing a source id on new file upload (dormando <dormando@rydia.net>)
+
+   * restore new file upload replication priority (dormando <dormando@rydia.net>)
+
+   * Prevent queue related MySQL query hangs (dormando <dormando@rydia.net>)
+
 2011-10-29: Release version 2.54
 
    * Issue 36: Further insulate from mysql restarts resetting the fid counter (dormando <dormando@rydia.net>)
