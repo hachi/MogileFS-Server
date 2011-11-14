@@ -297,7 +297,7 @@ sub ping {
 sub condthrow {
     my ($self, $optmsg) = @_;
     my $dbh = $self->dbh;
-    return unless $dbh->err;
+    return 1 unless $dbh->err;
     my ($pkg, $fn, $line) = caller;
     my $msg = "Database error from $pkg/$fn/$line: " . $dbh->errstr;
     $msg .= ": $optmsg" if $optmsg;
