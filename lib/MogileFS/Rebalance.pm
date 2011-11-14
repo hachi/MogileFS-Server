@@ -59,6 +59,9 @@ my %default_state = (
     time_started => 0,
     time_finished => 0,
     time_stopped => 0,
+    time_latest_run => 0,
+    time_latest_empty_run => 0,
+    empty_runs => 0,
 );
 
 sub new {
@@ -165,6 +168,7 @@ sub _parse_settings {
     # the constraint also serves as a set of defaults.
     %parsed = %{$constraint} if ($constraint);
 
+    return unless $settings;
     # parse out from a string: key=value key=value
     for my $tuple (split /\s/, $settings) {
         my ($key, $value) = split /=/, $tuple;
@@ -242,6 +246,12 @@ sub next_fids_to_rebalance {
         $state->{fids_queued}++;
         $state->{bytes_queued} += $fid->length;
         push(@devfids, [$fid->id, $sdev->id, $destdevs]);
+    }
+
+    $state->{time_latest_run} = time;
+    unless (@devfids) {
+        $state->{empty_runs}++;
+        $state->{time_latest_empty_run} = time;
     }
 
     # return block of fiddev combos.
