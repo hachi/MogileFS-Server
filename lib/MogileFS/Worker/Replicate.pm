@@ -305,15 +305,14 @@ sub replicate {
 
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
-    my $sdevid    = delete $opts{'source_devid'};
+    my $fixed_source = delete $opts{'source_devid'};
     my $mask_devids  = delete $opts{'mask_devids'}  || {};
     my $avoid_devids = delete $opts{'avoid_devids'} || {};
     my $target_devids = delete $opts{'target_devids'} || []; # inverse of avoid_devids.
     die "unknown_opts" if %opts;
     die unless ref $mask_devids eq "HASH";
 
-    # bool:  if source was explicitly requested by caller
-    my $fixed_source = $sdevid ? 1 : 0;
+    my $sdevid;
 
     my $sto = Mgd::get_store();
     my $unlock = sub {
@@ -383,9 +382,8 @@ sub replicate {
     return $retunlock->(0, "no_source",   "Source is no longer available replicating $fidid") if @on_devs == 0;
     return $retunlock->(0, "source_down", "No alive devices available replicating $fidid") if @on_up_devid == 0;
 
-    # if they requested a specific source, that source must be up.
-    if ($sdevid && ! grep { $_ == $sdevid} @on_up_devid) {
-        return $retunlock->(0, "source_down", "Requested replication source device $sdevid not available for $fidid");
+    if ($fixed_source && ! grep { $_ == $fixed_source } @on_up_devid) {
+        error("Fixed source dev$fixed_source requested for $fidid but not available. Trying other devices");
     }
 
     my %dest_failed;    # devid -> 1 for each devid we were asked to copy to, but failed.
@@ -464,13 +462,17 @@ sub replicate {
         }
 
         # find where we're replicating from
-        unless ($fixed_source) {
+        {
             # TODO: use an observed good device+host as source to start.
             my @choices = grep { ! $source_failed{$_} } @on_up_devid;
             return $retunlock->(0, "source_down", "No devices available replicating $fidid") unless @choices;
-            @choices = List::Util::shuffle(@choices);
-            MogileFS::run_global_hook('replicate_order_final_choices', $devs, \@choices);
-            $sdevid = shift @choices;
+            if ($fixed_source && grep { $_ == $fixed_source } @choices) {
+                $sdevid = $fixed_source;
+            } else {
+                @choices = List::Util::shuffle(@choices);
+                MogileFS::run_global_hook('replicate_order_final_choices', $devs, \@choices);
+                $sdevid = shift @choices;
+            }
         }
 
         my $worker = MogileFS::ProcManager->is_child or die;
@@ -490,10 +492,8 @@ sub replicate {
             if ($copy_err eq "src_error") {
                 $source_failed{$sdevid} = 1;
 
-                if ($fixed_source) {
-                    # there can't be any more retries, as this source
-                    # is busted and is the only one we wanted.
-                    return $retunlock->(0, "copy_error", "error copying fid $fidid from devid $sdevid during replication");
+                if ($fixed_source && $fixed_source == $sdevid) {
+                    error("Fixed source dev$fixed_source was requested for $fidid but failed: will try other sources");
                 }
 
             } else {
