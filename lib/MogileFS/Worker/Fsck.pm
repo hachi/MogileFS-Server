@@ -347,7 +347,7 @@ sub fix_fid {
     # Note: this will reload devids, if they called 'note_on_device'
     # or 'forget_about_device'
     unless ($fid->devids_meet_policy) {
-        $fid->enqueue_for_replication;
+        $fid->enqueue_for_replication(in => 1);
         $fid->fsck_log(EV_RE_REPLICATE);
         return HANDLED;
     }
