@@ -135,6 +135,7 @@ sub md5_fh {
 
     $cb = sub {
         unless ($_[0] > 0) {
+            $cb = undef;
             CORE::close($fh);
             return $self->write("ERR read $uri at $offset failed\r\n");
         }
@@ -144,6 +145,7 @@ sub md5_fh {
         if ($offset >= $total) {
             my $content_md5 = $md5->b64digest;
             $self->write("$uri md5=$content_md5==\r\n");
+            $cb = undef;
             CORE::close($fh);
             $self->watch_read(1);
         } else {
