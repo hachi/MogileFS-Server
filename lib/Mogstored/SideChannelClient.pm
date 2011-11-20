@@ -22,6 +22,15 @@ sub new {
     return $self;
 }
 
+sub validate_uri {
+    my ($self, $uri) = @_;
+    if ($uri =~ /\.\./) {
+        $self->write("ERROR: uri invalid (contains ..)\r\n");
+        return;
+    }
+    $uri;
+}
+
 sub event_read {
     my Mogstored::SideChannelClient $self = shift;
 
@@ -37,12 +46,8 @@ sub event_read {
             # increase our count
             $self->{count}++;
 
-            # validate uri
-            my $uri = $1;
-            if ($uri =~ /\.\./) {
-                $self->write("ERROR: uri invalid (contains ..)\r\n");
-                return;
-            }
+            my $uri = $self->validate_uri($1);
+            return unless defined($uri);
 
             # now stat the file to get the size and such
             Perlbal::AIO::aio_stat("$path$uri", sub {
