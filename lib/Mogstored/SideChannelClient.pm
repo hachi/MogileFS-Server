@@ -8,6 +8,8 @@ use fields (
             'read_buf',   # unprocessed read buffer
             'mogsvc',     # the mogstored Perlbal::Service object
             );
+use Digest::MD5;
+use POSIX qw(O_RDONLY);
 
 # needed since we're pretending to be a Perlbal::Socket... never idle out
 sub max_idle_time { return 0; }
@@ -62,6 +64,12 @@ sub event_read {
             }
             $self->watch_read(0);
             Mogstored->iostat_subscribe($self);
+        } elsif ($cmd =~ /^md5 (\S+)$/) {
+            my $uri = $self->validate_uri($1);
+            return unless defined($uri);
+
+            $self->watch_read(0);
+            $self->md5($path, $uri);
         } else {
             # we don't understand this so pass it on to manage command interface
             my @out;
@@ -100,6 +108,49 @@ sub close {
 
 sub die_gracefully {
     Mogstored->on_sidechannel_die_gracefully;
+}
+
+sub md5 {
+    my ($self, $path, $uri) = @_;
+
+    Perlbal::AIO::aio_open("$path$uri", O_RDONLY, 0, sub {
+        my $fh = shift;
+
+        if ($self->{closed}) {
+           CORE::close($fh) if $fh;
+           return;
+        }
+        $fh or return $self->close('aio_open_failure');
+        $self->md5_fh($fh, $uri);
+    });
+}
+
+sub md5_fh {
+    my ($self, $fh, $uri) = @_;
+    my $offset = 0;
+    my $data = '';
+    my $md5 = Digest::MD5->new;
+    my $total = -s $fh;
+    my $cb;
+
+    $cb = sub {
+        unless ($_[0] > 0) {
+            CORE::close($fh);
+            return $self->write("ERR read $uri at $offset failed\r\n");
+        }
+        my $bytes = length($data);
+        $offset += $bytes;
+        $md5->add($data);
+        if ($offset >= $total) {
+            my $content_md5 = $md5->b64digest;
+            $self->write("$uri md5=$content_md5==\r\n");
+            CORE::close($fh);
+            $self->watch_read(1);
+        } else {
+            Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
+        }
+    };
+    Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
 }
 
 1;
