@@ -19,7 +19,8 @@ use List::Util qw(shuffle);
 # 13: modifies 'server_settings.value' to TEXT for wider values
 #     also adds a TEXT 'arg' column to file_to_queue for passing arguments
 # 14: modifies 'device' mb_total, mb_used to INT for devs > 16TB
-use constant SCHEMA_VERSION => 14;
+# 15: adds checksum table, adds 'checksumtype' column to 'class' table
+use constant SCHEMA_VERSION => 15;
 
 sub new {
     my ($class) = @_;
@@ -497,7 +498,7 @@ use constant TABLES => qw( domain class file tempfile file_to_delete
                             unreachable_fids file_on file_on_corrupt host
                             device server_settings file_to_replicate
                             file_to_delete_later fsck_log file_to_queue
-                            file_to_delete2 );
+                            file_to_delete2 checksum);
 
 sub setup_database {
     my $sto = shift;
@@ -598,7 +599,8 @@ sub TABLE_class {
     PRIMARY KEY (dmid,classid),
     classname     VARCHAR(50),
     UNIQUE      (dmid,classname),
-    mindevcount   TINYINT UNSIGNED NOT NULL
+    mindevcount   TINYINT UNSIGNED NOT NULL,
+    checksumtype  TINYINT UNSIGNED
     )"
 }
 
@@ -804,6 +806,14 @@ sub TABLE_file_to_delete2 {
     )"
 }
 
+sub TABLE_checksum {
+    "CREATE TABLE checksum (
+    fid INT UNSIGNED NOT NULL PRIMARY KEY,
+    checksumtype TINYINT UNSIGNED NOT NULL,
+    checksum VARCHAR(255) NOT NULL
+    )"
+}
+
 # these five only necessary for MySQL, since no other database existed
 # before, so they can just create the tables correctly to begin with.
 # in the future, there might be new alters that non-MySQL databases
@@ -822,6 +832,13 @@ sub upgrade_add_class_replpolicy {
     my ($self) = @_;
     unless ($self->column_type("class", "replpolicy")) {
         $self->dowell("ALTER TABLE class ADD COLUMN replpolicy VARCHAR(255)");
+    }
+}
+
+sub upgrade_add_class_checksumtype {
+    my ($self) = @_;
+    unless ($self->column_type("class", "checksumtype")) {
+        $self->dowell("ALTER TABLE class ADD COLUMN checksumtype TINYINT UNSIGNED");
     }
 }
 
