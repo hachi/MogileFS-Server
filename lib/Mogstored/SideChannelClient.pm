@@ -130,26 +130,25 @@ sub md5_fh {
     my $offset = 0;
     my $data = '';
     my $md5 = Digest::MD5->new;
-    my $total = -s $fh;
     my $cb;
 
     $cb = sub {
-        unless ($_[0] > 0) {
+        my $retval = shift;
+        if ($retval > 0) {
+            my $bytes = length($data);
+            $offset += $bytes;
+            $md5->add($data);
+            Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
+        } elsif ($retval == 0) { # EOF
             $cb = undef;
             CORE::close($fh);
-            return $self->write("ERR read $uri at $offset failed\r\n");
-        }
-        my $bytes = length($data);
-        $offset += $bytes;
-        $md5->add($data);
-        if ($offset >= $total) {
             my $content_md5 = $md5->b64digest;
             $self->write("$uri md5=$content_md5\r\n");
-            $cb = undef;
-            CORE::close($fh);
             $self->watch_read(1);
         } else {
-            Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
+            $cb = undef;
+            CORE::close($fh);
+            $self->write("ERR read $uri at $offset failed\r\n");
         }
     };
     Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
