@@ -144,7 +144,7 @@ sub md5_fh {
         $md5->add($data);
         if ($offset >= $total) {
             my $content_md5 = $md5->b64digest;
-            $self->write("$uri md5=$content_md5==\r\n");
+            $self->write("$uri md5=$content_md5\r\n");
             $cb = undef;
             CORE::close($fh);
             $self->watch_read(1);
