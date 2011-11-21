@@ -68,7 +68,6 @@ sub event_read {
             my $uri = $self->validate_uri($1);
             return unless defined($uri);
 
-            $self->watch_read(0);
             $self->md5($path, $uri);
         } else {
             # we don't understand this so pass it on to manage command interface
@@ -113,15 +112,20 @@ sub die_gracefully {
 sub md5 {
     my ($self, $path, $uri) = @_;
 
+    $self->watch_read(0);
     Perlbal::AIO::aio_open("$path$uri", O_RDONLY, 0, sub {
         my $fh = shift;
 
         if ($self->{closed}) {
-           CORE::close($fh) if $fh;
-           return;
+            CORE::close($fh) if $fh;
+            return;
         }
-        $fh or return $self->close('aio_open_failure');
-        $self->md5_fh($fh, $uri);
+        if ($fh) {
+            $self->md5_fh($fh, $uri);
+        } else {
+            $self->watch_read(1);
+            $self->write("$uri md5=-1\r\n");
+        }
     });
 }
 
