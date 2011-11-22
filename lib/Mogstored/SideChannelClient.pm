@@ -39,7 +39,11 @@ sub event_read {
     my $bref = $self->read(1024);
     return $self->close unless defined $bref;
     $self->{read_buf} .= $$bref;
+    $self->read_buf_consume;
+}
 
+sub read_buf_consume {
+    my $self = shift;
     my $path = $self->{mogsvc}->{docroot};
 
     while ($self->{read_buf} =~ s/^(.+?)\r?\n//) {
@@ -68,7 +72,7 @@ sub event_read {
             my $uri = $self->validate_uri($1);
             return unless defined($uri);
 
-            $self->md5($path, $uri);
+            return $self->md5($path, $uri);
         } else {
             # we don't understand this so pass it on to manage command interface
             my @out;
@@ -123,8 +127,8 @@ sub md5 {
         if ($fh) {
             $self->md5_fh($fh, $uri);
         } else {
-            $self->watch_read(1);
             $self->write("$uri md5=-1\r\n");
+            $self->after_long_request;
         }
     });
 }
@@ -148,14 +152,25 @@ sub md5_fh {
             CORE::close($fh);
             my $content_md5 = $md5->b64digest;
             $self->write("$uri md5=$content_md5\r\n");
-            $self->watch_read(1);
+            $self->after_long_request;
         } else {
             $cb = undef;
             CORE::close($fh);
             $self->write("ERR read $uri at $offset failed\r\n");
+            $self->after_long_request; # should we try to continue?
         }
     };
     Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
+}
+
+sub after_long_request {
+    my $self = shift;
+
+    if ($self->{read_buf} =~ /^(.+?)\r?\n/) {
+        $self->read_buf_consume;
+    } else {
+        $self->watch_read(1);
+    }
 }
 
 1;
