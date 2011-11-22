@@ -1,7 +1,7 @@
 package MogileFS::Store::SQLite;
 use strict;
 use warnings;
-use DBI;
+use DBI qw(:sql_types);
 use DBD::SQLite 1.13;
 use MogileFS::Util qw(throw);
 use base 'MogileFS::Store';
@@ -254,6 +254,7 @@ sub note_done_replicating {
     my ($self, $fidid) = @_;
 }
 
+sub BLOB_BIND_TYPE { SQL_BLOB }
 
 1;
 

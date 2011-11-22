@@ -11,7 +11,7 @@ use MogileFS::Test;
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 21;
+    plan tests => 30;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -176,9 +176,20 @@ ok (
     "retry_on_deadlock got proper return value and iteration while inducing a deadlock"
 );
 
+use Digest::MD5 qw(md5);
 
+$sto->set_checksum(6, 1, md5("FOO"));
+my $hash = $sto->get_checksum(6);
+ok($hash->{checksum} eq md5("FOO"), "checksum matches expected");
+ok($hash->{fid} == 6, "checksum fid set correctly");
+ok($hash->{checksumtype} == 1, "checksumtype set correctly");
 
+$sto->set_checksum(6, 2, md5("MOO"));
+$hash = $sto->get_checksum(6);
+ok($hash->{checksum} eq md5("MOO"), "checksum matches expected");
+ok($hash->{fid} == 6, "checksum fid set correctly");
+ok($hash->{checksumtype} == 2, "checksumtype set correctly");
 
-
-
-
+ok(1 == $sto->delete_checksum(6), "checksum deleted OK");
+ok(0 == $sto->delete_checksum(6), "checksum delete MISS");
+ok(!defined $sto->get_checksum(6), "undef on missing checksum");

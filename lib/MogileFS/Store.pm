@@ -810,7 +810,7 @@ sub TABLE_checksum {
     "CREATE TABLE checksum (
     fid INT UNSIGNED NOT NULL PRIMARY KEY,
     checksumtype TINYINT UNSIGNED NOT NULL,
-    checksum VARCHAR(255) NOT NULL
+    checksum VARBINARY(64) NOT NULL
     )"
 }
 
@@ -2140,6 +2140,39 @@ sub random_fids_on_device {
 
     @some_fids = @some_fids[0..$limit-1] if $limit < @some_fids;
     return @some_fids;
+}
+
+sub BLOB_BIND_TYPE { undef; }
+
+sub set_checksum {
+    my ($self, $fidid, $checksumtype, $checksum) = @_;
+    my $dbh = $self->dbh;
+    die "Your database does not support REPLACE! Reimplement set_checksum!" unless $self->can_replace;
+
+    eval {
+        my $sth = $dbh->prepare("REPLACE INTO checksum " .
+                                "(fid, checksumtype, checksum) " .
+                                "VALUES (?, ?, ?)");
+        $sth->bind_param(1, $fidid);
+        $sth->bind_param(2, $checksumtype);
+        $sth->bind_param(3, $checksum, BLOB_BIND_TYPE);
+        $sth->execute;
+    };
+    $self->condthrow;
+}
+
+sub get_checksum {
+    my ($self, $fidid) = @_;
+
+    $self->dbh->selectrow_hashref("SELECT fid, checksumtype, checksum " .
+                                  "FROM checksum WHERE fid = ?",
+                                  undef, $fidid);
+}
+
+sub delete_checksum {
+    my ($self, $fidid) = @_;
+
+    $self->dbh->do("DELETE FROM checksum WHERE fid = ?", undef, $fidid);
 }
 
 1;
