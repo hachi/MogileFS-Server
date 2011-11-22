@@ -146,7 +146,7 @@ sub md5_fh {
             my $bytes = length($data);
             $offset += $bytes;
             $md5->add($data);
-            Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
+            Perlbal::AIO::aio_read($fh, $offset, 0x100000, $data, $cb);
         } elsif ($retval == 0) { # EOF
             $cb = undef;
             CORE::close($fh);
@@ -160,7 +160,7 @@ sub md5_fh {
             $self->after_long_request; # should we try to continue?
         }
     };
-    Perlbal::AIO::aio_read($fh, $offset, 0x4000, $data, $cb);
+    Perlbal::AIO::aio_read($fh, $offset, 0x100000, $data, $cb);
 }
 
 sub after_long_request {

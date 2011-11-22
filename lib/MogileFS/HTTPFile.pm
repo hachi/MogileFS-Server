@@ -218,8 +218,8 @@ sub md5_http {
     my $digest = Digest::MD5->new;
 
     my %opts = (
-        # default (4K) is tiny, we can try bigger, maybe 1M like replicate
-        ':read_size_hint' => 0x4000,
+        # default (4K) is tiny, use 1M like replicate
+        ':read_size_hint' => 0x100000,
         ':content_cb' => sub {
             $digest->add($_[0]);
             $ping_cb->();
