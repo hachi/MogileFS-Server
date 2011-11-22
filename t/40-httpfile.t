@@ -13,7 +13,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 13;
+    plan tests => 16;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -110,3 +110,20 @@ ok($md5_digest eq md5("DATA"), "http only");
 $md5_digest = $file->md5(sub {});
 ok($md5_digest eq md5("DATA"), "mgmt or http");
 ok(length($md5_digest) == 16, "MD5 is 16 bytes (128 bits)");
+
+my $size = 100 * 1024 * 1024;
+$fh = $mogc->new_file("largefile", "1copy")
+        or die "Failed to create largefile: " . $mogc->errstr;
+$data = "LARGE" x 20;
+my $expect = Digest::MD5->new;
+foreach my $i (1..(1024 * 1024)) {
+	$expect->add($data);
+	print $fh $data or die "failed to write chunk $i for largefile";
+}
+close($fh) or die "Failed to close largefile";
+$expect = $expect->digest;
+@paths = $mogc->get_paths("largefile");
+$file = MogileFS::HTTPFile->at($paths[0]);
+ok($size == $file->size, "big file size match $size");
+ok($file->md5_mgmt(sub {}) eq $expect, "md5_mgmt on big file");
+ok($file->md5_http(sub {}) eq $expect, "md5_http on big file");
