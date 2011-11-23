@@ -18,7 +18,7 @@ use Data::Dumper qw/Dumper/;
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 33;
+    plan tests => 35;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -128,6 +128,10 @@ ok($domfac != $classfac, "factories are not the same singleton");
         replpolicy => 'MultipleHosts(6)'), 'can set replpolicy');
     ok($sto->update_class_name(dmid => $domid, classid => $clsid2,
         classname => 'boo'), 'can rename class');
+    ok($sto->update_class_checksumtype(dmid => $domid, classid => $clsid2,
+        checksumtype => 1), 'can set checksum type');
+    ok($sto->update_class_checksumtype(dmid => $domid, classid => $clsid2,
+        checksumtype => undef), 'can unset checksum type');
 }
 
 {
@@ -141,7 +145,8 @@ ok($domfac != $classfac, "factories are not the same singleton");
         'dmid' => '1',
         'classid' => '1',
         'mindevcount' => '2',
-        'classname' => 'bar'
+        'classname' => 'bar',
+        'checksumtype' => undef,
     }, 'class bar came back');
     # We edited class2 a bunch, make sure that all stuck. 
     is_deeply($classes[1], {
@@ -149,6 +154,7 @@ ok($domfac != $classfac, "factories are not the same singleton");
         'dmid' => '1',
         'classid' => '2',
         'mindevcount' => '3',
-        'classname' => 'boo'
+        'classname' => 'boo',
+        'checksumtype' => undef,
     }, 'class baz came back as boo');
 }

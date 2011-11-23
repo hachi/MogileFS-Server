@@ -946,6 +946,17 @@ sub update_class_replpolicy {
     return 1;
 }
 
+# return 1 on success, die otherwise
+sub update_class_checksumtype {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(dmid classid checksumtype)], @_);
+    eval {
+    $self->dbh->do("UPDATE class SET checksumtype=? WHERE dmid=? AND classid=?",
+                   undef, $arg{checksumtype}, $arg{dmid}, $arg{classid});
+    };
+    $self->condthrow;
+}
+
 sub nfiles_with_dmid_classid_devcount {
     my ($self, $dmid, $classid, $devcount) = @_;
     return $self->dbh->selectrow_array('SELECT COUNT(*) FROM file WHERE dmid = ? AND classid = ? AND devcount = ?',
@@ -1314,12 +1325,15 @@ sub get_all_classes {
     my ($self) = @_;
     my (@ret, $row);
 
-    my $repl_col = "";
+    my @cols = qw/dmid classid classname mindevcount/;
     if ($self->cached_schema_version >= 10) {
-        $repl_col = ", replpolicy";
+        push @cols, 'replpolicy';
+        if ($self->cached_schema_version >= 15) {
+            push @cols, 'checksumtype';
+        }
     }
-
-    my $sth = $self->dbh->prepare("SELECT dmid, classid, classname, mindevcount $repl_col FROM class");
+    my $cols = join(', ', @cols);
+    my $sth = $self->dbh->prepare("SELECT $cols FROM class");
     $sth->execute;
     push @ret, $row while $row = $sth->fetchrow_hashref;
     return @ret;
