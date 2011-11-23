@@ -533,6 +533,7 @@ sub setup_database {
     $sto->upgrade_modify_server_settings_value;
     $sto->upgrade_add_file_to_queue_arg;
     $sto->upgrade_modify_device_size;
+    $sto->upgrade_add_class_checksumtype;
 
     return 1;
 }
