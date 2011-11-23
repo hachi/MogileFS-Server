@@ -150,8 +150,8 @@ sub md5_fh {
         } elsif ($retval == 0) { # EOF
             $cb = undef;
             CORE::close($fh);
-            my $content_md5 = $md5->b64digest;
-            $self->write("$uri md5=$content_md5\r\n");
+            $md5 = $md5->hexdigest;
+            $self->write("$uri md5=$md5\r\n");
             $self->after_long_request;
         } else {
             $cb = undef;

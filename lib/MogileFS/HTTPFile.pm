@@ -4,7 +4,6 @@ use warnings;
 use Carp qw(croak);
 use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
 use Digest::MD5;
-use MIME::Base64;
 use MogileFS::Server;
 use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability);
 
@@ -194,9 +193,8 @@ retry:
             # FIXME, this could be another error like EMFILE/ENFILE
             return FILE_MISSING;
         }
-        if (length($md5) == 22) {
-            # Digest::MD5->b64digest on mogstored does not pad
-            return decode_base64("$md5==");
+        if (length($md5) == 32) {
+            return pack("H*", $md5);
         }
     } elsif ($rv =~ /^ERROR /) {
         return; # old server, fallback to HTTP
