@@ -302,6 +302,7 @@ sub replicate {
 
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
+    my $digest = delete $opts{'digest'};
     my $fixed_source = delete $opts{'source_devid'};
     my $mask_devids  = delete $opts{'mask_devids'}  || {};
     my $avoid_devids = delete $opts{'avoid_devids'} || {};
@@ -481,6 +482,7 @@ sub replicate {
                            expected_len => undef,  # FIXME: get this info to pass along
                            errref       => \$copy_err,
                            callback     => sub { $worker->still_alive; },
+                           digest       => $digest,
                            );
         die "Bogus error code: $copy_err" if !$rv && $copy_err !~ /^(?:src|dest)_error$/;
 
@@ -524,7 +526,7 @@ sub replicate {
 # copies a file from one Perlbal to another utilizing HTTP
 sub http_copy {
     my %opts = @_;
-    my ($sdevid, $ddevid, $fid, $rfid, $expected_clen, $intercopy_cb, $errref) =
+    my ($sdevid, $ddevid, $fid, $rfid, $expected_clen, $intercopy_cb, $errref, $digest) =
         map { delete $opts{$_} } qw(sdevid
                                     ddevid
                                     fid
@@ -532,6 +534,7 @@ sub http_copy {
                                     expected_len
                                     callback
                                     errref
+                                    digest
                                     );
     die if %opts;
 
@@ -642,6 +645,7 @@ sub http_copy {
             # now we've read in $bytes bytes
             $remain -= $bytes;
             $bytes_to_read = $remain if $remain < $bytes_to_read;
+            $digest->add($data) if $digest;
 
             my $data_len = $bytes;
             my $data_off = 0;
