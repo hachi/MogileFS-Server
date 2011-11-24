@@ -62,9 +62,8 @@ sub forget_that_monitor_has_run {
 sub wait_for_monitor {
     my $self = shift;
     while (! $self->monitor_has_run) {
-        $self->read_from_parent;
+        $self->read_from_parent(1);
         $self->still_alive;
-        sleep 1;
     }
 }
 
