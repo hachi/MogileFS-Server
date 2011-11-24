@@ -276,9 +276,6 @@ ok($tmptrack->mogadm("host", "add", "hostC", "--ip=$hostC_ip", "--status=alive")
 ok($tmptrack->mogadm("device", "add", "hostC", 5), "created dev5 on hostC");
 ok($tmptrack->mogadm("device", "add", "hostC", 6), "created dev6 on hostC");
 
-# let it be discovered
-sleep(5);  # FIXME: make an explicit "rescan" or "remonitor" job to mogilefsd, just for test suite
-
 ok($tmptrack->mogadm("device", "mark", "hostB", 3, "dead"), "marked device B/3 dead");
 ok($tmptrack->mogadm("device", "mark", "hostB", 4, "dead"), "marked device B/4 dead");
 
