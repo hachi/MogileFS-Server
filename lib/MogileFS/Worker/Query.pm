@@ -189,9 +189,11 @@ sub cmd_clear_cache {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
 
-    # TODO: Use this to tell Monitor worker to rebroadcast all state
+    $self->forget_that_monitor_has_run;
+    $self->send_to_parent(":refresh_monitor");
+    $self->wait_for_monitor;
 
-    return $self->ok_line;
+    return $self->ok_line(@_);
 }
 
 sub cmd_create_open {
@@ -475,7 +477,7 @@ sub cmd_updateclass {
         $fid->enqueue_for_replication();
     }
 
-    return $self->ok_line;
+    return $self->cmd_clear_cache;
 }
 
 sub cmd_delete {
@@ -772,7 +774,7 @@ sub cmd_create_device {
     }
 
     if (eval { $sto->create_device($devid, $hostid, $status) }) {
-        return $self->ok_line;
+        return $self->cmd_clear_cache;
     }
 
     my $errc = error_code($@);
@@ -795,7 +797,7 @@ sub cmd_create_domain {
         return $self->err_line('failure', "$@");
     }
 
-    return $self->ok_line({ domain => $domain });
+    return $self->cmd_clear_cache({ domain => $domain });
 }
 
 sub cmd_delete_domain {
@@ -810,7 +812,7 @@ sub cmd_delete_domain {
         return $self->err_line('domain_not_found');
 
     if (eval { $sto->delete_domain($dmid) }) {
-        return $self->ok_line({ domain => $domain });
+        return $self->cmd_clear_cache({ domain => $domain });
     }
 
     my $err = error_code($@);
@@ -867,7 +869,7 @@ sub cmd_create_class {
         replpolicy => $replpolicy) if $replpolicy;
 
     # return success
-    return $self->ok_line({ class => $class, mindevcount => $mindevcount, domain => $domain });
+    return $self->cmd_clear_cache({ class => $class, mindevcount => $mindevcount, domain => $domain });
 }
 
 sub cmd_update_class {
@@ -896,7 +898,7 @@ sub cmd_delete_class {
     return $self->err_line('class_not_found') unless defined $clsid;
 
     if (eval { Mgd::get_store()->delete_class($dmid, $clsid) }) {
-        return $self->ok_line({ domain => $domain, class => $class });
+        return $self->cmd_clear_cache({ domain => $domain, class => $class });
     }
 
     my $errc = error_code($@);
@@ -943,7 +945,7 @@ sub cmd_create_host {
     $sto->update_host($hostid, { map { $_ => $args->{$_} } @toupdate });
 
     # return success
-    return $self->ok_line({ hostid => $hostid, hostname => $hostname });
+    return $self->cmd_clear_cache({ hostid => $hostid, hostname => $hostname });
 }
 
 sub cmd_update_host {
@@ -970,7 +972,7 @@ sub cmd_delete_host {
 
     $sto->delete_host($hostid);
 
-    return $self->ok_line;
+    return $self->cmd_clear_cache;
 }
 
 sub cmd_get_domains {
@@ -1314,7 +1316,7 @@ sub cmd_set_weight {
 
     $dev->set_weight($weight);
 
-    return $self->ok_line;
+    return $self->cmd_clear_cache;
 }
 
 sub cmd_set_state {
@@ -1338,7 +1340,7 @@ sub cmd_set_state {
         unless $dev->can_change_to_state($state);
 
     Mgd::get_store()->set_device_state($dev->id, $state);
-    return $self->ok_line;
+    return $self->cmd_clear_cache;
 }
 
 sub cmd_noop {

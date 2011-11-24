@@ -707,6 +707,8 @@ sub HandleChildRequest {
         # and this will rebroadcast it to all other children
         # (including the one that just set it to us, but eh)
         MogileFS::Config->set_config($1, $2);
+    } elsif ($cmd =~ /^:refresh_monitor$/) {
+        MogileFS::ProcManager->ImmediateSendToChildrenByJob("monitor", $cmd);
     } else {
         # unknown command
         my $show = $cmd;

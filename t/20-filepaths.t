@@ -70,7 +70,7 @@ ok($mogc->filepaths_enable, "Filepaths enabled successfully");
 {
     my $was = $be->{timeout};  # can't use local on phash :(
     $be->{timeout} = 10;
-    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+    ok($be->do_request("clear_cache", {}), "waited for monitor")
         or die "Failed to wait for monitor";
     $be->{timeout} = $was;
 }

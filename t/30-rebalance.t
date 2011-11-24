@@ -82,9 +82,9 @@ ok($tmptrack->mogadm("device", "add", "hostC", 6), "created dev6 on hostC");
 {
     my $was = $be->{timeout};  # can't use local on phash :(
     $be->{timeout} = 10;
-    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+    ok($be->do_request("clear_cache", {}), "waited for monitor")
         or die "Failed to wait for monitor";
-    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+    ok($be->do_request("clear_cache", {}), "waited for monitor")
         or die "Failed to wait for monitor";
     $be->{timeout} = $was;
 }
