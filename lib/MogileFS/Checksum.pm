@@ -3,11 +3,12 @@ use strict;
 use warnings;
 use overload '""' => \&as_string;
 
-our %NAME2TYPE = (
-	md5 => 1,
+my %TYPE = (
+    md5 => { type => 1, bytelen => 128 / 8 },
 );
 
-our %TYPE2NAME = map { $NAME2TYPE{$_} => $_} keys(%NAME2TYPE);
+our %NAME2TYPE = map { $_ => $TYPE{$_}->{type} } keys(%TYPE);
+our %TYPE2NAME = map { $NAME2TYPE{$_} => $_ } keys(%NAME2TYPE);
 
 sub new {
     my ($class, $row) = @_;
@@ -20,12 +21,40 @@ sub new {
     return $self;
 }
 
+# $string = "md5:d41d8cd98f00b204e9800998ecf8427e"
+sub from_string {
+    my ($class, $fidid, $string) = @_;
+    $string =~ /\A(\w+):([a-fA-F0-9]{32,128})\z/ or
+        die "invalid checksum string";
+    my $checksumname = $1;
+    my $hexdigest = $2;
+    my $ref = $TYPE{$checksumname} or
+        die "invalid checksum name ($checksumname) from $string";
+    my $checksum = pack("H*", $hexdigest);
+    my $len = length($checksum);
+    $len == $ref->{bytelen} or
+        die "invalid checksum length=$len (expected $ref->{bytelen})";
+
+    bless {
+        fidid => $fidid,
+        checksum => $checksum,
+        checksumtype => $NAME2TYPE{$checksumname},
+    }, $class;
+}
+
 sub checksumname {
     my $self = shift;
     my $type = $self->{checksumtype};
     my $name = $TYPE2NAME{$type} or die "checksumtype=$type unknown";
 
     return $name;
+}
+
+sub save {
+    my $self = shift;
+    my $sto = Mgd::get_store();
+
+    $sto->set_checksum($self->{fidid}, $self->{checksumtype}, $self->{checksum});
 }
 
 sub hexdigest {
