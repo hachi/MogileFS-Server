@@ -277,6 +277,14 @@ sub forget_about_device {
     return 1;
 }
 
+# return an FID's checksum object, undef if it's missing
+sub checksum {
+    my $self = shift;
+    my $row = Mgd::get_store()->get_checksum($self->{fidid}) or return undef;
+
+    MogileFS::Checksum->new($row);
+}
+
 1;
 
 __END__
