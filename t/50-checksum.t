@@ -11,7 +11,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 34;
+    plan tests => 40;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -156,4 +156,24 @@ use Digest::MD5 qw/md5_hex/;
     $sto->delete_checksum($info->{fid});
     $info = $mogc->file_info($key);
     is($info->{checksum}, "MISSING", 'checksum is MISSING after delete');
+}
+
+{
+    my @classes;
+    %opts = ( domain => "testdom", class => "1copy", mindevcount => 1 );
+
+    $opts{checksumtype} = "NONE";
+    ok($be->do_request("update_class", \%opts), "update class");
+    @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
+    is($classes[0]->{checksumtype}, undef, "checksumtype unset");
+
+    $opts{checksumtype} = "MD5";
+    ok($be->do_request("update_class", \%opts), "update class");
+    @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
+    is($classes[0]->{checksumtype}, 1, "checksumtype is 1 (MD5)");
+
+    $opts{checksumtype} = "NONE";
+    ok($be->do_request("update_class", \%opts), "update class");
+    @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
+    is($classes[0]->{checksumtype}, undef, "checksumtype unset");
 }
