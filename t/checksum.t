@@ -22,9 +22,9 @@ $sto->set_checksum(6, 1, md5("asdf"));
 my $hash = $sto->get_checksum(6);
 my $csum = MogileFS::Checksum->new($hash);
 is(md5_hex("asdf"), $csum->hexdigest);
-is("md5", $csum->checksumname);
+is("MD5", $csum->checksumname);
 
-my $zero = "md5:d41d8cd98f00b204e9800998ecf8427e";
+my $zero = "MD5:d41d8cd98f00b204e9800998ecf8427e";
 $csum = MogileFS::Checksum->from_string(6, $zero);
 is("MogileFS::Checksum", ref($csum), "is a ref");
 is("d41d8cd98f00b204e9800998ecf8427e", $csum->hexdigest, "hex matches");

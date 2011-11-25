@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
-use Digest::MD5;
+use Digest;
 use MogileFS::Server;
 use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability);
 
@@ -138,8 +138,8 @@ sub size {
     }
 }
 
-sub md5_mgmt {
-    my ($self, $ping_cb) = @_;
+sub digest_mgmt {
+    my ($self, $alg, $ping_cb) = @_;
     my $mogconn = $self->host->mogstored_conn;
     my $node_timeout = MogileFS->config("node_timeout");
     my $sock;
@@ -147,14 +147,14 @@ sub md5_mgmt {
     my $expiry;
 
     my $uri = $self->{uri};
-    my $req = "md5 $uri\r\n";
+    my $req = "$alg $uri\r\n";
     my $reqlen = length $req;
 
     # a dead/stale socket may not be detected until we try to recv on it
     # after sending a request
     my $retries = 2;
 
-    # assuming the storage node can MD5 at >=2MB/s, low expectations here
+    # assuming the storage node can checksum at >=2MB/s, low expectations here
     my $response_timeout = $self->size / (2 * 1024 * 1024);
 
     my $flag_nosignal = MogileFS::Sys->flag_nosignal;
@@ -167,8 +167,9 @@ retry:
         my $err = $!;
         $mogconn->mark_dead;
         if ($retries-- <= 0) {
-            $err = $err ? "send() error (md5 $uri): $err" :
-                          "short send() (md5 $uri): $rv != $reqlen";
+            $req =~ tr/\r\n//d;
+            $err = $err ? "send() error ($req): $err" :
+                          "short send() ($req): $rv != $reqlen";
             $err = $mogconn->{ip} . ":" . $mogconn->{port} . " $err";
             return undeferr($err);
         }
@@ -186,24 +187,26 @@ retry:
         $mogconn->mark_dead;
         return undeferr("EOF from mogstored") if ($retries-- <= 0);
         goto retry;
-    } elsif ($rv =~ /^\Q$uri\E md5=(\S+)\r\n/) {
-        my $md5 = $1;
+    } elsif ($rv =~ /^\Q$uri\E \Q$alg\E=([a-f0-9]{32,128})\r\n/) {
+        my $hexdigest = $1;
 
-        if ($md5 eq FILE_MISSING) {
+        if ($hexdigest eq FILE_MISSING) {
             # FIXME, this could be another error like EMFILE/ENFILE
             return FILE_MISSING;
         }
-        if (length($md5) == 32) {
-            return pack("H*", $md5);
-        }
+        my $checksum = eval {
+            MogileFS::Checksum->from_string(0, "$alg:$hexdigest")
+        };
+        return undeferr("$alg failed for $uri: $@") if $@;
+        return $checksum->{checksum};
     } elsif ($rv =~ /^ERROR /) {
         return; # old server, fallback to HTTP
     }
-    return undeferr("mogstored failed to handle (md5 $uri)");
+    return undeferr("mogstored failed to handle ($alg $uri)");
 }
 
-sub md5_http {
-    my ($self, $ping_cb) = @_;
+sub digest_http {
+    my ($self, $alg, $ping_cb) = @_;
 
     # don't SIGPIPE us (why don't we just globally ignore SIGPIPE?)
     my $flag_nosignal = MogileFS::Sys->flag_nosignal;
@@ -213,7 +216,7 @@ sub md5_http {
     my $node_timeout = MogileFS->config("node_timeout");
     # Hardcoded connection cache size of 20 :(
     $user_agent ||= LWP::UserAgent->new(timeout => $node_timeout, keep_alive => 20);
-    my $digest = Digest::MD5->new;
+    my $digest = Digest->new($alg);
 
     my %opts = (
         # default (4K) is tiny, use 1M like replicate
@@ -229,17 +232,17 @@ sub md5_http {
 
     return $digest->digest if $res->is_success;
     return FILE_MISSING if $res->code == 404;
-    return undeferr("Failed MD5 (GET) check for $path (" . $res->code . "): "
+    return undeferr("Failed $alg (GET) check for $path (" . $res->code . "): "
                     . $res->message);
 }
 
-sub md5 {
-    my ($self, $ping_cb) = @_;
-    my $md5 = $self->md5_mgmt($ping_cb);
+sub digest {
+    my ($self, $alg, $ping_cb) = @_;
+    my $digest = $self->digest_mgmt($alg, $ping_cb);
 
-    return $md5 if ($md5 && $md5 ne FILE_MISSING);
+    return $digest if ($digest && $digest ne FILE_MISSING);
 
-    $self->md5_http($ping_cb);
+    $self->digest_http($alg, $ping_cb);
 }
 
 1;

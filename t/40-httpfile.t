@@ -100,14 +100,14 @@ MogileFS::Config->load_config;
 my $file = MogileFS::HTTPFile->at($paths[0]);
 my $md5_digest;
 
-$md5_digest = $file->md5_mgmt(sub {});
+$md5_digest = $file->digest_mgmt("MD5", sub {});
 ok($md5_digest eq md5("DATA"), "mgmt only");
 my $cb_called = 0;
-$md5_digest = $file->md5_http(sub { $cb_called++ });
+$md5_digest = $file->digest_http("MD5", sub { $cb_called++ });
 ok(1 == $cb_called, "ping callback called");
 ok($md5_digest eq md5("DATA"), "http only");
 
-$md5_digest = $file->md5(sub {});
+$md5_digest = $file->digest("MD5", sub {});
 ok($md5_digest eq md5("DATA"), "mgmt or http");
 ok(length($md5_digest) == 16, "MD5 is 16 bytes (128 bits)");
 
@@ -125,5 +125,5 @@ $expect = $expect->digest;
 @paths = $mogc->get_paths("largefile");
 $file = MogileFS::HTTPFile->at($paths[0]);
 ok($size == $file->size, "big file size match $size");
-ok($file->md5_mgmt(sub {}) eq $expect, "md5_mgmt on big file");
-ok($file->md5_http(sub {}) eq $expect, "md5_http on big file");
+ok($file->digest_mgmt('MD5', sub {}) eq $expect, "digest_mgmt('MD5') on big file");
+ok($file->digest_http('MD5', sub {}) eq $expect, "digest_http('MD5') on big file");

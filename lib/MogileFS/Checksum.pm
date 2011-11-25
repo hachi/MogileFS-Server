@@ -4,7 +4,12 @@ use warnings;
 use overload '""' => \&as_string;
 
 my %TYPE = (
-    md5 => { type => 1, bytelen => 128 / 8 },
+    "MD5"     => { type => 1, bytelen => 128 / 8 },
+    "SHA-1"   => { type => 2, bytelen => 160 / 8 },
+    "SHA-224" => { type => 3, bytelen => 224 / 8 },
+    "SHA-256" => { type => 4, bytelen => 256 / 8 },
+    "SHA-384" => { type => 5, bytelen => 384 / 8 },
+    "SHA-512" => { type => 6, bytelen => 512 / 8 },
 );
 
 our %NAME2TYPE = map { $_ => $TYPE{$_}->{type} } keys(%TYPE);
@@ -21,10 +26,10 @@ sub new {
     return $self;
 }
 
-# $string = "md5:d41d8cd98f00b204e9800998ecf8427e"
+# $string = "MD5:d41d8cd98f00b204e9800998ecf8427e"
 sub from_string {
     my ($class, $fidid, $string) = @_;
-    $string =~ /\A(\w+):([a-fA-F0-9]{32,128})\z/ or
+    $string =~ /\A([\w-]+):([a-fA-F0-9]{32,128})\z/ or
         die "invalid checksum string";
     my $checksumname = $1;
     my $hexdigest = $2;

@@ -8,7 +8,7 @@ use fields (
             'read_buf',   # unprocessed read buffer
             'mogsvc',     # the mogstored Perlbal::Service object
             );
-use Digest::MD5;
+use Digest;
 use POSIX qw(O_RDONLY);
 
 # needed since we're pretending to be a Perlbal::Socket... never idle out
@@ -68,11 +68,12 @@ sub read_buf_consume {
             }
             $self->watch_read(0);
             Mogstored->iostat_subscribe($self);
-        } elsif ($cmd =~ /^md5 (\S+)$/) {
-            my $uri = $self->validate_uri($1);
+        } elsif ($cmd =~ /^(MD5|SHA-(?:1|224|256|384|512)) (\S+)$/) {
+            my $alg = $1;
+            my $uri = $self->validate_uri($2);
             return unless defined($uri);
 
-            return $self->md5($path, $uri);
+            return $self->digest($alg, $path, $uri);
         } else {
             # we don't understand this so pass it on to manage command interface
             my @out;
@@ -113,8 +114,8 @@ sub die_gracefully {
     Mogstored->on_sidechannel_die_gracefully;
 }
 
-sub md5 {
-    my ($self, $path, $uri) = @_;
+sub digest {
+    my ($self, $alg, $path, $uri) = @_;
 
     $self->watch_read(0);
     Perlbal::AIO::aio_open("$path$uri", O_RDONLY, 0, sub {
@@ -125,19 +126,19 @@ sub md5 {
             return;
         }
         if ($fh) {
-            $self->md5_fh($fh, $uri);
+            $self->digest_fh($alg, $fh, $uri);
         } else {
-            $self->write("$uri md5=-1\r\n");
+            $self->write("$uri $alg=-1\r\n");
             $self->after_long_request;
         }
     });
 }
 
-sub md5_fh {
-    my ($self, $fh, $uri) = @_;
+sub digest_fh {
+    my ($self, $alg, $fh, $uri) = @_;
     my $offset = 0;
     my $data = '';
-    my $md5 = Digest::MD5->new;
+    my $digest = Digest->new($alg);
     my $cb;
 
     $cb = sub {
@@ -145,13 +146,13 @@ sub md5_fh {
         if ($retval > 0) {
             my $bytes = length($data);
             $offset += $bytes;
-            $md5->add($data);
+            $digest->add($data);
             Perlbal::AIO::aio_read($fh, $offset, 0x100000, $data, $cb);
         } elsif ($retval == 0) { # EOF
             $cb = undef;
             CORE::close($fh);
-            $md5 = $md5->hexdigest;
-            $self->write("$uri md5=$md5\r\n");
+            $digest = $digest->hexdigest;
+            $self->write("$uri $alg=$digest\r\n");
             $self->after_long_request;
         } else {
             $cb = undef;
