@@ -355,6 +355,12 @@ sub cmd_create_close {
     my $fidid = $args->{fid}    or return $self->err_line("no_fid");
     my $devid = $args->{devid}  or return $self->err_line("no_devid");
     my $path  = $args->{path}   or return $self->err_line("no_path");
+    my $checksum = $args->{checksum};
+
+    if ($checksum) {
+        $checksum = eval { MogileFS::Checksum->from_string($fidid, $checksum) };
+        return $self->err_line("invalid_checksum_format") if $@;
+    }
 
     my $fid  = MogileFS::FID->new($fidid);
     my $dfid = MogileFS::DevFID->new($devid, $fid);
@@ -391,7 +397,8 @@ sub cmd_create_close {
     }
 
     # get size of file and verify that it matches what we were given, if anything
-    my $size = MogileFS::HTTPFile->at($path)->size;
+    my $httpfile = MogileFS::HTTPFile->at($path);
+    my $size = $httpfile->size;
 
     # size check is optional? Needs to support zero byte files.
     $args->{size} = -1 unless $args->{size};
@@ -406,6 +413,20 @@ sub cmd_create_close {
     if ($args->{size} > -1 && ($args->{size} != $size)) {
         $failed->();
         return $self->err_line("size_mismatch", "Expected: $args->{size}; actual: $size; path: $path")
+    }
+
+    # checksum validation is optional as it can be very expensive
+    # However, we /always/ verify it if the client wants us to, even
+    # if the class does not enforce or store it.
+    if ($checksum && $args->{checksumverify}) {
+        my $alg = $checksum->checksumname;
+        my $actual = $httpfile->digest($alg); # expensive!
+        if ($actual ne $checksum->{checksum}) {
+            $failed->();
+            $actual = "$alg:" . unpack("H*", $actual);
+            return $self->err_line("checksum_mismatch",
+                           "Expected: $checksum; actual: $actual; path: $path");
+        }
     }
 
     # see if we have a fid for this key already
@@ -423,6 +444,8 @@ sub cmd_create_close {
 
     # insert file_on row
     $dfid->add_to_db;
+
+    $checksum->maybe_save($dmid, $trow->{classid}) if $checksum;
 
     $sto->replace_into_file(
                             fidid   => $fidid,
@@ -600,8 +623,17 @@ sub cmd_file_info {
     my $ret = {};
     $ret->{fid}      = $fid->id;
     $ret->{domain}   = Mgd::domain_factory()->get_by_id($fid->dmid)->name;
-    $ret->{class}    = Mgd::class_factory()->get_by_id($fid->dmid,
-        $fid->classid)->name;
+    my $class = Mgd::class_factory()->get_by_id($fid->dmid, $fid->classid);
+    $ret->{class}    = $class->name;
+    if ($class->{checksumtype}) {
+        my $checksum = Mgd::get_store()->get_checksum($fid->id);
+        if ($checksum) {
+            $checksum = MogileFS::Checksum->new($checksum);
+            $ret->{checksum} = $checksum->info;
+        } else {
+            $ret->{checksum} = "MISSING";
+        }
+    }
     $ret->{key}      = $key;
     $ret->{'length'} = $fid->length;
     $ret->{devcount} = $fid->devcount;
@@ -840,6 +872,13 @@ sub cmd_create_class {
         return $self->err_line('invalid_replpolicy', $@) if $@;
     }
 
+    my $checksumtype = $args->{checksumtype};
+    if ($checksumtype && $checksumtype ne 'NONE') {
+        my $tmp = $MogileFS::Checksum::NAME2TYPE{$checksumtype};
+        return $self->err_line('invalid_checksumtype') unless $tmp;
+        $checksumtype = $tmp;
+    }
+
     my $sto = Mgd::get_store();
     my $dmid  = $sto->get_domainid_by_name($domain) or
         return $self->err_line('domain_not_found');
@@ -866,6 +905,10 @@ sub cmd_create_class {
     # don't erase an existing replpolicy if we're not setting a new one.
     $sto->update_class_replpolicy(dmid => $dmid, classid => $clsid,
         replpolicy => $replpolicy) if $replpolicy;
+    if ($checksumtype) {
+        $sto->update_class_checksumtype(dmid => $dmid, classid => $clsid,
+            checksumtype => $checksumtype eq 'NONE' ? undef : $checksumtype);
+    }
 
     # return success
     return $self->cmd_clear_cache({ class => $class, mindevcount => $mindevcount, domain => $domain });

@@ -62,6 +62,17 @@ sub save {
     $sto->set_checksum($self->{fidid}, $self->{checksumtype}, $self->{checksum});
 }
 
+sub maybe_save {
+    my ($self, $dmid, $classid) = @_;
+    my $class = eval { Mgd::class_factory()->get_by_id($dmid, $classid) };
+
+    # $class may be undef as it could've been deleted between
+    # create_open and create_close, we've never verified this before...
+    if ($class && $self->{checksumtype} eq $class->{checksumtype}) {
+        $self->save;
+    }
+}
+
 sub hexdigest {
     my $self = shift;
 
@@ -74,6 +85,12 @@ sub as_string {
     my $hexdigest = $self->hexdigest;
 
     "Checksum[f=$self->{fidid};$name=$hexdigest]"
+}
+
+sub info {
+    my $self = shift;
+
+    $self->checksumname . ':' . $self->hexdigest;
 }
 
 1;
