@@ -11,7 +11,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 40;
+    plan tests => 47;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -41,6 +41,8 @@ while (! -e "$mogroot{1}/dev1/usage" &&
 my $tmptrack = create_temp_tracker($sto);
 ok($tmptrack);
 
+my $admin = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001');
+$admin or die "failed to create admin socket: $!";
 my $mogc = MogileFS::Client->new(
                                  domain => "testdom",
                                  hosts  => [ "127.0.0.1:7001" ],
@@ -71,7 +73,7 @@ sub wait_for_monitor {
 
 wait_for_monitor($be);
 
-my ($req, $rv, %opts);
+my ($req, $rv, %opts, @paths);
 my $ua = LWP::UserAgent->new;
 
 use Data::Dumper;
@@ -176,4 +178,39 @@ use Digest::MD5 qw/md5_hex/;
     ok($be->do_request("update_class", \%opts), "update class");
     @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
     is($classes[0]->{checksumtype}, undef, "checksumtype unset");
+}
+
+# wait for replicate to verify existing (valid) checksum
+{
+    my $key = 'savecksum';
+
+    do {
+        @paths = $mogc->get_paths($key);
+    } while (scalar(@paths) == 1 and sleep(0.1));
+    is(scalar(@paths), 2, "replicate successfully with good checksum");
+}
+
+# save checksum on replicate, client didn't care to provide one
+{
+    my $key = 'lazycksum';
+
+    syswrite($admin, "!want 0 replicate\n"); # disable replication
+    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "disabled replicate");
+
+    my $fh = $mogc->new_file($key, "2copies");
+    print $fh "lazy";
+    ok(close($fh), "closed file");
+    my $info = $mogc->file_info($key);
+    is($info->{checksum}, 'MISSING', 'checksum is MISSING');
+
+    syswrite($admin, "!want 1 replicate\n"); # disable replication
+    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "enabled replicate");
+
+    do {
+        @paths = $mogc->get_paths($key);
+    } while (scalar(@paths) == 1 && sleep(0.1));
+    is(scalar(@paths), 2, "replicate successfully with good checksum");
+
+    $info = $mogc->file_info($key);
+    is($info->{checksum}, "MD5:".md5_hex("lazy"), 'checksum is set after repl');
 }

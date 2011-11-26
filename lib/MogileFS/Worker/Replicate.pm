@@ -12,6 +12,8 @@ use MogileFS::Server;
 use MogileFS::Util qw(error every debug);
 use MogileFS::Config;
 use MogileFS::ReplicationRequest qw(rr_upgrade);
+use Digest;
+use MIME::Base64 qw(encode_base64);
 
 # setup the value used in a 'nexttry' field to indicate that this item will never
 # actually be tried again and require some sort of manual intervention.
@@ -302,7 +304,6 @@ sub replicate {
 
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
-    my $digest = delete $opts{'digest'};
     my $fixed_source = delete $opts{'source_devid'};
     my $mask_devids  = delete $opts{'mask_devids'}  || {};
     my $avoid_devids = delete $opts{'avoid_devids'} || {};
@@ -474,6 +475,7 @@ sub replicate {
         }
 
         my $worker = MogileFS::ProcManager->is_child or die;
+        my $digest = Digest->new($cls->checksumname) if $cls->checksumtype;
         my $rv = http_copy(
                            sdevid       => $sdevid,
                            ddevid       => $ddevid,
@@ -503,6 +505,9 @@ sub replicate {
 
         my $dfid = MogileFS::DevFID->new($ddevid, $fid);
         $dfid->add_to_db;
+        if ($digest && !$fid->checksum) {
+            $sto->set_checksum($fidid, $cls->checksumtype, $digest->digest);
+        }
 
         push @on_devs, $devs->{$ddevid};
         push @on_devs_tellpol, $devs->{$ddevid};
@@ -538,6 +543,15 @@ sub http_copy {
                                     );
     die if %opts;
 
+    my $content_md5 = '';
+    my $fid_checksum = $rfid->checksum;
+    if ($fid_checksum && $fid_checksum->checksumname eq "MD5") {
+        # some HTTP servers may be able to verify Content-MD5 on PUT
+        # and reject corrupted requests.  no HTTP server should reject
+        # a request for an unrecognized header
+        my $b64digest = encode_base64($fid_checksum->{checksum}, "");
+        $content_md5 = "Content-MD5: $b64digest\r\n";
+    }
 
     $intercopy_cb ||= sub {};
 
@@ -629,7 +643,7 @@ sub http_copy {
     # open target for put
     my $dsock = IO::Socket::INET->new(PeerAddr => $dhostip, PeerPort => $dport, Timeout => 2)
         or return $dest_error->("Unable to create dest socket to $dhostip:$dport for $dpath");
-    $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen\r\n\r\n")
+    $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen$content_md5\r\n\r\n")
         or return $dest_error->("Unable to write data to $dpath on $dhostip:$dport");
     return $dest_error->("Pipe closed during write to $dpath on $dhostip:$dport")
         if $pipe_closed;
@@ -674,10 +688,33 @@ sub http_copy {
     return $dest_error->("closed pipe writing to destination")     if $pipe_closed;
     return $src_error->("error reading midway through source: $!") unless $finished_read;
 
+    # callee will want this digest, too, so clone as "digest" is destructive
+    $digest = $digest->clone->digest if $digest;
+
+    if ($fid_checksum) {
+        if ($digest ne $fid_checksum->{checksum}) {
+            my $expect = $fid_checksum->hexdigest;
+            $digest = unpack("H*", $digest);
+            return $src_error->("checksum mismatch on GET: expected: $expect actual: $digest");
+        }
+    }
+
     # now read in the response line (should be first line)
     my $line = <$dsock>;
     if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-        return 1 if $1 >= 200 && $1 <= 299;
+        if ($1 >= 200 && $1 <= 299) {
+            if ($digest) {
+                my $alg = $rfid->class->checksumname;
+                my $durl = "http://$dhostip:$dport$dpath";
+                my $actual = MogileFS::HTTPFile->at($durl)->digest($alg);
+                if ($actual ne $digest) {
+                    my $expect = unpack("H*", $digest);
+                    $actual = unpack("H*", $actual);
+                    return $dest_error->("checksum mismatch on PUT, expected: $expect actual: $digest");
+                }
+            }
+            return 1;
+        }
         return $dest_error->("Got HTTP status code $1 PUTing to http://$dhostip:$dport$dpath");
     } else {
         return $dest_error->("Error: HTTP response line not recognized writing to http://$dhostip:$dport$dpath: $line");
