@@ -705,6 +705,12 @@ sub http_copy {
         if ($1 >= 200 && $1 <= 299) {
             if ($digest) {
                 my $alg = $rfid->class->checksumname;
+
+                if ($ddev->{reject_bad_md5} && ($alg eq "MD5")) {
+                    # dest device would've rejected us with a error,
+                    # no need to reread the file
+                    return 1;
+                }
                 my $durl = "http://$dhostip:$dport$dpath";
                 my $actual = MogileFS::HTTPFile->at($durl)->digest($alg);
                 if ($actual ne $digest) {
