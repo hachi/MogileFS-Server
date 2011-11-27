@@ -20,6 +20,7 @@ use MogileFS::Config;
 use MogileFS::Util qw(error debug encode_url_args);
 use MogileFS::IOStatWatcher;
 use MogileFS::Server;
+use Digest::MD5 qw(md5_base64);
 
 use constant UPDATE_DB_EVERY => 15;
 
@@ -425,6 +426,7 @@ sub check_device {
 
         # if success and the content matches, mark it writeable
         if ($testwrite->is_success && $testwrite->content eq $content) {
+            $self->check_bogus_md5($dev);
             $self->state_event('device', $devid, {observed_state => 'writeable'})
                 if (!$dev->observed_writeable);
             debug("dev$devid: used = $used, total = $total, writeable = 1");
@@ -437,6 +439,26 @@ sub check_device {
     $self->state_event('device', $devid, {observed_state => 'readable'})
         if (!$dev->observed_readable);
     debug("dev$devid: used = $used, total = $total, writeable = 0");
+}
+
+sub check_bogus_md5 {
+    my ($self, $dev) = @_;
+    my $host = $dev->host;
+    my $hostip = $host->ip;
+    my $port = $host->http_port;
+    my $devid = $dev->id;
+    my $puturl = "http://$hostip:$port/dev$devid/test-write/test-md5";
+    my $req = HTTP::Request->new(PUT => $puturl);
+    $req->header("Content-MD5", md5_base64("!") . "==");
+    $req->content(".");
+
+    # success is bad here, it means the server doesn't understand how to
+    # verify and reject corrupt bodies from Content-MD5 headers.
+    # most servers /will/ succeed here :<
+    my $resp = $self->ua->request($req);
+    my $rej = $resp->is_success ? 0 : 1;
+    debug("dev$devid: reject_bad_md5 = $rej");
+    $self->state_event('device', $devid, { reject_bad_md5 => $rej });
 }
 
 1;

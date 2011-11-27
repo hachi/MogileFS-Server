@@ -17,7 +17,7 @@ BEGIN {
     eval "sub TESTING () { $testing }";
 }
 
-my @observed_fields = qw/observed_state utilization/;
+my @observed_fields = qw/observed_state utilization reject_bad_md5/;
 my @fields = (qw/hostid status weight mb_total mb_used mb_asof devid/,
     @observed_fields);
 
