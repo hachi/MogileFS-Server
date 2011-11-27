@@ -25,6 +25,7 @@ use constant EV_START_SEARCH     => "SRCH";
 use constant EV_FOUND_FID        => "FOND";
 use constant EV_RE_REPLICATE     => "REPL";
 use constant EV_BAD_COUNT        => "BCNT";
+use constant EV_BAD_CHECKSUM     => "BSUM";
 
 use POSIX ();
 
