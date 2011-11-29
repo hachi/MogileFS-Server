@@ -1033,6 +1033,7 @@ sub cmd_get_domains {
             $ret->{"domain${dm_n}class${cl_n}mindevcount"} = $cl->mindevcount;
             $ret->{"domain${dm_n}class${cl_n}replpolicy"}  =
                 $cl->repl_policy_string;
+            $ret->{"domain${dm_n}class${cl_n}hashtype"} = $cl->hashtype_string;
         }
         $ret->{"domain${dm_n}classes"} = $cl_n;
     }

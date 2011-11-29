@@ -28,6 +28,11 @@ sub dmid { $_[0]{dmid} }
 sub hashtype { $_[0]{hashtype} }
 sub hashname { $MogileFS::Checksum::TYPE2NAME{$_[0]{hashtype}} }
 
+sub hashtype_string {
+    my $self = shift;
+    $self->hashtype ? $self->hashname : "NONE";
+}
+
 sub repl_policy_string {
     my $self = shift;
     return $self->{replpolicy} ? $self->{replpolicy}
