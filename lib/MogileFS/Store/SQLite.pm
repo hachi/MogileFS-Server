@@ -243,7 +243,6 @@ sub upgrade_add_device_drain {
 sub upgrade_modify_server_settings_value { 1 }
 sub upgrade_add_file_to_queue_arg { 1 }
 sub upgrade_modify_device_size { 1 }
-sub upgrade_add_class_hashtype { 1 }
 
 # inefficient, but no warning and no locking
 sub should_begin_replicating_fidid {
