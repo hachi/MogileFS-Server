@@ -6,6 +6,11 @@ use MogileFS::ReplicationRequest qw(rr_upgrade);
 use MogileFS::Server;
 use overload '""' => \&as_string;
 
+BEGIN {
+    my $testing = $ENV{TESTING} ? 1 : 0;
+    eval "sub TESTING () { $testing }";
+}
+
 sub new {
     my ($class, $fidid) = @_;
     croak("Invalid fidid") unless $fidid;
@@ -139,6 +144,8 @@ sub enqueue_for_replication {
     my $from_dev = delete $opts{from_device};  # devid or Device object
     croak("Unknown options to enqueue_for_replication") if %opts;
     my $from_devid = (ref $from_dev ? $from_dev->id : $from_dev) || undef;
+    # Still schedule for the future, but don't delay long
+    $in = 1 if (TESTING && $in);
     Mgd::get_store()->enqueue_for_replication($self->id, $from_devid, $in);
 }
 
