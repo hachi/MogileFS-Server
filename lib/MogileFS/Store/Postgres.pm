@@ -742,6 +742,8 @@ sub mark_fidid_unreachable {
 
 sub delete_fidid {
     my ($self, $fidid) = @_;
+    $self->delete_checksum($fidid);
+    $self->condthrow;
     $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid);
     $self->condthrow;
     $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);

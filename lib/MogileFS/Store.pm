@@ -1241,6 +1241,8 @@ sub delete_class {
 
 sub delete_fidid {
     my ($self, $fidid) = @_;
+    eval { $self->delete_checksum($fidid); };
+    $self->condthrow;
     eval { $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid); };
     $self->condthrow;
     eval { $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid); };
