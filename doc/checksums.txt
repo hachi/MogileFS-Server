@@ -85,7 +85,11 @@ fsck
 
 If checksum row exists:
 	verifies all copies match
-	same behavior as size mismatches in existing code
+	same behavior as size mismatches in existing code:
+		if good copies exist
+			delete bad ones and rereplicate
+		else if only bad copies exist
+			log error
 
 If checksum row is missing but class requires checksum:
 	if all copies of the file have the same checksum:
@@ -93,8 +97,4 @@ If checksum row is missing but class requires checksum:
 	if any device containing a copy down:
 		wait and revisit this FID later
 	if any of the copies differ:
-		log everything we do
-		"trust" checksum of oldest file (via Last-Modified from HEAD)
-		place "bad" fid in a per-device "lost+found" area
-			use MOVE if possible, GET+PUT+DELETE fallback
-		recreate the file with a new fidid using the oldest file
+		log failure and all (hex) checksums + devids

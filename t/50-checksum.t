@@ -11,7 +11,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 47;
+    plan tests => 99;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -71,9 +71,17 @@ sub wait_for_monitor {
     $be->{timeout} = $was;
 }
 
+sub full_fsck {
+    my $tmptrack = shift;
+
+    ok($tmptrack->mogadm("fsck", "clearlog"), "clear fsck log");
+    ok($tmptrack->mogadm("fsck", "reset"), "reset fsck");
+    ok($tmptrack->mogadm("fsck", "start"), "started fsck");
+}
+
 wait_for_monitor($be);
 
-my ($req, $rv, %opts, @paths);
+my ($req, $rv, %opts, @paths, @fsck_log);
 my $ua = LWP::UserAgent->new;
 
 use Data::Dumper;
@@ -160,6 +168,7 @@ use Digest::MD5 qw/md5_hex/;
     is($info->{checksum}, "MISSING", 'checksum is MISSING after delete');
 }
 
+# flip checksum classes around
 {
     my @classes;
     %opts = ( domain => "testdom", class => "1copy", mindevcount => 1 );
@@ -213,4 +222,148 @@ use Digest::MD5 qw/md5_hex/;
 
     $info = $mogc->file_info($key);
     is($info->{checksum}, "MD5:".md5_hex("lazy"), 'checksum is set after repl');
+}
+
+# fsck recreates checksum when missing
+{
+    my $key = 'lazycksum';
+    my $info = $mogc->file_info($key);
+    $sto->delete_checksum($info->{fid});
+    $info = $mogc->file_info($key);
+    is($info->{checksum}, "MISSING", "checksum is missing");
+    full_fsck($tmptrack);
+
+    do {
+        $info = $mogc->file_info($key);
+    } while ($info->{checksum} eq "MISSING" && sleep(0.1));
+    is($info->{checksum}, "MD5:".md5_hex("lazy"), 'checksum is set after fsck');
+
+    @fsck_log = $sto->fsck_log_rows;
+    is(scalar(@fsck_log), 1, "fsck log has one row");
+    is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
+    is($fsck_log[0]->{evcode}, "NSUM", "missing checksum logged");
+}
+
+# fsck fixes a file corrupt file
+{
+    my $key = 'lazycksum';
+    my $info = $mogc->file_info($key);
+    @paths = $mogc->get_paths($key);
+    is(scalar(@paths), 2, "2 paths for lazycksum");
+    $req = HTTP::Request->new(PUT => $paths[0]);
+    $req->content("LAZY");
+    $rv = $ua->request($req);
+    ok($rv->is_success, "upload to corrupt a file successful");
+    is($ua->get($paths[0])->content, "LAZY", "file successfully corrupted");
+    is($ua->get($paths[1])->content, "lazy", "paths[1] not corrupted");
+
+    full_fsck($tmptrack);
+
+    do {
+        @fsck_log = $sto->fsck_log_rows;
+    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+
+    is(scalar(@fsck_log), 1, "fsck log has one row");
+    is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
+    is($fsck_log[0]->{evcode}, "REPL", "repl for mismatched checksum logged");
+
+    do {
+        @paths = $mogc->get_paths($key);
+    } while (scalar(@paths) < 2 && sleep(0.1));
+    is(scalar(@paths), 2, "2 paths for key after replication");
+    is($ua->get($paths[0])->content, "lazy", "paths[0] is correct");
+    is($ua->get($paths[1])->content, "lazy", "paths[1] is correct");
+    $info = $mogc->file_info($key);
+    is($info->{checksum}, "MD5:".md5_hex("lazy"), 'checksum unchanged after fsck');
+}
+
+# fsck notices when all files are corrupt
+{
+    my $key = 'lazycksum';
+    my $info = $mogc->file_info($key);
+    @paths = $mogc->get_paths($key);
+    is(scalar(@paths), 2, "2 paths for lazycksum");
+
+    $req = HTTP::Request->new(PUT => $paths[0]);
+    $req->content("0000");
+    $rv = $ua->request($req);
+    ok($rv->is_success, "upload to corrupt a file successful");
+    is($ua->get($paths[0])->content, "0000", "successfully corrupted");
+
+    $req = HTTP::Request->new(PUT => $paths[1]);
+    $req->content("1111");
+    $rv = $ua->request($req);
+    ok($rv->is_success, "upload to corrupt a file successful");
+    is($ua->get($paths[1])->content, "1111", "successfully corrupted");
+
+    full_fsck($tmptrack);
+
+    do {
+        @fsck_log = $sto->fsck_log_rows;
+    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+
+    is(scalar(@fsck_log), 1, "fsck log has one row");
+    is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
+    is($fsck_log[0]->{evcode}, "BSUM", "BSUM logged");
+
+    @paths = $mogc->get_paths($key);
+    is(scalar(@paths), 2, "2 paths for checksum");
+    @paths = sort( map { $ua->get($_)->content } @paths);
+    is(join(', ', @paths), "0000, 1111", "corrupted content preserved");
+}
+
+# reuploaded checksum row clobbers old checksum
+{
+    my $key = 'lazycksum';
+    my $info = $mogc->file_info($key);
+
+    ok($sto->get_checksum($info->{fid}), "old checksum row exists");
+
+    my $fh = $mogc->new_file($key, "2copies");
+    print $fh "HAZY";
+    ok(close($fh), "closed replacement file (lazycksum => HAZY)");
+
+    while ($sto->get_checksum($info->{fid})) {
+        sleep(0.5);
+        print "waiting...\n";
+    }
+    is($sto->get_checksum($info->{fid}), undef, "old checksum is gone");
+}
+
+# completely corrupted files with no checksum row
+{
+    my $key = 'lazycksum';
+    do {
+        @paths = $mogc->get_paths($key);
+    } while (scalar(@paths) < 2 && sleep(0.1));
+    is(scalar(@paths), 2, "replicated succesfully");
+
+    my $info = $mogc->file_info($key);
+    is($info->{checksum}, "MD5:".md5_hex("HAZY"), "checksum created on repl");
+
+    $req = HTTP::Request->new(PUT => $paths[0]);
+    $req->content("MAYB");
+    $rv = $ua->request($req);
+    ok($rv->is_success, "upload to corrupt a file successful");
+    is($ua->get($paths[0])->content, "MAYB", "successfully corrupted (MAYB)");
+
+    $req = HTTP::Request->new(PUT => $paths[1]);
+    $req->content("CRZY");
+    $rv = $ua->request($req);
+    ok($rv->is_success, "upload to corrupt a file successful");
+    is($ua->get($paths[1])->content, "CRZY", "successfully corrupted (CRZY)");
+
+    is($sto->delete_checksum($info->{fid}), 1, "nuke new checksum");
+    $info = $mogc->file_info($key);
+    is($info->{checksum}, "MISSING", "checksum is MISSING");
+
+    full_fsck($tmptrack);
+
+    do {
+        @fsck_log = $sto->fsck_log_rows;
+    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+
+    is(scalar(@fsck_log), 1, "fsck log has one row");
+    is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
+    is($fsck_log[0]->{evcode}, "BSUM", "BSUM logged");
 }

@@ -26,6 +26,7 @@ use constant EV_FOUND_FID        => "FOND";
 use constant EV_RE_REPLICATE     => "REPL";
 use constant EV_BAD_COUNT        => "BCNT";
 use constant EV_BAD_CHECKSUM     => "BSUM";
+use constant EV_NO_CHECKSUM      => "NSUM";
 
 use POSIX ();
 
@@ -137,6 +138,11 @@ sub check_fid {
         return $fix->();
     }
 
+    # missing checksum row
+    if ($fid->class->checksumtype && ! $fid->checksum) {
+        return $fix->();
+    }
+
     # in the fast case, do nothing else (don't check if assumed file
     # locations are actually there).  in the fast case, all we do is
     # check the replication policy, which is already done, so finish.
@@ -166,7 +172,7 @@ sub check_fid {
     });
 
     if ($rv) {
-        return HANDLED;
+        return $fid->class->checksumtype ? $fix->() : HANDLED;
     } elsif ($err eq "stalled") {
         return STALLED;
     } elsif ($err eq "needfix") {
@@ -209,6 +215,9 @@ sub fix_fid {
     my @good_devs;
     my @bad_devs;
     my %already_checked;  # devid -> 1.
+    my $alg = $fid->class->checksumname;
+    my $checksums = {};
+    my $ping_cb = sub { $self->still_alive };
 
     my $check_dfids = sub {
         my $is_desperate_mode = shift;
@@ -228,6 +237,23 @@ sub fix_fid {
             die "dev " . $dev->id . " unreachable" unless defined $disk_size;
 
             if ($disk_size == $fid->length) {
+                if ($alg) {
+                    my $digest = $self->checksum_on_disk($dfid, $alg, $ping_cb);
+                    unless (defined $digest) {
+                        die "dev " . $dev->id . " unreachable";
+                    }
+
+                    # DELETE could've hit right after size check
+                    if ($digest eq "-1") {
+                        unless ($is_desperate_mode) {
+                            $fid->fsck_log(EV_FILE_MISSING, $dev);
+                        }
+                        push @bad_devs, $dfid->device;
+                        next;
+                    }
+                    push @{$checksums->{$digest} ||= []}, $dfid->device;
+                }
+
                 push @good_devs, $dfid->device;
                 # if we were doing a desperate search, one is enough, we can stop now!
                 return if $is_desperate_mode;
@@ -283,6 +309,8 @@ sub fix_fid {
     # in case the devcount or similar was fixed.
     $fid->want_reload;
 
+    $self->fix_checksums($fid, $checksums) if $alg;
+
     # Note: this will reload devids, if they called 'note_on_device'
     # or 'forget_about_device'
     unless ($fid->devids_meet_policy) {
@@ -300,6 +328,16 @@ sub fix_fid {
     return HANDLED;
 }
 
+sub forget_file_on_with_bad_checksums {
+    my ($self, $fid, $checksums) = @_;
+    foreach my $bdevs (values %$checksums) {
+        foreach my $bdev (@$bdevs) {
+            error("removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
+            $fid->forget_about_device($bdev);
+        }
+    }
+}
+
 # returns 0 on missing,
 # undef on connectivity error,
 # else size of file on disk (after HTTP HEAD or mogstored stat)
@@ -307,6 +345,69 @@ sub size_on_disk {
     my ($self, $dfid) = @_;
     return undef if $dfid->device->dstate->is_perm_dead;
     return $dfid->size_on_disk;
+}
+
+# returns -1 on missing,
+# undef on connectivity error,
+# else checksum of file on disk (after HTTP GET or mogstored read)
+sub checksum_on_disk {
+    my ($self, $dfid, $alg, $ping_cb) = @_;
+    return undef if $dfid->device->dstate->is_perm_dead;
+    return $dfid->checksum_on_disk($alg, $ping_cb);
+}
+
+sub all_checksums_bad {
+    my ($self, $fid, $checksums) = @_;
+    my $alg = $fid->class->checksumname or return; # class could've changed
+    my $cur_checksum = $fid->checksum;
+    my @err;
+
+    foreach my $checksum (keys %$checksums) {
+        my $bdevs = join(",", map { $_->id } @{$checksums->{$checksum}});
+        $checksum = unpack("H*", $checksum);
+        push @err, "$alg:$checksum on devids=[$bdevs]"
+    }
+    my $err = join('; ', @err);
+    my $cur = $cur_checksum ? "Expected: $cur_checksum"
+                            : "No known valid checksum";
+    error("all checksums bad: $err. $cur");
+    $fid->fsck_log(EV_BAD_CHECKSUM);
+}
+
+sub fix_checksums {
+    my ($self, $fid, $checksums) = @_;
+    my $cur_checksum = $fid->checksum;
+    my @all_checksums = keys(%$checksums);
+
+    if (scalar(@all_checksums) == 1) { # all checksums match, good!
+        my $disk_checksum = $all_checksums[0];
+        if ($cur_checksum) {
+            if ($cur_checksum->{checksum} ne $disk_checksum) {
+                $fid->fsck_log(EV_BAD_CHECKSUM);
+            }
+        } else { # fresh row to checksum
+            my $checksumtype = $fid->class->checksumtype or return;
+            my %row = (
+                fid => $fid->id,
+                checksum => $disk_checksum,
+                checksumtype => $checksumtype,
+            );
+            my $new_checksum = MogileFS::Checksum->new(\%row);
+            debug("creating new checksum=$new_checksum");
+            $fid->fsck_log(EV_NO_CHECKSUM);
+            $new_checksum->save;
+        }
+    } elsif ($cur_checksum) {
+        my $good = delete($checksums->{$cur_checksum->{checksum}});
+        if ($good && (scalar(@$good) > 0)) {
+            $self->forget_file_on_with_bad_checksums($fid, $checksums);
+            # will fail $fid->devids_meet_policy and re-replicate
+        } else {
+            $self->all_checksums_bad($fid, $checksums);
+        }
+    } else {
+        $self->all_checksums_bad($fid, $checksums);
+    }
 }
 
 1;
