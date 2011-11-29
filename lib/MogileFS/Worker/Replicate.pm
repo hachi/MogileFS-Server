@@ -712,7 +712,8 @@ sub http_copy {
                     return 1;
                 }
                 my $durl = "http://$dhostip:$dport$dpath";
-                my $actual = MogileFS::HTTPFile->at($durl)->digest($alg);
+                my $httpfile = MogileFS::HTTPFile->at($durl);
+                my $actual = $httpfile->digest($alg, $intercopy_cb);
                 if ($actual ne $digest) {
                     my $expect = unpack("H*", $digest);
                     $actual = unpack("H*", $actual);

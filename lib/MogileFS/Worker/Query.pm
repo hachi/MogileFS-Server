@@ -420,7 +420,7 @@ sub cmd_create_close {
     # if the class does not enforce or store it.
     if ($checksum && $args->{checksumverify}) {
         my $alg = $checksum->hashname;
-        my $actual = $httpfile->digest($alg); # expensive!
+        my $actual = $httpfile->digest($alg, sub { $self->still_alive });
         if ($actual ne $checksum->{checksum}) {
             $failed->();
             $actual = "$alg:" . unpack("H*", $actual);
