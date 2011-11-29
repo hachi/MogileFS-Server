@@ -56,9 +56,14 @@ sub column_type {
 # Store-related things we override
 # --------------------------------------------------------------------------
 
-# FIXME: Figure out how to properly detect this.
+# from sqlite3.h:
+use constant SQLITE_BUSY => 5; # The database file is locked
+use constant SQLITE_LOCKED => 6; # A table in the database is locked
+
 sub was_deadlock_error {
-    return 0;
+    my $err = $_[0]->dbh->err or return 0;
+
+    ($err == SQLITE_BUSY || $err == SQLITE_LOCKED);
 }
 
 sub was_duplicate_error {
