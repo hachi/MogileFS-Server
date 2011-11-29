@@ -477,7 +477,7 @@ sub cmd_updateclass {
         $fid->enqueue_for_replication();
     }
 
-    return $self->cmd_clear_cache;
+    return $self->ok_line;
 }
 
 sub cmd_delete {
