@@ -20,7 +20,7 @@ sub new {
     my $self = bless {
         fidid => $row->{fid},
         checksum => $row->{checksum},
-        checksumtype => $row->{checksumtype}
+        hashtype => $row->{hashtype}
     }, $class;
 
     return $self;
@@ -31,10 +31,10 @@ sub from_string {
     my ($class, $fidid, $string) = @_;
     $string =~ /\A([\w-]+):([a-fA-F0-9]{32,128})\z/ or
         die "invalid checksum string";
-    my $checksumname = $1;
+    my $hashname = $1;
     my $hexdigest = $2;
-    my $ref = $TYPE{$checksumname} or
-        die "invalid checksum name ($checksumname) from $string";
+    my $ref = $TYPE{$hashname} or
+        die "invalid checksum name ($hashname) from $string";
     my $checksum = pack("H*", $hexdigest);
     my $len = length($checksum);
     $len == $ref->{bytelen} or
@@ -43,14 +43,14 @@ sub from_string {
     bless {
         fidid => $fidid,
         checksum => $checksum,
-        checksumtype => $NAME2TYPE{$checksumname},
+        hashtype => $NAME2TYPE{$hashname},
     }, $class;
 }
 
-sub checksumname {
+sub hashname {
     my $self = shift;
-    my $type = $self->{checksumtype};
-    my $name = $TYPE2NAME{$type} or die "checksumtype=$type unknown";
+    my $type = $self->{hashtype};
+    my $name = $TYPE2NAME{$type} or die "hashtype=$type unknown";
 
     return $name;
 }
@@ -59,7 +59,7 @@ sub save {
     my $self = shift;
     my $sto = Mgd::get_store();
 
-    $sto->set_checksum($self->{fidid}, $self->{checksumtype}, $self->{checksum});
+    $sto->set_checksum($self->{fidid}, $self->{hashtype}, $self->{checksum});
 }
 
 sub maybe_save {
@@ -68,7 +68,7 @@ sub maybe_save {
 
     # $class may be undef as it could've been deleted between
     # create_open and create_close, we've never verified this before...
-    if ($class && $self->{checksumtype} eq $class->{checksumtype}) {
+    if ($class && $self->{hashtype} eq $class->{hashtype}) {
         $self->save;
     }
 }
@@ -81,7 +81,7 @@ sub hexdigest {
 
 sub as_string {
     my $self = shift;
-    my $name = $self->checksumname;
+    my $name = $self->hashname;
     my $hexdigest = $self->hexdigest;
 
     "Checksum[f=$self->{fidid};$name=$hexdigest]"
@@ -90,7 +90,7 @@ sub as_string {
 sub info {
     my $self = shift;
 
-    $self->checksumname . ':' . $self->hexdigest;
+    $self->hashname . ':' . $self->hexdigest;
 }
 
 1;

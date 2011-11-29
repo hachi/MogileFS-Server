@@ -19,7 +19,7 @@ use List::Util qw(shuffle);
 # 13: modifies 'server_settings.value' to TEXT for wider values
 #     also adds a TEXT 'arg' column to file_to_queue for passing arguments
 # 14: modifies 'device' mb_total, mb_used to INT for devs > 16TB
-# 15: adds checksum table, adds 'checksumtype' column to 'class' table
+# 15: adds checksum table, adds 'hashtype' column to 'class' table
 use constant SCHEMA_VERSION => 15;
 
 sub new {
@@ -533,7 +533,7 @@ sub setup_database {
     $sto->upgrade_modify_server_settings_value;
     $sto->upgrade_add_file_to_queue_arg;
     $sto->upgrade_modify_device_size;
-    $sto->upgrade_add_class_checksumtype;
+    $sto->upgrade_add_class_hashtype;
 
     return 1;
 }
@@ -601,7 +601,7 @@ sub TABLE_class {
     classname     VARCHAR(50),
     UNIQUE      (dmid,classname),
     mindevcount   TINYINT UNSIGNED NOT NULL,
-    checksumtype  TINYINT UNSIGNED
+    hashtype  TINYINT UNSIGNED
     )"
 }
 
@@ -810,7 +810,7 @@ sub TABLE_file_to_delete2 {
 sub TABLE_checksum {
     "CREATE TABLE checksum (
     fid INT UNSIGNED NOT NULL PRIMARY KEY,
-    checksumtype TINYINT UNSIGNED NOT NULL,
+    hashtype TINYINT UNSIGNED NOT NULL,
     checksum VARBINARY(64) NOT NULL
     )"
 }
@@ -836,10 +836,10 @@ sub upgrade_add_class_replpolicy {
     }
 }
 
-sub upgrade_add_class_checksumtype {
+sub upgrade_add_class_hashtype {
     my ($self) = @_;
-    unless ($self->column_type("class", "checksumtype")) {
-        $self->dowell("ALTER TABLE class ADD COLUMN checksumtype TINYINT UNSIGNED");
+    unless ($self->column_type("class", "hashtype")) {
+        $self->dowell("ALTER TABLE class ADD COLUMN hashtype TINYINT UNSIGNED");
     }
 }
 
@@ -947,12 +947,12 @@ sub update_class_replpolicy {
 }
 
 # return 1 on success, die otherwise
-sub update_class_checksumtype {
+sub update_class_hashtype {
     my $self = shift;
-    my %arg  = $self->_valid_params([qw(dmid classid checksumtype)], @_);
+    my %arg  = $self->_valid_params([qw(dmid classid hashtype)], @_);
     eval {
-    $self->dbh->do("UPDATE class SET checksumtype=? WHERE dmid=? AND classid=?",
-                   undef, $arg{checksumtype}, $arg{dmid}, $arg{classid});
+    $self->dbh->do("UPDATE class SET hashtype=? WHERE dmid=? AND classid=?",
+                   undef, $arg{hashtype}, $arg{dmid}, $arg{classid});
     };
     $self->condthrow;
 }
@@ -1331,7 +1331,7 @@ sub get_all_classes {
     if ($self->cached_schema_version >= 10) {
         push @cols, 'replpolicy';
         if ($self->cached_schema_version >= 15) {
-            push @cols, 'checksumtype';
+            push @cols, 'hashtype';
         }
     }
     my $cols = join(', ', @cols);
@@ -2162,16 +2162,16 @@ sub random_fids_on_device {
 sub BLOB_BIND_TYPE { undef; }
 
 sub set_checksum {
-    my ($self, $fidid, $checksumtype, $checksum) = @_;
+    my ($self, $fidid, $hashtype, $checksum) = @_;
     my $dbh = $self->dbh;
     die "Your database does not support REPLACE! Reimplement set_checksum!" unless $self->can_replace;
 
     eval {
         my $sth = $dbh->prepare("REPLACE INTO checksum " .
-                                "(fid, checksumtype, checksum) " .
+                                "(fid, hashtype, checksum) " .
                                 "VALUES (?, ?, ?)");
         $sth->bind_param(1, $fidid);
-        $sth->bind_param(2, $checksumtype);
+        $sth->bind_param(2, $hashtype);
         $sth->bind_param(3, $checksum, BLOB_BIND_TYPE);
         $sth->execute;
     };
@@ -2181,7 +2181,7 @@ sub set_checksum {
 sub get_checksum {
     my ($self, $fidid) = @_;
 
-    $self->dbh->selectrow_hashref("SELECT fid, checksumtype, checksum " .
+    $self->dbh->selectrow_hashref("SELECT fid, hashtype, checksum " .
                                   "FROM checksum WHERE fid = ?",
                                   undef, $fidid);
 }

@@ -419,7 +419,7 @@ sub cmd_create_close {
     # However, we /always/ verify it if the client wants us to, even
     # if the class does not enforce or store it.
     if ($checksum && $args->{checksumverify}) {
-        my $alg = $checksum->checksumname;
+        my $alg = $checksum->hashname;
         my $actual = $httpfile->digest($alg); # expensive!
         if ($actual ne $checksum->{checksum}) {
             $failed->();
@@ -625,7 +625,7 @@ sub cmd_file_info {
     $ret->{domain}   = Mgd::domain_factory()->get_by_id($fid->dmid)->name;
     my $class = Mgd::class_factory()->get_by_id($fid->dmid, $fid->classid);
     $ret->{class}    = $class->name;
-    if ($class->{checksumtype}) {
+    if ($class->{hashtype}) {
         my $checksum = Mgd::get_store()->get_checksum($fid->id);
         if ($checksum) {
             $checksum = MogileFS::Checksum->new($checksum);
@@ -872,11 +872,11 @@ sub cmd_create_class {
         return $self->err_line('invalid_replpolicy', $@) if $@;
     }
 
-    my $checksumtype = $args->{checksumtype};
-    if ($checksumtype && $checksumtype ne 'NONE') {
-        my $tmp = $MogileFS::Checksum::NAME2TYPE{$checksumtype};
-        return $self->err_line('invalid_checksumtype') unless $tmp;
-        $checksumtype = $tmp;
+    my $hashtype = $args->{hashtype};
+    if ($hashtype && $hashtype ne 'NONE') {
+        my $tmp = $MogileFS::Checksum::NAME2TYPE{$hashtype};
+        return $self->err_line('invalid_hashtype') unless $tmp;
+        $hashtype = $tmp;
     }
 
     my $sto = Mgd::get_store();
@@ -905,9 +905,9 @@ sub cmd_create_class {
     # don't erase an existing replpolicy if we're not setting a new one.
     $sto->update_class_replpolicy(dmid => $dmid, classid => $clsid,
         replpolicy => $replpolicy) if $replpolicy;
-    if ($checksumtype) {
-        $sto->update_class_checksumtype(dmid => $dmid, classid => $clsid,
-            checksumtype => $checksumtype eq 'NONE' ? undef : $checksumtype);
+    if ($hashtype) {
+        $sto->update_class_hashtype(dmid => $dmid, classid => $clsid,
+            hashtype => $hashtype eq 'NONE' ? undef : $hashtype);
     }
 
     # return success

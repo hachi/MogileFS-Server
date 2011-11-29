@@ -128,10 +128,10 @@ ok($domfac != $classfac, "factories are not the same singleton");
         replpolicy => 'MultipleHosts(6)'), 'can set replpolicy');
     ok($sto->update_class_name(dmid => $domid, classid => $clsid2,
         classname => 'boo'), 'can rename class');
-    ok($sto->update_class_checksumtype(dmid => $domid, classid => $clsid2,
-        checksumtype => 1), 'can set checksum type');
-    ok($sto->update_class_checksumtype(dmid => $domid, classid => $clsid2,
-        checksumtype => undef), 'can unset checksum type');
+    ok($sto->update_class_hashtype(dmid => $domid, classid => $clsid2,
+        hashtype => 1), 'can set checksum type');
+    ok($sto->update_class_hashtype(dmid => $domid, classid => $clsid2,
+        hashtype => undef), 'can unset checksum type');
 }
 
 {
@@ -146,7 +146,7 @@ ok($domfac != $classfac, "factories are not the same singleton");
         'classid' => '1',
         'mindevcount' => '2',
         'classname' => 'bar',
-        'checksumtype' => undef,
+        'hashtype' => undef,
     }, 'class bar came back');
     # We edited class2 a bunch, make sure that all stuck. 
     is_deeply($classes[1], {
@@ -155,6 +155,6 @@ ok($domfac != $classfac, "factories are not the same singleton");
         'classid' => '2',
         'mindevcount' => '3',
         'classname' => 'boo',
-        'checksumtype' => undef,
+        'hashtype' => undef,
     }, 'class baz came back as boo');
 }

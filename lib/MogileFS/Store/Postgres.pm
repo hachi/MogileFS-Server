@@ -836,16 +836,16 @@ sub release_lock {
 sub BLOB_BIND_TYPE { { pg_type => PG_BYTEA } }
 
 sub set_checksum {
-	my ($self, $fidid, $checksumtype, $checksum) = @_;
+	my ($self, $fidid, $hashtype, $checksum) = @_;
     my $dbh = $self->dbh;
 
     $dbh->begin_work;
     eval {
         my $sth = $dbh->prepare("INSERT INTO checksum " .
-                                "(fid, checksumtype, checksum) ".
+                                "(fid, hashtype, checksum) ".
                                 "VALUES (?, ?, ?)");
         $sth->bind_param(1, $fidid);
-        $sth->bind_param(2, $checksumtype);
+        $sth->bind_param(2, $hashtype);
         $sth->bind_param(3, $checksum, BLOB_BIND_TYPE);
         $sth->execute;
     };
@@ -853,9 +853,9 @@ sub set_checksum {
         if ($self->was_duplicate_error) {
             eval {
                 my $sth = $dbh->prepare("UPDATE checksum " .
-                                        "SET checksumtype = ?, checksum = ? " .
+                                        "SET hashtype = ?, checksum = ? " .
                                         "WHERE fid = ?");
-                $sth->bind_param(1, $checksumtype);
+                $sth->bind_param(1, $hashtype);
                 $sth->bind_param(2, $checksum, BLOB_BIND_TYPE);
                 $sth->bind_param(3, $fidid);
                 $sth->execute;

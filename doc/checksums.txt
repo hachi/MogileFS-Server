@@ -34,7 +34,7 @@ New optional parameters:
 If "checksumverify" is "1" and "checksum" is present, "create_close"
 will not return until it has verified the checksum.
 
-If the storage class of a file specifies a valid "checksumtype",
+If the storage class of a file specifies a valid "hashtype",
 the checksum is saved to the "checksum" table in the database.
 
 The client is _never_ required to supply a checksum.

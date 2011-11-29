@@ -136,7 +136,7 @@ use Digest::MD5 qw/md5_hex/;
 # enable saving MD5 checksums in "2copies" class
 {
     %opts = ( domain => "testdom", class => "2copies",
-              checksumtype => "MD5", mindevcount => 2 );
+              hashtype => "MD5", mindevcount => 2 );
     ok($be->do_request("update_class", \%opts), "update class");
     wait_for_monitor($be);
 }
@@ -173,20 +173,20 @@ use Digest::MD5 qw/md5_hex/;
     my @classes;
     %opts = ( domain => "testdom", class => "1copy", mindevcount => 1 );
 
-    $opts{checksumtype} = "NONE";
+    $opts{hashtype} = "NONE";
     ok($be->do_request("update_class", \%opts), "update class");
     @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
-    is($classes[0]->{checksumtype}, undef, "checksumtype unset");
+    is($classes[0]->{hashtype}, undef, "hashtype unset");
 
-    $opts{checksumtype} = "MD5";
+    $opts{hashtype} = "MD5";
     ok($be->do_request("update_class", \%opts), "update class");
     @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
-    is($classes[0]->{checksumtype}, 1, "checksumtype is 1 (MD5)");
+    is($classes[0]->{hashtype}, 1, "hashtype is 1 (MD5)");
 
-    $opts{checksumtype} = "NONE";
+    $opts{hashtype} = "NONE";
     ok($be->do_request("update_class", \%opts), "update class");
     @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
-    is($classes[0]->{checksumtype}, undef, "checksumtype unset");
+    is($classes[0]->{hashtype}, undef, "hashtype unset");
 }
 
 # wait for replicate to verify existing (valid) checksum

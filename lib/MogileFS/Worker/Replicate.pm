@@ -475,7 +475,7 @@ sub replicate {
         }
 
         my $worker = MogileFS::ProcManager->is_child or die;
-        my $digest = Digest->new($cls->checksumname) if $cls->checksumtype;
+        my $digest = Digest->new($cls->hashname) if $cls->hashtype;
         my $rv = http_copy(
                            sdevid       => $sdevid,
                            ddevid       => $ddevid,
@@ -506,7 +506,7 @@ sub replicate {
         my $dfid = MogileFS::DevFID->new($ddevid, $fid);
         $dfid->add_to_db;
         if ($digest && !$fid->checksum) {
-            $sto->set_checksum($fidid, $cls->checksumtype, $digest->digest);
+            $sto->set_checksum($fidid, $cls->hashtype, $digest->digest);
         }
 
         push @on_devs, $devs->{$ddevid};
@@ -545,7 +545,7 @@ sub http_copy {
 
     my $content_md5 = '';
     my $fid_checksum = $rfid->checksum;
-    if ($fid_checksum && $fid_checksum->checksumname eq "MD5") {
+    if ($fid_checksum && $fid_checksum->hashname eq "MD5") {
         # some HTTP servers may be able to verify Content-MD5 on PUT
         # and reject corrupted requests.  no HTTP server should reject
         # a request for an unrecognized header
@@ -704,7 +704,7 @@ sub http_copy {
     if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
         if ($1 >= 200 && $1 <= 299) {
             if ($digest) {
-                my $alg = $rfid->class->checksumname;
+                my $alg = $rfid->class->hashname;
 
                 if ($ddev->{reject_bad_md5} && ($alg eq "MD5")) {
                     # dest device would've rejected us with a error,

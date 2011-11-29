@@ -139,7 +139,7 @@ sub check_fid {
     }
 
     # missing checksum row
-    if ($fid->class->checksumtype && ! $fid->checksum) {
+    if ($fid->class->hashtype && ! $fid->checksum) {
         return $fix->();
     }
 
@@ -172,7 +172,7 @@ sub check_fid {
     });
 
     if ($rv) {
-        return $fid->class->checksumtype ? $fix->() : HANDLED;
+        return $fid->class->hashtype ? $fix->() : HANDLED;
     } elsif ($err eq "stalled") {
         return STALLED;
     } elsif ($err eq "needfix") {
@@ -215,7 +215,7 @@ sub fix_fid {
     my @good_devs;
     my @bad_devs;
     my %already_checked;  # devid -> 1.
-    my $alg = $fid->class->checksumname;
+    my $alg = $fid->class->hashname;
     my $checksums = {};
     my $ping_cb = sub { $self->still_alive };
 
@@ -358,7 +358,7 @@ sub checksum_on_disk {
 
 sub all_checksums_bad {
     my ($self, $fid, $checksums) = @_;
-    my $alg = $fid->class->checksumname or return; # class could've changed
+    my $alg = $fid->class->hashname or return; # class could've changed
     my $cur_checksum = $fid->checksum;
     my @err;
 
@@ -386,11 +386,11 @@ sub fix_checksums {
                 $fid->fsck_log(EV_BAD_CHECKSUM);
             }
         } else { # fresh row to checksum
-            my $checksumtype = $fid->class->checksumtype or return;
+            my $hashtype = $fid->class->hashtype or return;
             my %row = (
                 fid => $fid->id,
                 checksum => $disk_checksum,
-                checksumtype => $checksumtype,
+                hashtype => $hashtype,
             );
             my $new_checksum = MogileFS::Checksum->new(\%row);
             debug("creating new checksum=$new_checksum");

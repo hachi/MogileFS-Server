@@ -182,13 +182,13 @@ $sto->set_checksum(6, 1, md5("FOO"));
 my $hash = $sto->get_checksum(6);
 ok($hash->{checksum} eq md5("FOO"), "checksum matches expected");
 ok($hash->{fid} == 6, "checksum fid set correctly");
-ok($hash->{checksumtype} == 1, "checksumtype set correctly");
+ok($hash->{hashtype} == 1, "hashtype set correctly");
 
 $sto->set_checksum(6, 2, md5("MOO"));
 $hash = $sto->get_checksum(6);
 ok($hash->{checksum} eq md5("MOO"), "checksum matches expected");
 ok($hash->{fid} == 6, "checksum fid set correctly");
-ok($hash->{checksumtype} == 2, "checksumtype set correctly");
+ok($hash->{hashtype} == 2, "hashtype set correctly");
 
 ok(1 == $sto->delete_checksum(6), "checksum deleted OK");
 ok(0 == $sto->delete_checksum(6), "checksum delete MISS");
