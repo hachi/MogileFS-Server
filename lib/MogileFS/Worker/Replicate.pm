@@ -550,7 +550,7 @@ sub http_copy {
         # and reject corrupted requests.  no HTTP server should reject
         # a request for an unrecognized header
         my $b64digest = encode_base64($fid_checksum->{checksum}, "");
-        $content_md5 = "Content-MD5: $b64digest\r\n";
+        $content_md5 = "\r\nContent-MD5: $b64digest";
     }
 
     $intercopy_cb ||= sub {};
