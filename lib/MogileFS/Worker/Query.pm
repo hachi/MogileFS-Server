@@ -187,7 +187,6 @@ sub cmd_test {
 
 sub cmd_clear_cache {
     my MogileFS::Worker::Query $self = shift;
-    my $args = shift;
 
     $self->forget_that_monitor_has_run;
     $self->send_to_parent(":refresh_monitor");
