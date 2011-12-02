@@ -3,9 +3,6 @@ package MogileFS::Worker::Fsck;
 use strict;
 use base 'MogileFS::Worker';
 use fields (
-            'last_stop_check',     # unixtime 'should_stop_running' last called
-            'last_maxcheck_write', # unixtime maxcheck written
-            'size_checker',        # subref which, given a DevFID, returns size of file
             'opt_nostat',          # bool: do we trust mogstoreds? skipping size stats?
             );
 use MogileFS::Util qw(every error debug);
@@ -95,8 +92,6 @@ sub work {
         $self->{opt_nostat} = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
         MogileFS::FID->mass_load_devids(@fids);
 
-        $self->init_size_checker(\@fids);
-
         # don't sleep in loop, next round, since we found stuff to work on
         # this round...
         $sleep_set->(0);
@@ -116,35 +111,6 @@ sub work {
             $beat->();
         }
     });
-}
-
-# only write to server_settings table our position every 5 seconds
-sub set_max_checked_lazy {
-    my ($self, $nmax) = @_;
-    return 0 if $nowish < ($self->{last_maxcheck_write} || 0) + 5;
-    $self->{last_maxcheck_write} = $nowish;
-    $self->set_max_checked($nmax);
-}
-
-sub set_max_checked {
-    my ($self, $nmax) = @_;
-    MogileFS::Config->set_server_setting('fsck_highest_fid_checked', $nmax);
-}
-
-# this version is accurate,
-sub should_be_running {
-    my $self = shift;
-    my $fhost = MogileFS::Config->server_setting('fsck_host')
-        or return;
-    return $fhost eq MogileFS::Config->hostname;
-}
-
-# this version is sloppy, optimized for speed.  only checks db every 5 seconds.
-sub should_stop_running {
-    my $self = shift;
-    return 0 if $nowish < ($self->{last_stop_check} || 0) + 5;
-    $self->{last_stop_check} = $nowish;
-    return ! $self->should_be_running;
 }
 
 # given a $fid (MogileFS::FID, with pre-populated ->devids data)
@@ -361,72 +327,6 @@ sub fix_fid {
     return HANDLED;
 }
 
-sub init_size_checker {
-    my ($self, $fidlist) = @_;
-
-    $self->still_alive;
-
-    my $lo_fid = $fidlist->[0]->id;
-    my $hi_fid = $fidlist->[-1]->id;
-
-    my %size;           # $devid -> { $fid -> $size }
-    my %tried_bulkstat; # $devid -> 1
-
-    $self->{size_checker} = sub {
-        my $dfid  = shift;
-        my $devid = $dfid->devid;
-
-        if (my $map = $size{$devid}) {
-            return $map->{$dfid->fidid} || 0;
-        }
-
-        unless ($tried_bulkstat{$devid}++) {
-            my $mogconn = $dfid->device->host->mogstored_conn;
-            my $sock    = $mogconn->sock(5);
-            my $good = 0;
-            my $unknown_cmd = 0;
-            if ($sock) {
-                my $cmd = "fid_sizes $lo_fid-$hi_fid $devid\n";
-                print $sock $cmd;
-                my $map = {};
-                while (my $line = <$sock>) {
-                    if ($line =~ /^\./) {
-                        $good = 1;
-                        last;
-                    } elsif ($line =~ /^(\d+)\s+(\d+)\s+(\d+)/) {
-                        my ($res_devid, $res_fid, $size) = ($1, $2, $3);
-                        last unless $res_devid == $devid;
-                        $map->{$res_fid} = $size;
-                    } elsif ($line =~ /^ERR/) {
-                        $unknown_cmd = 1;
-                        last;
-                    } else {
-                        last;
-                    }
-                }
-
-                # we only update our $nowish (approximate time) lazily, when we
-                # know time might've advanced (like during potentially slow RPC call)
-                $nowish = $self->still_alive;
-
-                if ($good) {
-                    $size{$devid} = $map;
-                    return $map->{$dfid->fidid} || 0;
-                } elsif (!$unknown_cmd) {
-                    # mogstored connection is unknown state... can't
-                    # trust it, so close it.
-                    $mogconn->mark_dead;
-                }
-            }
-            error("fid_sizes mogstored cmd unavailable for dev $devid; using slower method");
-        }
-
-        # slow case (not using new command)
-        $nowish = $self->still_alive;
-        return $dfid->size_on_disk;
-    };
-}
-
 # returns 0 on missing,
 # undef on connectivity error,
 # else size of file on disk (after HTTP HEAD or mogstored stat)
@@ -434,10 +334,6 @@ sub size_on_disk {
     my ($self, $dfid) = @_;
     return undef if $dfid->device->dstate->is_perm_dead;
     return $dfid->size_on_disk;
-    # Mass checker is disabled for now... doesn't run on our production
-    # hosts due to massive gaps in the fids. Instead we make the process
-    # parallel and will rework it later.
-    #return $self->{size_checker}->($dfid);
 }
 
 1;
