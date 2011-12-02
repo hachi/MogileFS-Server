@@ -1,8 +1,9 @@
 database
 --------
 
-checksum hashes are represented as binary (BLOB) columns in the
-database.  They can be up to 64 bytes large for SHA512 or WHIRLPOOL.
+checksum hashes are represented as binary (VARBINARY for MySQL/SQLite,
+bytea for Postgres) columns in the database.  They can be up to 64 bytes
+large for SHA512 or WHIRLPOOL.
 
 tracker protocol
 ----------------
