@@ -21,6 +21,7 @@ use constant REBAL_QUEUE => 2;
 use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
 
 my %conf;
+my %server_settings;
 sub set_config {
     shift if @_ == 3;
     my ($k, $v) = @_;
@@ -269,9 +270,18 @@ sub server_setting {
     return Mgd::get_store()->server_setting($key);
 }
 
+sub cache_server_setting {
+    my ($class, $key, $val) = @_;
+    if (! defined $val) {
+        delete $server_settings{$key}
+            if exists $server_settings{$key};
+    }
+    $server_settings{$key} = $val;
+}
+
 sub server_setting_cached {
-    my ($class, $key, $timeout) = @_;
-    return Mgd::get_store()->server_setting_cached($key, $timeout);
+    my ($class, $key) = @_;
+    return $server_settings{$key};
 }
 
 my $memc;

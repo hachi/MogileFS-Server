@@ -54,7 +54,6 @@ sub new_from_dsn_user_pass {
         recheck_req_gen  => 0,  # incremented generation, of recheck of dbh being requested
         recheck_done_gen => 0,  # once recheck is done, copy of what the request generation was
         handles_left     => 0,  # amount of times this handle can still be verified
-        server_setting_cache => {}, # value-agnostic db setting cache.
     }, $subclass;
     $self->init;
     return $self;
@@ -873,21 +872,6 @@ sub server_setting {
     my ($self, $key) = @_;
     return $self->dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?",
                                        undef, $key);
-}
-
-# generic server setting cache.
-# note that you can call the same server setting with different timeouts, but
-# the timeout specified at the time of ... timeout, wins.
-sub server_setting_cached {
-    my ($self, $key, $timeout) = @_;
-    $self->{server_setting_cache}->{$key} ||= {val => '', refresh => 0};
-    my $cache = $self->{server_setting_cache}->{$key};
-    my $now = time();
-    if ($now > $cache->{refresh}) {
-        $cache->{val}     = $self->server_setting($key);
-        $cache->{refresh} = $now + $timeout;
-    }
-    return $cache->{val};
 }
 
 sub server_settings {

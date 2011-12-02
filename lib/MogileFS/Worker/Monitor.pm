@@ -215,7 +215,9 @@ sub diff_data {
             my $id = $type eq 'domain' ? $item->{dmid}
                 : $type eq 'class'     ? $item->{dmid} . '-' . $item->{classid}
                 : $type eq 'host'      ? $item->{hostid}
-                : $type eq 'device'    ? $item->{devid} : die "Unknown type";
+                : $type eq 'device'    ? $item->{devid}
+                : $type eq 'srvset'    ? $item->{field}
+                : die "Unknown type";
             my $old = delete $p_data->{$id};
             # Special case: for devices, we don't care if mb_asof changes.
             # FIXME: Change the grab routine (or filter there?).
@@ -262,10 +264,18 @@ sub grab_all_data {
     while (my ($name, $id) = each %dom) {
         push(@fixed_dom, { namespace => $name, dmid => $id });
     }
+
+    my $set = $sto->server_settings;
+    my @fixed_set = ();
+    while (my ($field, $value) = each %$set) {
+        push(@fixed_set, { field => $field, value => $value });
+    }
+
     my %ret = ( domain => \@fixed_dom,
         class  => [$sto->get_all_classes],
         host   => [$sto->get_all_hosts],
-        device => [$sto->get_all_devices], );
+        device => [$sto->get_all_devices],
+        srvset => \@fixed_set, );
     return \%ret;
 }
 
