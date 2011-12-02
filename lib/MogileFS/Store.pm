@@ -183,12 +183,12 @@ sub _slaves_list {
     $self->{slave_list_cachetime} = $now;
     $self->{slave_list_cache}     = [];
 
-    my $sk = MogileFS::Config->server_setting('slave_keys')
+    my $sk = MogileFS::Config->server_setting_cached('slave_keys')
         or return ();
 
     my @ret;
     foreach my $key (split /\s*,\s*/, $sk) {
-        my $slave = MogileFS::Config->server_setting("slave_$key");
+        my $slave = MogileFS::Config->server_setting_cached("slave_$key");
 
         if (!$slave) {
             error("key for slave DB config: slave_$key not found in configuration");

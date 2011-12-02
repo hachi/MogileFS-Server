@@ -112,7 +112,7 @@ sub _check_replicate_queues {
 sub _check_fsck_queues {
     my $self = shift;
     my $sto  = shift;
-    my $fhost = MogileFS::Config->server_setting('fsck_host');
+    my $fhost = MogileFS::Config->server_setting_cached('fsck_host');
     if ($fhost && $fhost eq MogileFS::Config->hostname) {
         $self->_inject_fsck_queues($sto);
     }
@@ -143,13 +143,13 @@ sub _inject_fsck_queues {
     $sto->fsck_log_summarize;
     my $queue_size = $sto->file_queue_length(FSCK_QUEUE);
     my $max_queue  =
-        MogileFS::Config->server_setting_cached('queue_size_for_fsck', 60) ||
+        MogileFS::Config->server_setting_cached('queue_size_for_fsck') ||
             DEF_FSCK_QUEUE_MAX;
     return if ($queue_size >= $max_queue);
 
     my $max_checked = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
     my $to_inject   =
-        MogileFS::Config->server_setting_cached('queue_rate_for_fsck', 60) ||
+        MogileFS::Config->server_setting_cached('queue_rate_for_fsck') ||
             DEF_FSCK_QUEUE_INJECT;
     my $fids        = $sto->get_fidids_above_id($max_checked, $to_inject);
     unless (@$fids) {
@@ -169,7 +169,7 @@ sub _inject_fsck_queues {
 sub _check_rebal_queues {
     my $self = shift;
     my $sto  = shift;
-    my $rhost = MogileFS::Config->server_setting('rebal_host');
+    my $rhost = MogileFS::Config->server_setting_cached('rebal_host');
     if ($rhost && $rhost eq MogileFS::Config->hostname) {
         $self->_inject_rebalance_queues($sto);
     }
@@ -195,12 +195,12 @@ sub _inject_rebalance_queues {
 
     my $queue_size  = $sto->file_queue_length(REBAL_QUEUE);
     my $max_queue   =
-        MogileFS::Config->server_setting_cached('queue_size_for_rebal', 60) ||
+        MogileFS::Config->server_setting_cached('queue_size_for_rebal') ||
             DEF_REBAL_QUEUE_MAX;
     return if ($queue_size >= $max_queue);
 
     my $to_inject   =
-        MogileFS::Config->server_setting_cached('queue_rate_for_rebal', 60) ||
+        MogileFS::Config->server_setting_cached('queue_rate_for_rebal') ||
             DEF_REBAL_QUEUE_INJECT;
 
     # TODO: Cache the rebal object. Requires explicitly blowing it up at the
@@ -262,7 +262,7 @@ sub _inject_rebalance_queues {
 # fast trying to keep the queue full.
 sub queue_depth_check {
     my $max_limit =
-        MogileFS::Config->server_setting_cached('internal_queue_limit', 120)
+        MogileFS::Config->server_setting_cached('internal_queue_limit')
             || 500;
 
     my ($depth, $limit) = @_;
