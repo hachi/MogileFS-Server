@@ -76,7 +76,7 @@ sub work {
         # This counts the same as a $self->still_alive;
         $self->send_to_parent('worker_bored 50 fsck');
         return unless @{$queue_todo};
-        $self->validate_dbh;
+        return unless $self->validate_dbh;
 
         my @fids = ();
         while (my $todo = shift @{$queue_todo}) {

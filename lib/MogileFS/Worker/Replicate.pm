@@ -38,12 +38,9 @@ sub work {
 
         my $queue_todo  = $self->queue_todo('replicate');
         my $queue_todo2 = $self->queue_todo('rebalance');
-        unless (@$queue_todo || @$queue_todo2) {
-            return;
-        }
+        return unless (@$queue_todo || @$queue_todo2);
 
-        $self->validate_dbh;
-        my $dbh = $self->get_dbh or return 0;
+        return unless $self->validate_dbh;
         my $sto = Mgd::get_store();
 
         while (my $todo = shift @$queue_todo) {

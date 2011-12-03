@@ -227,7 +227,15 @@ sub server {
 }
 
 # database checking/connecting
-sub validate_dbh { Mgd::get_store()->recheck_dbh }
+sub validate_dbh { 
+    my $sto = Mgd::get_store();
+    $sto->recheck_dbh();
+    my $dbh;
+    eval { $dbh = $sto->dbh };
+    # Doesn't matter what the failure was; workers should retry later.
+    error("Error validating master DB: $@") if $@;
+    return $dbh;
+}
 sub get_dbh      { return Mgd::get_store()->dbh  }
 
 # the eventual replacement for callers asking for a dbh directly:

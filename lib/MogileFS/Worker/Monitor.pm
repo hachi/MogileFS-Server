@@ -46,7 +46,7 @@ sub cache_refresh {
     my $self = shift;
 
     debug("Monitor running; checking DB for updates");
-    $self->validate_dbh;
+    return unless $self->validate_dbh;
 
     my $db_data   = $self->grab_all_data;
 
@@ -60,7 +60,7 @@ sub usage_refresh {
     my $self = shift;
 
     debug("Monitor running; scanning usage files");
-    $self->validate_dbh;
+    my $have_dbh = $self->validate_dbh;
 
     $self->{skip_host}  = {};  # hostid -> 1 if already noted dead.
     $self->{seen_hosts} = {}; # IP -> 1
@@ -75,7 +75,7 @@ sub usage_refresh {
         }
         $cur_iow->{$dev->id} = $self->{devutil}->{cur}->{$dev->id};
         next if $self->{skip_host}{$dev->hostid};
-        $self->check_device($dev) if $dev->dstate->should_monitor;
+        $self->check_device($dev, $have_dbh) if $dev->dstate->should_monitor;
     }
 
     $self->{devutil}->{prev} = $cur_iow;
@@ -288,7 +288,7 @@ sub ua {
 }
 
 sub check_device {
-    my ($self, $dev) = @_;
+    my ($self, $dev, $have_dbh) = @_;
 
     my $devid = $dev->id;
     my $host  = $dev->host;
@@ -354,7 +354,7 @@ sub check_device {
     my $last_update = $self->{last_db_update}{$dev->id} || 0;
     my $next_update = $last_update + UPDATE_DB_EVERY;
     my $now = time();
-    if ($now >= $next_update) {
+    if ($now >= $next_update && $have_dbh) {
         Mgd::get_store()->update_device_usage(mb_total => int($total / 1024),
                                               mb_used  => int($used / 1024),
                                               devid    => $devid);

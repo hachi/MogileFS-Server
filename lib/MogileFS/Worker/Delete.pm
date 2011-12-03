@@ -35,7 +35,7 @@ sub work {
     while (1) {
         $self->send_to_parent("worker_bored 50 delete");
         $self->read_from_parent(1);
-        $self->validate_dbh;
+        next unless $self->validate_dbh;
 
         # call our workers, and have them do things
         #    RETVAL = 0; I think I am done working for now
