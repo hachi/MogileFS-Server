@@ -88,11 +88,12 @@ sub check_slave {
         return 1;
     }
 
-    my $master_status = eval { $self->dbh->selectrow_hashref("SHOW MASTER STATUS") };
-    warn "Error thrown: '$@' while trying to get master status." if $@;
+    # FIXME: Only make these calls when we're ready to do something with them.
+    #my $master_status = eval { $self->dbh->selectrow_hashref("SHOW MASTER STATUS") };
+    #warn "Error thrown: '$@' while trying to get master status." if $@;
 
-    my $slave_status = eval { $self->{slave}->dbh->selectrow_hashref("SHOW SLAVE STATUS") };
-    warn "Error thrown: '$@' while trying to get slave status." if $@;
+    #my $slave_status = eval { $self->{slave}->dbh->selectrow_hashref("SHOW SLAVE STATUS") };
+    #warn "Error thrown: '$@' while trying to get slave status." if $@;
 
     # compare contrast, return 0 if not okay.
     # Master: File Position

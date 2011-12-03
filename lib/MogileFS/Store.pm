@@ -288,6 +288,8 @@ sub dbh {
     return $self->{dbh};
 }
 
+sub have_dbh { return 1 if $_[0]->{dbh}; } 
+
 sub ping {
     my $self = shift;
     return $self->dbh->ping;

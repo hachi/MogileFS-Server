@@ -229,11 +229,12 @@ sub server {
 # database checking/connecting
 sub validate_dbh { 
     my $sto = Mgd::get_store();
+    my $had_dbh = $sto->have_dbh;
     $sto->recheck_dbh();
     my $dbh;
     eval { $dbh = $sto->dbh };
     # Doesn't matter what the failure was; workers should retry later.
-    error("Error validating master DB: $@") if $@;
+    error("Error validating master DB: $@") if $@ && $had_dbh;
     return $dbh;
 }
 sub get_dbh      { return Mgd::get_store()->dbh  }
