@@ -1394,6 +1394,14 @@ sub cmd_set_server_setting {
     return $self->err_line("invalid_format", $@) if $@;
 
     MogileFS::Config->set_server_setting($key, $cleanval);
+
+    # GROSS HACK: slave settings are managed directly by MogileFS::Client, but
+    # I need to add a version key, so we check and inject that code here.
+    # FIXME: Move this when slave keys are managed by query worker commands!
+    if ($key =~ /^slave_/) {
+        Mgd::get_store()->incr_server_setting('slave_version', 1);
+    }
+
     return $self->ok_line;
 }
 

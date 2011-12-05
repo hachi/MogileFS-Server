@@ -49,7 +49,7 @@ sub new_from_dsn_user_pass {
         pass   => $pass,
         max_handles => $max_handles, # Max number of handles to allow
         raise_errors => $subclass->want_raise_errors,
-        slave_list_cachetime => 0,
+        slave_list_version => 0,
         slave_list_cache     => [],
         recheck_req_gen  => 0,  # incremented generation, of recheck of dbh being requested
         recheck_done_gen => 0,  # once recheck is done, copy of what the request generation was
@@ -177,10 +177,11 @@ sub _slaves_list {
     my $now = time();
 
     # only reload every 15 seconds.
-    if ($self->{slave_list_cachetime} > $now - 15) {
+    my $ver = MogileFS::Config->server_setting_cached('slave_version') || 0;
+    if ($ver <= $self->{slave_list_version}) {
         return @{$self->{slave_list_cache}};
     }
-    $self->{slave_list_cachetime} = $now;
+    $self->{slave_list_version} = $ver;
     $self->{slave_list_cache}     = [];
 
     my $sk = MogileFS::Config->server_setting_cached('slave_keys')
