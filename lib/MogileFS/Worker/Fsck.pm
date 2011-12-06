@@ -38,32 +38,6 @@ sub work {
     # this can be CPU-intensive.  let's nice ourselves down.
     POSIX::nice(10);
 
-    # <debug crap>
-    my $running = 0; # start time
-    my $n_check = 0; # items checked
-    my $start = sub {
-        return if $running;
-        $running = $nowish = time();
-    };
-    my $stats = sub {
-        return unless $running;
-        my $elap = $nowish - $running;
-        debug(sprintf("In %d secs, %d fids, %0.02f fids/sec\n", $elap, $n_check, ($n_check / ($elap || 1))));
-    };
-    my $last_beat = 0;
-    my $beat = sub {
-        return unless $nowish >= $last_beat + 5;
-        $stats->();
-        $last_beat = $nowish;
-    };
-    my $stop = sub {
-        return unless $running;
-        $stats->();
-        debug("done.");
-        $running = 0;
-    };
-    # </debug crap>
-
     my $sto         = Mgd::get_store();
     my $max_checked = 0;
 
@@ -107,8 +81,6 @@ sub work {
                 next;
             }
             $sto->delete_fid_from_file_to_queue($fid->id, FSCK_QUEUE);
-            $n_check++;
-            $beat->();
         }
     });
 }

@@ -73,9 +73,9 @@ See L<MogileFS::Worker::Delete>.
 
 See L<MogileFS::Worker::Reaper>.
 
-=item B<Checker/Fsck> -- background filesystem consistency checker
+=item B<Fsck> -- background filesystem consistency checker
 
-See L<MogileFS::Worker::Checker>.
+See L<MogileFS::Worker::Fsck>.
 
 =back
 

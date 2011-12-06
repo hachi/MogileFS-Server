@@ -1355,31 +1355,6 @@ sub cmd_replicate_now {
     return $self->ok_line({ count => int($rv) });
 }
 
-sub cmd_checker {
-    my MogileFS::Worker::Query $self = shift;
-    my $args = shift;
-
-    my $new_setting;
-    if ($args->{disable}) {
-        $new_setting = 'off';
-    } elsif ($args->{level}) {
-        # they want to turn it on or change the level, so let's ensure they
-        # specified a valid level
-        if (MogileFS::Worker::Checker::is_valid_level($args->{level})) {
-            $new_setting = $args->{level};
-        } else {
-            return $self->err_line('invalid_checker_level');
-        }
-    }
-
-    if (defined $new_setting) {
-        MogileFS::Config->set_server_setting('fsck_enable', $new_setting);
-        return $self->ok_line;
-    }
-
-    $self->err_line('failure');
-}
-
 sub cmd_set_server_setting {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
