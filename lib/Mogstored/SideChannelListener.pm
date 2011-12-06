@@ -2,6 +2,7 @@ package Mogstored::SideChannelListener;
 use strict;
 use base 'Perlbal::TCPListener';
 use Mogstored::SideChannelClient;
+use Socket qw(SO_KEEPALIVE);
 
 sub new {
     my ($class, $hostport) = @_;
@@ -9,7 +10,9 @@ sub new {
     # exploding/warning.  so we created this stub service above in our static
     # config, just for this.
     my $svc    = Perlbal->service("mgmt") or die "Where is mgmt service?";
-    return $class->SUPER::new($hostport, $svc);
+    my $self = $class->SUPER::new($hostport, $svc);
+    $self->{sock}->sockopt(SO_KEEPALIVE, 1);
+    return $self;
 }
 
 sub event_read {
