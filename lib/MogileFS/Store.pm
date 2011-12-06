@@ -4,7 +4,7 @@ use warnings;
 use Carp qw(croak);
 use MogileFS::Util qw(throw max error);
 use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
-use List::Util ();
+use List::Util qw(shuffle);
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
@@ -54,6 +54,8 @@ sub new_from_dsn_user_pass {
         recheck_req_gen  => 0,  # incremented generation, of recheck of dbh being requested
         recheck_done_gen => 0,  # once recheck is done, copy of what the request generation was
         handles_left     => 0,  # amount of times this handle can still be verified
+        connected_slaves => {},
+        dead_slaves      => {},
     }, $subclass;
     $self->init;
     return $self;
@@ -171,18 +173,22 @@ sub is_slave {
     return $self->{slave};
 }
 
+sub _slaves_list_changed {
+    my $self = shift;
+    my $ver = MogileFS::Config->server_setting_cached('slave_version') || 0;
+    if ($ver <= $self->{slave_list_version}) {
+        return 0;
+    }
+    $self->{slave_list_version} = $ver;
+    # Restart connections from scratch if the configuration changed.
+    $self->{connected_slaves} = {};
+    return 1;
+}
+
 # Returns a list of arrayrefs, each being [$dsn, $username, $password] for connecting to a slave DB.
 sub _slaves_list {
     my $self = shift;
     my $now = time();
-
-    # only reload every 15 seconds.
-    my $ver = MogileFS::Config->server_setting_cached('slave_version') || 0;
-    if ($ver <= $self->{slave_list_version}) {
-        return @{$self->{slave_list_cache}};
-    }
-    $self->{slave_list_version} = $ver;
-    $self->{slave_list_cache}     = [];
 
     my $sk = MogileFS::Config->server_setting_cached('slave_keys')
         or return ();
@@ -208,26 +214,61 @@ sub _slaves_list {
     return @ret;
 }
 
+sub _pick_slave {
+    my $self = shift;
+    my @temp = shuffle keys %{$self->{connected_slaves}};
+    return unless @temp;
+    return $self->{connected_slaves}->{$temp[0]};
+}
+
 sub get_slave {
     my $self = shift;
+    my $now = time();
 
     die "Incapable of having slaves." unless $self->can_do_slaves;
 
-    return $self->{slave} if $self->check_slave;
+    $self->{slave} = undef;
+    unless ($self->_slaves_list_changed) {
+        if ($self->{slave} = $self->_pick_slave) {
+            $self->{slave}->{recheck_req_gen} = $self->{recheck_req_gen};
+            return $self->{slave} if $self->check_slave;
+        }
+    }
 
+    if ($self->{slave}) {
+        my $dsn = $self->{slave}->{dsn};
+        $self->{dead_slaves}->{$dsn} = $now;
+        delete $self->{connected_slaves}->{$dsn};
+        error("Error talking to slave: $dsn");
+    }
     my @slaves_list = $self->_slaves_list;
 
     # If we have no slaves, then return silently.
     return unless @slaves_list;
 
+    MogileFS::run_global_hook('slave_list_filter', \@slaves_list);
+
+    my $dead_retry =
+        MogileFS::Config->server_setting_cached('slave_dead_retry_timeout') || 15;
+
     foreach my $slave_fulldsn (@slaves_list) {
+        my $dead_timeout = $self->{dead_slaves}->{$slave_fulldsn->[0]};
+        next if (defined $dead_timeout && $dead_timeout + $dead_retry > $now);
+        next if ($self->{connected_slaves}->{$slave_fulldsn->[0]});
+
         my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
-        $self->{slave_next_check} = 0;
+        $self->{slave}->{next_check} = 0;
         $newslave->mark_as_slave;
-        return $newslave
-            if $self->check_slave;
+        if ($self->check_slave) {
+            $self->{connected_slaves}->{$slave_fulldsn->[0]} = $newslave;
+        } else {
+            $self->{dead_slaves}->{$slave_fulldsn->[0]} = $now;
+        }
     }
 
+    if ($self->{slave} = $self->_pick_slave) {
+        return $self->{slave};
+    }
     warn "Slave list exhausted, failing back to master.";
     return;
 }
@@ -239,7 +280,6 @@ sub read_store {
 
     if ($self->{slave_ok}) {
         if (my $slave = $self->get_slave) {
-            $slave->{recheck_req_gen} = $self->{recheck_req_gen};
             return $slave;
         }
     }
