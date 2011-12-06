@@ -2,7 +2,6 @@ package MogileFS::Util;
 use strict;
 use Carp qw(croak);
 use Time::HiRes;
-use MogileFS::Server;
 use MogileFS::Exception;
 use MogileFS::DeviceState;
 
