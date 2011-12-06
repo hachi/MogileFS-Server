@@ -44,10 +44,6 @@ install-stamp:
 	find $(TMP) -name .packlist -exec rm '{}' \;
 	find $(TMP) -depth -type d -empty -exec rmdir '{}' \;
 
-	# destroy all the mogdeps stuff
-	rm -rf $(TMP)/usr/share/perl5/mogdeps
-	rm -rf $(TMP)/usr/share/man/man3/mogdeps::*
-
 	dh_install --sourcedir=$(TMP) --fail-missing
 
 	touch install-stamp

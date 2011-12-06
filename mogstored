@@ -14,25 +14,6 @@ use strict;
 use lib 'lib';
 use Mogstored::HTTPServer;
 
-# based on where we found Mogstored::HTTPServer (a pure-perl module),
-# add the mogdeps/ subdirectory of that base to our @INC search
-# path, where all the misc Mogile dependencies are installed.
-BEGIN {
-    my $libpath;
-    if (! $ENV{MOGILE_NO_BUILTIN_DEPS} &&
-        ($libpath = $INC{"Mogstored/HTTPServer.pm"}) &&
-        $libpath =~ s!Mogstored/HTTPServer.pm$!!)
-    {
-        my $dep_dir = "${libpath}mogdeps";
-        push @INC, $dep_dir;
-        unless (($ENV{PERL5LIB} || "") =~ /$dep_dir/) {
-            $ENV{PERL5LIB} = join(":",
-                                  split(/:/, $ENV{PERL5LIB} || ""),
-                                  $dep_dir);
-        }
-    }
-}
-
 use IO::Socket::INET;
 use POSIX qw(WNOHANG);
 use Perlbal 1.73;
