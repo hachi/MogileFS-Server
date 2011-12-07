@@ -210,7 +210,6 @@ sub _slaves_list {
         push @ret, [$dsn, $user, $pass]
     }
 
-    $self->{slave_list_cache}     = \@ret;
     return @ret;
 }
 
@@ -221,13 +220,43 @@ sub _pick_slave {
     return $self->{connected_slaves}->{$temp[0]};
 }
 
+sub _connect_slave {
+    my $self = shift;
+    my $slave_fulldsn = shift;
+    my $now = time();
+
+    my $dead_retry =
+        MogileFS::Config->server_setting_cached('slave_dead_retry_timeout') || 15;
+
+    my $dead_timeout = $self->{dead_slaves}->{$slave_fulldsn->[0]};
+    return if (defined $dead_timeout && $dead_timeout + $dead_retry > $now);
+    return if ($self->{connected_slaves}->{$slave_fulldsn->[0]});
+
+    my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
+    $self->{slave}->{next_check} = 0;
+    $newslave->mark_as_slave;
+    if ($self->check_slave) {
+        $self->{connected_slaves}->{$slave_fulldsn->[0]} = $newslave;
+    } else {
+        $self->{dead_slaves}->{$slave_fulldsn->[0]} = $now;
+    }
+}
+
 sub get_slave {
     my $self = shift;
-    my $now = time();
 
     die "Incapable of having slaves." unless $self->can_do_slaves;
 
     $self->{slave} = undef;
+    foreach my $slave (keys %{$self->{dead_slaves}}) {
+        my ($full_dsn) = grep { $slave eq $_->[0] } @{$self->{slave_list_cache}};
+        unless ($full_dsn) {
+            delete $self->{dead_slaves}->{$slave};
+            next;
+        }
+        $self->_connect_slave($full_dsn);
+    }
+
     unless ($self->_slaves_list_changed) {
         if ($self->{slave} = $self->_pick_slave) {
             $self->{slave}->{recheck_req_gen} = $self->{recheck_req_gen};
@@ -237,7 +266,7 @@ sub get_slave {
 
     if ($self->{slave}) {
         my $dsn = $self->{slave}->{dsn};
-        $self->{dead_slaves}->{$dsn} = $now;
+        $self->{dead_slaves}->{$dsn} = time();
         delete $self->{connected_slaves}->{$dsn};
         error("Error talking to slave: $dsn");
     }
@@ -250,22 +279,10 @@ sub get_slave {
         MogileFS::run_global_hook('slave_list_filter', \@slaves_list);
     }
 
-    my $dead_retry =
-        MogileFS::Config->server_setting_cached('slave_dead_retry_timeout') || 15;
+    $self->{slave_list_cache} = \@slaves_list;
 
     foreach my $slave_fulldsn (@slaves_list) {
-        my $dead_timeout = $self->{dead_slaves}->{$slave_fulldsn->[0]};
-        next if (defined $dead_timeout && $dead_timeout + $dead_retry > $now);
-        next if ($self->{connected_slaves}->{$slave_fulldsn->[0]});
-
-        my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
-        $self->{slave}->{next_check} = 0;
-        $newslave->mark_as_slave;
-        if ($self->check_slave) {
-            $self->{connected_slaves}->{$slave_fulldsn->[0]} = $newslave;
-        } else {
-            $self->{dead_slaves}->{$slave_fulldsn->[0]} = $now;
-        }
+        $self->_connect_slave($slave_fulldsn);
     }
 
     if ($self->{slave} = $self->_pick_slave) {
