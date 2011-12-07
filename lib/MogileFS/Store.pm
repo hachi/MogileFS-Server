@@ -246,7 +246,9 @@ sub get_slave {
     # If we have no slaves, then return silently.
     return unless @slaves_list;
 
-    MogileFS::run_global_hook('slave_list_filter', \@slaves_list);
+    unless (MogileFS::Config->server_setting_cached('slave_skip_filtering') eq 'on') {
+        MogileFS::run_global_hook('slave_list_filter', \@slaves_list);
+    }
 
     my $dead_retry =
         MogileFS::Config->server_setting_cached('slave_dead_retry_timeout') || 15;

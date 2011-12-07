@@ -94,7 +94,10 @@ sub check_slave {
     # TODO: Check show slave status *unless* a server setting is present to
     # tell us to ignore it (like in a multi-DC setup).
     eval { $self->{slave}->dbh };
-    return 0 if $@;
+    if ($@) {
+        warn "Error while checking slave: $@";
+        return 0;
+    }
 
     # call time() again here because SQL blocks.
     $$next_check = time() + 5;
