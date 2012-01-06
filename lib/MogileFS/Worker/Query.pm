@@ -1313,7 +1313,7 @@ sub cmd_set_weight {
     return $self->err_line('host_mismatch')
         unless $dev->host->hostname eq $hostname;
 
-    $dev->set_weight($weight);
+    Mgd::get_store()->set_device_weight($dev->id, $weight);
 
     return $self->cmd_clear_cache;
 }

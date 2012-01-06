@@ -27,7 +27,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 17;
+    plan tests => 19;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -75,6 +75,10 @@ ok($tmptrack->mogadm("host", "add", "hostB", "--ip=127.0.1.2", "--status=alive")
 
 ok($tmptrack->mogadm("device", "add", "hostA", 1), "created dev1 on hostA");
 ok($tmptrack->mogadm("device", "add", "hostB", 2), "created dev2 on hostB");
+
+# just ensure the "set_weight" command doesn't ERR out
+ok($tmptrack->mogadm("device", "modify", "hostA", 1, "--weight=50"), "set dev1 weight=50 on hostA");
+ok($tmptrack->mogadm("device", "modify", "hostB", 2, "--weight=50"), "set dev2 weight=50 on hostB");
 
 # wait for monitor
 {
