@@ -26,7 +26,7 @@ sub new {
     $self->{psock}            = $psock;
     $self->{readbuf}          = '';
     $self->{last_bcast_state} = {};
-    $self->{monitor_has_run}  = 0;
+    $self->{monitor_has_run}  = MogileFS::ProcManager->is_monitor_good;
     $self->{last_ping}        = 0;
     $self->{last_wake}        = {};
     $self->{queue_depth}      = {};
