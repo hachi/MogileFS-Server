@@ -442,6 +442,7 @@ sub pre_daemonize_checks {
         die "MySQL self-tests failed.  Your DBD::mysql might've been built against an old DBI version.\n";
     }
 
+    return $self->SUPER::pre_daemonize_checks();
 }
 
 1;

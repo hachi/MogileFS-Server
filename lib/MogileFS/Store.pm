@@ -2043,7 +2043,37 @@ sub fsck_evcode_counts {
 
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
-sub pre_daemonize_checks { }
+sub pre_daemonize_checks {
+    my $self = shift;
+
+    $self->pre_daemonize_check_slaves;
+}
+
+sub pre_daemonize_check_slaves {
+    my $sk = MogileFS::Config->server_setting('slave_keys')
+        or return;
+
+    my @slaves;
+    foreach my $key (split /\s*,\s*/, $sk) {
+        my $slave = MogileFS::Config->server_setting("slave_$key");
+
+        if (!$slave) {
+            error("key for slave DB config: slave_$key not found in configuration");
+            next;
+        }
+
+        my ($dsn, $user, $pass) = split /\|/, $slave;
+        if (!defined($dsn) or !defined($user) or !defined($pass)) {
+            error("key slave_$key contains $slave, which doesn't split in | into DSN|user|pass - ignoring");
+            next;
+        }
+        push @slaves, [$dsn, $user, $pass]
+    }
+
+    return unless @slaves; # Escape this block if we don't have a set of slaves anyways
+
+    MogileFS::run_global_hook('slave_list_check', \@slaves);
+}
 
 
 # attempt to grab a lock of lockname, and timeout after timeout seconds.
