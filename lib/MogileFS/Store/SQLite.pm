@@ -366,6 +366,15 @@ sub upgrade_modify_device_size { 1 }
 
 sub BLOB_BIND_TYPE { SQL_BLOB }
 
+sub get_keys_like_operator {
+    my $self = shift;
+    my $bool = MogileFS::Config->server_setting_cached('case_sensitive_list_keys');
+
+    # this is a dbh-wide change, but this is the only place we use LIKE
+    $self->dbh->do("PRAGMA case_sensitive_like = " . ($bool ? "ON" : "OFF"));
+    return "LIKE";
+}
+
 1;
 
 __END__

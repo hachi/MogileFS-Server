@@ -432,6 +432,11 @@ sub pre_daemonize_checks {
     return $self->SUPER::pre_daemonize_checks();
 }
 
+sub get_keys_like_operator {
+    my $bool = MogileFS::Config->server_setting_cached('case_sensitive_list_keys');
+    return $bool ? "LIKE /*! BINARY */" : "LIKE";
+}
+
 1;
 
 __END__

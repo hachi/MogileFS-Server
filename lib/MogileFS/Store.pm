@@ -1858,11 +1858,15 @@ sub get_keys_like {
     $prefix .= '%';
     $after  = '' unless defined $after;
 
+    my $like = $self->get_keys_like_operator;
+
     # now select out our keys
     return $self->dbh->selectcol_arrayref
-        ('SELECT dkey FROM file WHERE dmid = ? AND dkey LIKE ? AND dkey > ? ' .
+        ("SELECT dkey FROM file WHERE dmid = ? AND dkey $like ? AND dkey > ? " .
          "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, $after);
 }
+
+sub get_keys_like_operator { return "LIKE"; }
 
 # return arrayref of all tempfile rows (themselves also arrayrefs, of [$fidid, $devids])
 # that were created $secs_ago seconds ago or older.

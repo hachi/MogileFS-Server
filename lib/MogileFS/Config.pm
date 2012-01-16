@@ -368,6 +368,7 @@ sub server_setting_is_writable {
     if ($key eq "enable_rebalance") { return $bool };
     if ($key eq "skip_devcount") { return $bool };
     if ($key eq "skip_mkcol") { return $bool };
+    if ($key eq "case_sensitive_list_keys") { return $bool };
     if ($key eq "memcache_servers") { return $any  };
     if ($key eq "memcache_ttl") { return $num };
     if ($key eq "internal_queue_limit") { return $num };
