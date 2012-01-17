@@ -1663,12 +1663,18 @@ sub grab_queue_chunk {
         $dbh->do("UPDATE $queue SET nexttry = $ut + 1000 WHERE fid IN ($fidlist)");
         $dbh->commit;
     };
-    $self->unlock_queue($queue);
     if ($self->was_deadlock_error) {
         eval { $dbh->rollback };
-        return ();
+        $work = undef;
+    } else {
+        $self->condthrow;
     }
-    $self->condthrow;
+    # FIXME: Super extra paranoia to prevent deadlocking.
+    # Need to handle or die on all errors above, but $@ can get reset. For now
+    # we'll just always ensure there's no transaction running at the end here.
+    # A (near) release should figure the error detection correctly.
+    if ($dbh->{AutoCommit} == 0) { eval { $dbh->rollback }; }
+    $self->unlock_queue($queue);
 
     return defined $work ? values %$work : ();
 }
