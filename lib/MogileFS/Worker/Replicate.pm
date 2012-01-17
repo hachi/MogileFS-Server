@@ -643,11 +643,20 @@ sub http_copy {
             $remain -= $bytes;
             $bytes_to_read = $remain if $remain < $bytes_to_read;
 
-            my $wbytes = $dsock->send($data);
-            $written  += $wbytes;
-            return $dest_error->("Error: wrote $wbytes; expected to write $bytes; failed putting to $dpath")
-                unless $wbytes == $bytes;
-            $intercopy_cb->();
+            my $data_len = $bytes;
+            my $data_off = 0;
+            while (1) {
+                my $wbytes = syswrite($dsock, $data, $data_len, $data_off);
+                unless (defined $wbytes) {
+                    return $dest_error->("Error: syswrite failed with: $!; failed putting to $dpath");
+                }
+                $written += $wbytes;
+                $intercopy_cb->();
+                last if ($data_len == $wbytes);
+
+                $data_len -= $wbytes;
+                $data_off += $wbytes;
+            }
 
             die if $bytes_to_read < 0;
             next if $bytes_to_read;
