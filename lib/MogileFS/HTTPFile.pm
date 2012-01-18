@@ -178,7 +178,7 @@ retry:
 
     $expiry = Time::HiRes::time() + $response_timeout;
     while (!wait_for_readability(fileno($sock), 1.0) &&
-           (Time::HiRes::time() > $expiry)) {
+           (Time::HiRes::time() < $expiry)) {
         $ping_cb->();
     }
 
