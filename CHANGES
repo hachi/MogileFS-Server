@@ -1,5 +1,33 @@
+2012-01-27: Release version 2.56
+
+   * Add database connect timeouts (dormando <dormando@rydia.net>)
+
+   * fix potential hang in JobMaster added in 2.55 (dormando <dormando@rydia.net>)
+
+   * fix "set_weight" command (Eric Wong <normalperson@yhbt.net>)
+
+   * sqlite: consider SQLITE_BUSY and SQLITE_LOCKED deadlocks (Eric Wong <normalperson@yhbt.net>)
+
+   * kill a little more dead fsck/Checker code (dormando <dormando@rydia.net>)
+
+   * Destroy mogdeps (dormando <dormando@rydia.net>)
+
+   * improve slave handling code (dormando <dormando@rydia.net>)
+
+   * don't spew errors if the master goes down (dormando <dormando@rydia.net>)
+
+   * provide an async server setting cache via monitor worker (dormando <dormando@rydia.net>)
+
+   * fix return value of commands that clear_cache (Eric Wong <normalperson@yhbt.net>)
+
+   * make reaper wait less time in test mode (dormando <dormando@rydia.net>)
+
+   * queryworker: reimplement "clear_caches" command (Eric Wong <normalperson@yhbt.net>)
+
+   * worker: use timeout with read_from_parent() instead of sleep (Eric Wong <normalperson@yhbt.net>)
+
    * Fixed issue where too many devices being active could cause the monitor job
-     to be timed out by the watchdog.
+     to be timed out by the watchdog. (Tomas Doran)
 
 2011-11-14: Release version 2.55
 
