@@ -56,6 +56,8 @@ sub new_from_dsn_user_pass {
         handles_left     => 0,  # amount of times this handle can still be verified
         connected_slaves => {},
         dead_slaves      => {},
+        dead_backoff     => {}, # how many times in a row a slave has died
+        connect_timeout  => 30, # High default.
     }, $subclass;
     $self->init;
     return $self;
@@ -152,9 +154,13 @@ sub raise_errors {
     $self->dbh->{RaiseError} = 1;
 }
 
+sub set_connect_timeout { $_[0]{connect_timeout} = $_[1]; }
+
 sub dsn  { $_[0]{dsn}  }
 sub user { $_[0]{user} }
 sub pass { $_[0]{pass} }
+
+sub connect_timeout { $_[0]{connect_timeout} }
 
 sub init { 1 }
 sub post_dbi_connect { 1 }
@@ -228,17 +234,25 @@ sub _connect_slave {
     my $dead_retry =
         MogileFS::Config->server_setting_cached('slave_dead_retry_timeout') || 15;
 
+    my $dead_backoff = $self->{dead_backoff}->{$slave_fulldsn->[0]} || 0;
     my $dead_timeout = $self->{dead_slaves}->{$slave_fulldsn->[0]};
-    return if (defined $dead_timeout && $dead_timeout + $dead_retry > $now);
+    return if (defined $dead_timeout
+        && $dead_timeout + ($dead_retry * $dead_backoff) > $now);
     return if ($self->{connected_slaves}->{$slave_fulldsn->[0]});
 
     my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
+    $newslave->set_connect_timeout(
+        MogileFS::Config->server_setting_cached('slave_connect_timeout') || 1);
     $self->{slave}->{next_check} = 0;
     $newslave->mark_as_slave;
     if ($self->check_slave) {
         $self->{connected_slaves}->{$slave_fulldsn->[0]} = $newslave;
+        $self->{dead_backoff}->{$slave_fulldsn->[0]} = 0;
     } else {
+        # Magic numbers are saddening...
+        $dead_backoff++ unless $dead_backoff > 20;
         $self->{dead_slaves}->{$slave_fulldsn->[0]} = $now;
+        $self->{dead_backoff}->{$slave_fulldsn->[0]} = $dead_backoff;
     }
 }
 
@@ -267,6 +281,7 @@ sub get_slave {
     if ($self->{slave}) {
         my $dsn = $self->{slave}->{dsn};
         $self->{dead_slaves}->{$dsn} = time();
+        $self->{dead_backoff}->{$dsn} = 0;
         delete $self->{connected_slaves}->{$dsn};
         error("Error talking to slave: $dsn");
     }
@@ -336,13 +351,22 @@ sub dbh {
         return $self->{dbh} if $self->{dbh};
     }
 
-    $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
-        PrintError => 0,
-        AutoCommit => 1,
-        # FUTURE: will default to on (have to validate all callers first):
-        RaiseError => ($self->{raise_errors} || 0),
-    }) or
+    eval {
+        local $SIG{ALRM} = sub { die "timeout\n" };
+        alarm($self->connect_timeout);
+        $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
+            PrintError => 0,
+            AutoCommit => 1,
+            # FUTURE: will default to on (have to validate all callers first):
+            RaiseError => ($self->{raise_errors} || 0),
+        });
+    };
+    alarm(0);
+    if ($@ eq "timeout\n") {
+        die "Failed to connect to database: timeout";
+    } elsif ($@) {
         die "Failed to connect to database: " . DBI->errstr;
+    }
     $self->post_dbi_connect;
     $self->{handles_left} = $self->{max_handles} if $self->{max_handles};
     return $self->{dbh};
