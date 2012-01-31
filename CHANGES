@@ -1,3 +1,7 @@
+   * Silence a warning about undefined value introduced by the slave database ordering work (hachi@kuiki.net)
+
+   * Need a hook to be able to check the slave list during startup (hachi@kuiki.net)
+
 2012-01-27: Release version 2.56
 
    * Add database connect timeouts (dormando <dormando@rydia.net>)
