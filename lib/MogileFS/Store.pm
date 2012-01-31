@@ -290,7 +290,9 @@ sub get_slave {
     # If we have no slaves, then return silently.
     return unless @slaves_list;
 
-    unless (MogileFS::Config->server_setting_cached('slave_skip_filtering') eq 'on') {
+    my $slave_skip_filtering = MogileFS::Config->server_setting('slave_skip_filtering');
+
+    unless (defined $slave_skip_filtering && $slave_skip_filtering eq 'on') {
         MogileFS::run_global_hook('slave_list_filter', \@slaves_list);
     }
 
