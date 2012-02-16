@@ -118,6 +118,8 @@ sub update_devcount {
     my $no_lock = delete $opts{no_lock};
     croak "Bogus options" if %opts;
 
+    return 1 if MogileFS::Config->server_setting_cached('skip_devcount');
+
     my $fidid = $self->{fidid};
 
     my $sto = Mgd::get_store();
@@ -221,7 +223,7 @@ sub devids_meet_policy {
     my @devs = $self->devs;
     # This is a little heavy handed just to fix the 'devcount' cache, but
     # doing it here ensures we get the error logged.
-    if (@devs != $self->devcount) {
+    unless (MogileFS::Config->server_setting_cached('skip_devcount') || @devs == $self->devcount) {
         return 0;
     }
 

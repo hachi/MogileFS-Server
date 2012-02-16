@@ -362,6 +362,7 @@ sub server_setting_is_writable {
     # let slave settings go through unmodified, for now.
     if ($key =~ /^slave_/) { return $del_if_blank };
     if ($key eq "enable_rebalance") { return $bool };
+    if ($key eq "skip_devcount") { return $bool };
     if ($key eq "memcache_servers") { return $any  };
     if ($key eq "internal_queue_limit") { return $num };
 
