@@ -173,7 +173,7 @@ my $dir_made_lastclean = 0;
 # returns 1 on success, 0 on failure
 sub create_directory {
     my ($self, $uri) = @_;
-    return 1 if $self->doesnt_know_mkcol;
+    return 1 if $self->doesnt_know_mkcol || MogileFS::Config->server_setting_cached('skip_mkcol');
 
     # rfc2518 says we "should" use a trailing slash. Some servers
     # (nginx) appears to require it.
