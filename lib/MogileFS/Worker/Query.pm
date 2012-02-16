@@ -1003,13 +1003,14 @@ sub cmd_get_paths {
     my $args = shift;
 
     # memcache mappings are as follows:
-    #  mogfid:<dmid>:<dkey> -> fidid     (and TODO: invalidate this when key is replaced)
+    #  mogfid:<dmid>:<dkey> -> fidid
     #  mogdevids:<fidid>    -> \@devids  (and TODO: invalidate when the replication or deletion is run!)
 
     # if you specify 'noverify', that means a correct answer isn't needed and memcache can
     # be used.
-    my $use_memc = $args->{noverify};
-    my $memc     = $use_memc ? MogileFS::Config->memcache_client : undef;
+    my $memc          = MogileFS::Config->memcache_client;
+    my $get_from_memc = $memc && $args->{noverify};
+    my $memcache_ttl  = MogileFS::Config->server_setting_cached("memcache_ttl") || 3600;
 
     # validate domain for plugins
     $args->{dmid} = $self->check_domain($args)
@@ -1033,7 +1034,7 @@ sub cmd_get_paths {
     my $fid;
     my $need_fid_in_memcache = 0;
     my $mogfid_memkey = "mogfid:$args->{dmid}:$key";
-    if ($memc) {
+    if ($get_from_memc) {
         if (my $fidid = $memc->get($mogfid_memkey)) {
             $fid = MogileFS::FID->new($fidid);
         } else {
@@ -1048,7 +1049,7 @@ sub cmd_get_paths {
     }
 
     # add to memcache, if needed.  for an hour.
-    $memc->add($mogfid_memkey, $fid->id, 3600) if $need_fid_in_memcache;
+    $memc->set($mogfid_memkey, $fid->id, $memcache_ttl ) if $need_fid_in_memcache || ($memc && !$get_from_memc);
 
     my $dmap = Mgd::device_factory()->map_by_id;
 
@@ -1060,7 +1061,7 @@ sub cmd_get_paths {
     my @fid_devids;
     my $need_devids_in_memcache = 0;
     my $devid_memkey = "mogdevids:" . $fid->id;
-    if ($memc) {
+    if ($get_from_memc) {
         if (my $list = $memc->get($devid_memkey)) {
             @fid_devids = @$list;
         } else {
@@ -1071,7 +1072,7 @@ sub cmd_get_paths {
         Mgd::get_store()->slaves_ok(sub {
             @fid_devids = $fid->devids;
         });
-        $memc->add($devid_memkey, \@fid_devids, 3600) if $need_devids_in_memcache;
+        $memc->set($devid_memkey, \@fid_devids, $memcache_ttl ) if $need_devids_in_memcache || ($memc && !$get_from_memc);
     }
 
     my @devices = map { $dmap->{$_} } @fid_devids;
