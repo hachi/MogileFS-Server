@@ -160,7 +160,14 @@ sub mark_unreachable {
 sub delete {
     my $fid = shift;
     my $sto = Mgd::get_store();
+    my $memc = MogileFS::Config->memcache_client;
+    if ($memc) {
+        $fid->_tryload;
+    }
     $sto->delete_fidid($fid->id);
+    if ($memc && $fid->{_loaded}) {
+        $memc->delete("mogfid:$fid->{dmid}:$fid->{dkey}");
+    }
 }
 
 # returns 1 on success, 0 on duplicate key error, dies on exception
