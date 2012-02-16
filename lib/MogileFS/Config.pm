@@ -300,7 +300,7 @@ sub memcache_client {
     my $now = time();
     return $memc if $last_memc_server_fetch > $now - 30;
 
-    my @servers = split(/\s*,\s*/, MogileFS::Config->server_setting_cached("memcache_servers") || "");
+    my @servers = grep(/:\d+$/, split(/\s*,\s*/, MogileFS::Config->server_setting_cached("memcache_servers") || ""));
     $memc->set_servers(\@servers);
     $last_memc_server_fetch = $now;
 
