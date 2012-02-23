@@ -37,7 +37,7 @@ sub apply_state_events {
         # This special case feels gross, but that's what it is.
         if ($type eq 'srvset') {
             my $val = $mode eq 'set' ? $args->{value} : undef;
-            MogileFS::Config->cache_server_setting($args->{field}, $val);
+            MogileFS::Config->cache_server_setting($id, $val);
             next;
         }
 
