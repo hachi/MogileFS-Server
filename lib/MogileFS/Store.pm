@@ -1,7 +1,7 @@
 package MogileFS::Store;
 use strict;
 use warnings;
-use Carp qw(croak);
+use Carp qw(croak confess);
 use MogileFS::Util qw(throw max error);
 use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
 use List::Util qw(shuffle);
@@ -57,7 +57,7 @@ sub new_from_dsn_user_pass {
         connected_slaves => {},
         dead_slaves      => {},
         dead_backoff     => {}, # how many times in a row a slave has died
-        connect_timeout  => 30, # High default.
+        connect_timeout  => 10, # High default.
     }, $subclass;
     $self->init;
     return $self;
@@ -290,7 +290,7 @@ sub get_slave {
     # If we have no slaves, then return silently.
     return unless @slaves_list;
 
-    my $slave_skip_filtering = MogileFS::Config->server_setting('slave_skip_filtering');
+    my $slave_skip_filtering = MogileFS::Config->server_setting_cached('slave_skip_filtering');
 
     unless (defined $slave_skip_filtering && $slave_skip_filtering eq 'on') {
         MogileFS::run_global_hook('slave_list_filter', \@slaves_list);
@@ -365,9 +365,9 @@ sub dbh {
     };
     alarm(0);
     if ($@ eq "timeout\n") {
-        die "Failed to connect to database: timeout";
+        confess "Failed to connect to database: timeout";
     } elsif ($@) {
-        die "Failed to connect to database: " . DBI->errstr;
+        confess "Failed to connect to database: " . DBI->errstr;
     }
     $self->post_dbi_connect;
     $self->{handles_left} = $self->{max_handles} if $self->{max_handles};
