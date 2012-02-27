@@ -171,12 +171,12 @@ sub mark_as_slave {
     my $self = shift;
     die "Incapable of becoming slave." unless $self->can_do_slaves;
 
-    $self->{slave} = 1;
+    $self->{is_slave} = 1;
 }
 
 sub is_slave {
     my $self = shift;
-    return $self->{slave};
+    return $self->{is_slave};
 }
 
 sub _slaves_list_changed {
@@ -353,6 +353,14 @@ sub dbh {
         return $self->{dbh} if $self->{dbh};
     }
 
+    # Shortcut flag: if monitor thinks the master is down, avoid attempting to
+    # connect to it for now. If we already have a connection to the master,
+    # keep using it as above.
+    if (!$self->is_slave) {
+        my $flag = MogileFS::Config->server_setting_cached('_master_db_alive', 0);
+        return if (defined $flag && $flag == 0);;
+    }
+
     eval {
         local $SIG{ALRM} = sub { die "timeout\n" };
         alarm($self->connect_timeout);
@@ -365,9 +373,9 @@ sub dbh {
     };
     alarm(0);
     if ($@ eq "timeout\n") {
-        confess "Failed to connect to database: timeout";
+        die "Failed to connect to database: timeout";
     } elsif ($@) {
-        confess "Failed to connect to database: " . DBI->errstr;
+        die "Failed to connect to database: " . DBI->errstr;
     }
     $self->post_dbi_connect;
     $self->{handles_left} = $self->{max_handles} if $self->{max_handles};

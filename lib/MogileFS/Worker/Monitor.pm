@@ -13,6 +13,7 @@ use fields (
             'prev_data',       # DB data from previous run
             'devutil',         # Running tally of device utilization
             'events',          # Queue of state events
+            'have_masterdb',   # Hint flag for if the master DB is available
             );
 
 use Danga::Socket 1.56;
@@ -35,6 +36,7 @@ sub new {
         device => {} };
     $self->{devutil}         = { cur => {}, prev => {} };
     $self->{events}          = [];
+    $self->{have_masterdb}   = 0;
     return $self;
 }
 
@@ -46,12 +48,24 @@ sub cache_refresh {
     my $self = shift;
 
     debug("Monitor running; checking DB for updates");
-    return unless $self->validate_dbh;
+    # "Fix" our local cache of this flag, so we always check the master DB.
+    MogileFS::Config->cache_server_setting('_master_db_alive', 1);
+    my $have_dbh = $self->validate_dbh;
+    if ($have_dbh && !$self->{have_masterdb}) {
+        $self->{have_masterdb} = 1;
+        $self->set_event('srvset', '_master_db_alive', { value => 1 });
+    } elsif (!$have_dbh) {
+        $self->{have_masterdb} = 0;
+        $self->set_event('srvset', '_master_db_alive', { value => 0 });
+        error("Cannot connect to master database!");
+    }
 
-    my $db_data   = $self->grab_all_data;
+    if ($have_dbh) {
+        my $db_data   = $self->grab_all_data;
 
-    # Stack diffs to ship back later
-    $self->diff_data($db_data);
+        # Stack diffs to ship back later
+        $self->diff_data($db_data);
+    }
 
     $self->send_events_to_parent;
 }

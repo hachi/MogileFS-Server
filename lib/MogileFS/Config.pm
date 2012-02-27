@@ -281,8 +281,9 @@ sub cache_server_setting {
 }
 
 sub server_setting_cached {
-    my ($class, $key) = @_;
-    unless ($has_cached_settings) {
+    my ($class, $key, $fallback) = @_;
+    $fallback = 1 unless (defined $fallback);
+    if (!$has_cached_settings && $fallback) {
         return MogileFS::Config->server_setting($key);
     }
     return $server_settings{$key};
