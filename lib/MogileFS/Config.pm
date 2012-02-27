@@ -21,6 +21,7 @@ use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
 
 my %conf;
 my %server_settings;
+my $has_cached_settings = 0;
 sub set_config {
     shift if @_ == 3;
     my ($k, $v) = @_;
@@ -271,6 +272,7 @@ sub server_setting {
 
 sub cache_server_setting {
     my ($class, $key, $val) = @_;
+    $has_cached_settings++ unless $has_cached_settings;
     if (! defined $val) {
         delete $server_settings{$key}
             if exists $server_settings{$key};
@@ -280,6 +282,9 @@ sub cache_server_setting {
 
 sub server_setting_cached {
     my ($class, $key) = @_;
+    unless ($has_cached_settings) {
+        return MogileFS::Config->server_setting($key);
+    }
     return $server_settings{$key};
 }
 
