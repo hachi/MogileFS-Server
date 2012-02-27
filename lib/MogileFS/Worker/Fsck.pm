@@ -291,7 +291,7 @@ sub fix_fid {
     }
     
     # Clean up the device count if it's wrong
-    unless(MogileFS->config('skip_devcount') || scalar($fid->devids) == $fid->devcount) {
+    unless(MogileFS::Config->server_setting_cached('skip_devcount') || scalar($fid->devids) == $fid->devcount) {
         $fid->update_devcount();
         $fid->fsck_log(EV_BAD_COUNT);
     }
