@@ -648,7 +648,7 @@ sub http_copy {
             while (1) {
                 my $wbytes = syswrite($dsock, $data, $data_len, $data_off);
                 unless (defined $wbytes) {
-                    return $dest_error->("Error: syswrite failed with: $!; failed putting to $dpath");
+                    return $dest_error->("Error: syswrite failed after $written bytes with: $!; failed putting to $dpath");
                 }
                 $written += $wbytes;
                 $intercopy_cb->();
