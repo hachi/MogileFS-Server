@@ -1,3 +1,29 @@
+2012-02-28: Release version 2.58
+
+   * reduce UPDATE's to device table (dormando <dormando@rydia.net>)
+
+   * replicate: retry on short writes to destination (Eric Wong <normalperson@yhbt.net>)
+
+   * enable TCP keepalives for accepted sockets (Eric Wong <normalperson@yhbt.net>)
+
+   * Populate memcache even when noverify is missing (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Remove FID from memcache when it is deleted (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Unset memc when memcache servers have been removed (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Filter out illegal memcache servers from memcache_servers (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Add skip_mkcol setting for servers which do not need it (Pyry Hakulinen <pyry@automattic.com>)
+
+   * skip_devcount variable that disables devcount updates (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Back off if master DB is down (dormando <dormando@rydia.net>)
+
+   * use cached setting for slave list (dormando <dormando@rydia.net>)
+
+   * fix "fsck never stops" issue (dormando <dormando@rydia.net>)
+
 2012-01-31: Release version 2.57
 
    * Silence a warning about undefined value introduced by the slave database ordering work (hachi@kuiki.net)
