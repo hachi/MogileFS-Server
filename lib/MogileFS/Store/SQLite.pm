@@ -49,8 +49,8 @@ sub column_type {
 }
 
 # Implement these for native database locking
-# sub get_lock {}
-# sub release_lock {}
+sub get_lock { 1 }
+sub release_lock { 1 }
 
 # --------------------------------------------------------------------------
 # Store-related things we override
