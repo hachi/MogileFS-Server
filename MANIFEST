@@ -82,6 +82,7 @@ t/mogstored-shutdown.t
 t/multiple-hosts-replpol.t
 t/replpolicy-parsing.t
 t/replpolicy.t
+t/store-sqlite.t
 t/store.t
 t/util.t
 TODO

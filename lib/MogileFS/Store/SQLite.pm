@@ -2,6 +2,7 @@ package MogileFS::Store::SQLite;
 use strict;
 use warnings;
 use DBI qw(:sql_types);
+use Digest::MD5 qw(md5); # Used for lockid
 use DBD::SQLite 1.13;
 use MogileFS::Util qw(throw);
 use base 'MogileFS::Store';
@@ -14,6 +15,7 @@ use File::Temp ();
 sub post_dbi_connect {
     my $self = shift;
     $self->{dbh}->func(5000, 'busy_timeout');
+    $self->{lock_depth} = 0;
 }
 
 sub want_raise_errors { 1 }
@@ -33,6 +35,12 @@ sub can_insertignore { 0 }
 sub can_for_update { 0 }
 sub unix_timestamp { "strftime('%s','now')" }
 
+sub init {
+    my $self = shift;
+    $self->SUPER::init;
+    $self->{lock_depth} = 0;
+}
+
 # DBD::SQLite doesn't really have any table meta info methods
 # And PRAGMA table_info() does not return "real" rows
 sub column_type {
@@ -48,9 +56,100 @@ sub column_type {
     return undef;
 }
 
-# Implement these for native database locking
-sub get_lock { 1 }
-sub release_lock { 1 }
+sub lockid {
+    my ($lockname) = @_;
+    croak("Called with empty lockname! $lockname") unless (defined $lockname && length($lockname) > 0);
+    my $num = unpack 'N',md5($lockname);
+    return ($num & 0x7fffffff);
+}
+
+# returns 1 if the lock holder is still alive, 0 if lock holder died
+sub lock_holder_alive {
+    my ($self, $lockid, $lockname) = @_;
+    my $max_age = 3600;
+
+    my $dbh = $self->dbh;
+    my ($hostname, $pid, $acquiredat) = $dbh->selectrow_array('SELECT hostname,pid,acquiredat FROM lock WHERE lockid = ?', undef, $lockid);
+
+    # maybe the lock was _just_ released
+    return 0 unless defined $pid;
+
+    # weird setups using NFS? can't ping the pid if it's not us
+    return 1 if $hostname ne MogileFS::Config->hostname;
+
+    # maybe we were unlucky and the PID got recycled
+    if ($pid == $$) {
+        if (($acquiredat + $max_age) >= time) {
+            die("Possible lock recursion inside DB but not process (grabbing $lockname ($lockid, acquiredat=$acquiredat)");
+        } else {
+            debug("lock for $lockname ($lockid,acquiredat=$acquiredat is more than ${max_age}s old, assuming it is stale");
+        }
+    } else {
+        # ping the process to see if it's alive
+        return 1 if kill(0, $pid);
+    }
+
+    # lock holder died, delete the lock and retry immediately
+    my $rv = $self->retry_on_deadlock(sub {
+        $dbh->do('DELETE FROM lock WHERE lockid = ? AND pid = ? AND hostname = ?', undef, $lockid, $pid, MogileFS::Config->hostname);
+    });
+
+    # if delete can fail if another process just deleted and regrabbed
+    # this lock
+    return $rv ? 0 : 1;
+}
+
+# attempt to grab a lock of lockname, and timeout after timeout seconds.
+# the lock should be unique in the space of (lockid).  We can also detect
+# if pid is dead as SQLite only runs on one host.
+# returns 1 on success and 0 on timeout
+sub get_lock {
+    my ($self, $lockname, $timeout) = @_;
+    my $lockid = lockid($lockname);
+    die "Lock recursion detected (grabbing $lockname ($lockid), had $self->{last_lock} (".lockid($self->{last_lock}).").  Bailing out." if $self->{lock_depth};
+
+    debug("$$ Locking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
+    my $dbh = $self->dbh;
+    my $lock = undef;
+    my $try = sub {
+        $dbh->do('INSERT INTO lock (lockid,hostname,pid,acquiredat) VALUES (?, ?, ?, '.$self->unix_timestamp().')', undef, $lockid, MogileFS::Config->hostname, $$);
+    };
+
+    while ($timeout >= 0 and not defined($lock)) {
+        $lock = eval { $self->retry_on_deadlock($try) };
+        if ($self->was_duplicate_error) {
+            # retry immediately if the lock holder died
+            if ($self->lock_holder_alive($lockid, $lockname)) {
+                sleep 1 if $timeout > 0;
+                $timeout--;
+            }
+            next;
+        }
+        $self->condthrow;
+        if (defined $lock and $lock == 1) {
+            $self->{lock_depth} = 1;
+            $self->{last_lock}  = $lockname;
+        } else {
+            die "Something went horribly wrong while getting lock $lockname";
+        }
+    }
+    return $lock;
+}
+
+# attempt to release a lock of lockname.
+# returns 1 on success and 0 if no lock we have has that name.
+sub release_lock {
+    my ($self, $lockname) = @_;
+    my $lockid = lockid($lockname);
+    debug("$$ Unlocking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
+    my $rv = $self->retry_on_deadlock(sub {
+        $self->dbh->do('DELETE FROM lock WHERE lockid=? AND pid=? AND hostname=?', undef, $lockid, $$, MogileFS::Config->hostname);
+    });
+    debug("Double-release of lock $lockname!") if $self->{lock_depth} != 0 and $rv == 0 and $Mgd::DEBUG >= 2;
+    $self->condthrow;
+    $self->{lock_depth} = 0;
+    return $rv;
+}
 
 # --------------------------------------------------------------------------
 # Store-related things we override
@@ -99,6 +198,15 @@ sub table_exists {
         my $rec = $sth->fetchrow_hashref;
         return $rec ? 1 : 0;
     };
+}
+
+sub setup_database {
+    my $self = shift;
+    # old installations may not have this, add this without changing
+    # schema version globally (unless the table itself changes)
+    $self->add_extra_tables('lock');
+    $self->create_table('lock');
+    return $self->SUPER::setup_database;
 }
 
 # --------------------------------------------------------------------------
@@ -213,6 +321,16 @@ sub INDEXES_file_to_delete2 {
     ("CREATE INDEX file_to_delete2_nexttry ON file_to_delete2 (nexttry)");
 }
 
+# Extra table
+sub TABLE_lock {
+    "CREATE TABLE lock (
+    lockid      INT UNSIGNED NOT NULL PRIMARY KEY,
+    hostname    VARCHAR(255) NOT NULL,
+    pid         INT UNSIGNED NOT NULL,
+    acquiredat  INT UNSIGNED NOT NULL
+    )"
+}
+
 sub filter_create_sql {
     my ($self, $sql) = @_;
     $sql =~ s/\bENUM\(.+?\)/TEXT/g;
@@ -244,15 +362,17 @@ sub upgrade_modify_server_settings_value { 1 }
 sub upgrade_add_file_to_queue_arg { 1 }
 sub upgrade_modify_device_size { 1 }
 
-# inefficient, but no warning and no locking
 sub should_begin_replicating_fidid {
     my ($self, $fidid) = @_;
-    return 1;
+    my $lockname = "mgfs:fid:$fidid:replicate";
+    return 1 if $self->get_lock($lockname, 1);
+    return 0;
 }
 
-# no locking
 sub note_done_replicating {
     my ($self, $fidid) = @_;
+    my $lockname = "mgfs:fid:$fidid:replicate";
+    $self->release_lock($lockname);
 }
 
 sub BLOB_BIND_TYPE { SQL_BLOB }
