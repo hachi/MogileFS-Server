@@ -1,3 +1,9 @@
+2012-02-29: Release version 2.59
+
+   * don't make SQLite error out on lock calls (dormando <dormando@rydia.net>)
+
+   * Postgres wasn't honoring a no-wait timeout (dormando <dormando@rydia.net>)
+
 2012-02-28: Release version 2.58
 
    * reduce UPDATE's to device table (dormando <dormando@rydia.net>)
