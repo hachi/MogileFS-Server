@@ -800,7 +800,7 @@ sub get_lock {
         $lock = eval { $self->dbh->do('INSERT INTO lock (lockid,hostname,pid,acquiredat) VALUES (?, ?, ?, '.$self->unix_timestamp().')', undef, $lockid, hostname, $$) };
         if($self->was_duplicate_error) {
             $timeout--;
-            sleep 1 $timeout > 0;
+            sleep 1 if $timeout > 0;
             next;
         }
         $self->condthrow;
