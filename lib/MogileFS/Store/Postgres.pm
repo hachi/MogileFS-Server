@@ -796,11 +796,11 @@ sub get_lock {
     debug("$$ Locking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
 
     my $lock = undef;
-    while($timeout > 0 and not defined($lock)) {
+    while($timeout >= 0 and not defined($lock)) {
         $lock = eval { $self->dbh->do('INSERT INTO lock (lockid,hostname,pid,acquiredat) VALUES (?, ?, ?, '.$self->unix_timestamp().')', undef, $lockid, hostname, $$) };
         if($self->was_duplicate_error) {
             $timeout--;
-            sleep 1;
+            sleep 1 $timeout > 0;
             next;
         }
         $self->condthrow;
