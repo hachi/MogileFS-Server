@@ -1754,8 +1754,9 @@ sub grab_files_to_queued {
 # and tell it not to.
 sub should_begin_replicating_fidid {
     my ($self, $fidid) = @_;
-    warn("Inefficient implementation of should_begin_replicating_fidid() in $self!\n");
-    1;
+    my $lockname = "mgfs:fid:$fidid:replicate";
+    return 1 if $self->get_lock($lockname, 1);
+    return 0;
 }
 
 # called when replicator is done replicating a fid, so you can cleanup
@@ -1769,6 +1770,8 @@ sub should_begin_replicating_fidid {
 # locking in this pair of functions.
 sub note_done_replicating {
     my ($self, $fidid) = @_;
+    my $lockname = "mgfs:fid:$fidid:replicate";
+    $self->release_lock($lockname);
 }
 
 sub find_fid_from_file_to_replicate {

@@ -327,19 +327,6 @@ sub update_devcount_atomic {
     return 1;
 }
 
-sub should_begin_replicating_fidid {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    return 1 if $self->get_lock($lockname, 1);
-    return 0;
-}
-
-sub note_done_replicating {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    $self->release_lock($lockname);
-}
-
 sub upgrade_add_host_getport {
     my $self = shift;
     # see if they have the get port, else update it

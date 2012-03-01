@@ -362,19 +362,6 @@ sub upgrade_modify_server_settings_value { 1 }
 sub upgrade_add_file_to_queue_arg { 1 }
 sub upgrade_modify_device_size { 1 }
 
-sub should_begin_replicating_fidid {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    return 1 if $self->get_lock($lockname, 1);
-    return 0;
-}
-
-sub note_done_replicating {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    $self->release_lock($lockname);
-}
-
 sub BLOB_BIND_TYPE { SQL_BLOB }
 
 1;
