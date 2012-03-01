@@ -101,7 +101,7 @@ sub usage_refresh {
                             # given lots of devices.
     }
 
-    if ($have_dbh) {
+    if ($have_dbh && $updateable_devices) {
         Mgd::get_store()->release_lock('mgfs:device_update');
     }
 
