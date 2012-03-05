@@ -155,6 +155,14 @@ sub process_deletes2 {
         # load all the devids related to this fid, and delete.
         my $fid    = MogileFS::FID->new($todo->{fid});
         my $fidid  = $fid->id;
+
+        # if it's currently being replicated, wait for replication to finish
+        # before deleting to avoid stale files
+        if (! $sto->should_begin_replicating_fidid($fidid)) {
+            $sto->reschedule_file_to_delete2_relative($fidid, 1);
+            next;
+        }
+
         my @devids = $fid->devids;
         my %devids = map { $_ => 1 } @devids;
 
@@ -241,8 +249,8 @@ sub process_deletes2 {
         # fid has no pants.
         unless (keys %devids) {
             $sto->delete_fid_from_file_to_delete2($fidid);
-            next;
         }
+        $sto->note_done_replicating($fidid);
     }
 
     # did work.
