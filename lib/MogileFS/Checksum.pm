@@ -5,11 +5,13 @@ use overload '""' => \&as_string;
 
 my %TYPE = (
     "MD5"     => { type => 1, bytelen => 128 / 8 },
-    "SHA-1"   => { type => 2, bytelen => 160 / 8 },
-    "SHA-224" => { type => 3, bytelen => 224 / 8 },
-    "SHA-256" => { type => 4, bytelen => 256 / 8 },
-    "SHA-384" => { type => 5, bytelen => 384 / 8 },
-    "SHA-512" => { type => 6, bytelen => 512 / 8 },
+
+# see POD for rationale below
+#   "SHA-1"   => { type => 2, bytelen => 160 / 8 },
+#   "SHA-224" => { type => 3, bytelen => 224 / 8 },
+#   "SHA-256" => { type => 4, bytelen => 256 / 8 },
+#   "SHA-384" => { type => 5, bytelen => 384 / 8 },
+#   "SHA-512" => { type => 6, bytelen => 512 / 8 },
 );
 
 our %NAME2TYPE = map { $_ => $TYPE{$_}->{type} } keys(%TYPE);
@@ -100,3 +102,37 @@ sub info {
 }
 
 1;
+
+__END__
+
+=head1 NAME
+
+MogileFS::Checksum - Checksums handling for MogileFS
+
+=head1 ABOUT
+
+MogileFS supports optional MD5 checksums.  Checksums can be stored
+in the database on a per-class basis or they can be enabled globally
+during fsck-only.
+
+Enabling checksums will greatly increase the time and I/O required for
+fsck as all files on all devices to be checksummed need to be reread.
+
+Fsck and replication will use significantly more network bandwidth if
+the mogstored is not used or if mogstored_stream_port is
+not configured correctly.  Using Perlbal to 1.80 or later for HTTP
+will also speed up checksum verification during replication using
+the Content-MD5 HTTP header.
+
+=head1 ALGORITHMS
+
+While we can easily enable some or all of the SHA family of hash
+algorithms, they all perform worse than MD5.  Checksums are intended to
+detect unintentional corruption due to hardware/software errors, not
+malicious data replacement.  Since MogileFS does not implement any
+security/authorization on its own to protect against malicious use, the
+use of checksums in MogileFS to protect against malicious data
+replacement is misguided.
+
+If you have a use case which requires a stronger hash algorithm,
+please speak up on the mailing list at L<mogile@googlegroups.com>.

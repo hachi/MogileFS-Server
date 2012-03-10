@@ -68,7 +68,9 @@ sub read_buf_consume {
             }
             $self->watch_read(0);
             Mogstored->iostat_subscribe($self);
-        } elsif ($cmd =~ /^(MD5|SHA-(?:1|224|256|384|512)) (\S+)$/) {
+        } elsif ($cmd =~ /^(MD5) (\S+)$/) {
+            # we can easily enable other hash algorithms with the above
+            # regexp, but we won't for now (see MogileFS::Checksum)
             my $alg = $1;
             my $uri = $self->validate_uri($2);
             return unless defined($uri);
