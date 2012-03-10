@@ -4,6 +4,7 @@ use strict;
 use base 'MogileFS::Worker';
 use fields (
             'opt_nostat',          # bool: do we trust mogstoreds? skipping size stats?
+            'opt_auto_checksum',   # (off|MD5) checksum regardless of per-class hashtype to look for mismatches
             );
 use MogileFS::Util qw(every error debug);
 use MogileFS::Config;
@@ -27,6 +28,7 @@ use constant EV_RE_REPLICATE     => "REPL";
 use constant EV_BAD_COUNT        => "BCNT";
 use constant EV_BAD_CHECKSUM     => "BSUM";
 use constant EV_NO_CHECKSUM      => "NSUM";
+use constant EV_MULTI_CHECKSUM   => "MSUM";
 
 use POSIX ();
 
@@ -66,6 +68,8 @@ sub work {
         return unless @fids;
 
         $self->{opt_nostat} = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
+        my $alg = MogileFS::Config->server_setting_cached("fsck_auto_checksum");
+        $self->{opt_auto_checksum} = MogileFS::Checksum->valid_alg($alg) ? $alg : 0;
         MogileFS::FID->mass_load_devids(@fids);
 
         # don't sleep in loop, next round, since we found stuff to work on
@@ -143,6 +147,10 @@ sub check_fid {
         return $fix->();
     }
 
+    if ($self->{opt_auto_checksum}) {
+        return $fix->();
+    }
+
     # in the fast case, do nothing else (don't check if assumed file
     # locations are actually there).  in the fast case, all we do is
     # check the replication policy, which is already done, so finish.
@@ -215,7 +223,7 @@ sub fix_fid {
     my @good_devs;
     my @bad_devs;
     my %already_checked;  # devid -> 1.
-    my $alg = $fid->class->hashname;
+    my $alg = $fid->class->hashname || $self->{opt_auto_checksum};
     my $checksums = {};
     my $ping_cb = sub { $self->still_alive };
 
@@ -356,10 +364,8 @@ sub checksum_on_disk {
     return $dfid->checksum_on_disk($alg, $ping_cb);
 }
 
-sub all_checksums_bad {
-    my ($self, $fid, $checksums) = @_;
-    my $alg = $fid->class->hashname or return; # class could've changed
-    my $cur_checksum = $fid->checksum;
+sub bad_checksums_errmsg {
+    my ($self, $alg, $checksums) = @_;
     my @err;
 
     foreach my $checksum (keys %$checksums) {
@@ -367,7 +373,26 @@ sub all_checksums_bad {
         $checksum = unpack("H*", $checksum);
         push @err, "$alg:$checksum on devids=[$bdevs]"
     }
-    my $err = join('; ', @err);
+
+    return join('; ', @err);
+}
+
+# we don't now what checksum the file is supposed to be, but some
+# of the devices had checksums that didn't match the other(s).
+sub auto_checksums_bad {
+    my ($self, $fid, $checksums) = @_;
+    my $alg = $self->{opt_auto_checksum};
+    my $err = $self->bad_checksums_errmsg($alg, $checksums);
+
+    error("$fid has multiple checksums: $err");
+    $fid->fsck_log(EV_MULTI_CHECKSUM);
+}
+
+sub all_checksums_bad {
+    my ($self, $fid, $checksums) = @_;
+    my $alg = $fid->class->hashname or return; # class could've changed
+    my $cur_checksum = $fid->checksum;
+    my $err = $self->bad_checksums_errmsg($alg, $checksums);
     my $cur = $cur_checksum ? "Expected: $cur_checksum"
                             : "No known valid checksum";
     error("all checksums bad: $err. $cur");
@@ -386,16 +411,24 @@ sub fix_checksums {
                 $fid->fsck_log(EV_BAD_CHECKSUM);
             }
         } else { # fresh row to checksum
-            my $hashtype = $fid->class->hashtype or return;
-            my %row = (
-                fid => $fid->id,
-                checksum => $disk_checksum,
-                hashtype => $hashtype,
-            );
-            my $new_checksum = MogileFS::Checksum->new(\%row);
-            debug("creating new checksum=$new_checksum");
-            $fid->fsck_log(EV_NO_CHECKSUM);
-            $new_checksum->save;
+            my $hashtype = $fid->class->hashtype;
+
+            # we store this in the database
+            if ($hashtype) {
+                my %row = (
+                    fid => $fid->id,
+                    checksum => $disk_checksum,
+                    hashtype => $hashtype,
+                );
+                my $new_checksum = MogileFS::Checksum->new(\%row);
+                debug("creating new checksum=$new_checksum");
+                $fid->fsck_log(EV_NO_CHECKSUM);
+                $new_checksum->save;
+            } else {
+                my $hex_checksum = unpack("H*", $disk_checksum);
+                my $alg = $self->{opt_auto_checksum};
+                debug("fsck_auto_checksum good: $fid $alg:$hex_checksum");
+            }
         }
     } elsif ($cur_checksum) {
         my $good = delete($checksums->{$cur_checksum->{checksum}});
@@ -405,6 +438,8 @@ sub fix_checksums {
         } else {
             $self->all_checksums_bad($fid, $checksums);
         }
+    } elsif ($self->{opt_auto_checksum}) {
+        $self->auto_checksums_bad($fid, $checksums);
     } else {
         $self->all_checksums_bad($fid, $checksums);
     }

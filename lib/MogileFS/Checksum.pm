@@ -15,6 +15,12 @@ my %TYPE = (
 our %NAME2TYPE = map { $_ => $TYPE{$_}->{type} } keys(%TYPE);
 our %TYPE2NAME = map { $NAME2TYPE{$_} => $_ } keys(%NAME2TYPE);
 
+sub valid_alg {
+    my ($class, $alg) = @_;
+
+    defined($alg) && defined($TYPE{$alg});
+}
+
 sub new {
     my ($class, $row) = @_;
     my $self = bless {

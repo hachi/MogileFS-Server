@@ -11,7 +11,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 99;
+    plan tests => 117;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -74,6 +74,7 @@ sub wait_for_monitor {
 sub full_fsck {
     my $tmptrack = shift;
 
+    ok($tmptrack->mogadm("fsck", "stop"), "stop fsck");
     ok($tmptrack->mogadm("fsck", "clearlog"), "clear fsck log");
     ok($tmptrack->mogadm("fsck", "reset"), "reset fsck");
     ok($tmptrack->mogadm("fsck", "start"), "started fsck");
@@ -366,4 +367,37 @@ use Digest::MD5 qw/md5_hex/;
     is(scalar(@fsck_log), 1, "fsck log has one row");
     is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
     is($fsck_log[0]->{evcode}, "BSUM", "BSUM logged");
+}
+
+# disable MD5 checksums in "2copies" class
+{
+    %opts = ( domain => "testdom", class => "2copies",
+              hashtype => "NONE", mindevcount => 2 );
+    ok($be->do_request("update_class", \%opts), "update class");
+    wait_for_monitor($be);
+}
+
+# use fsck_auto_checksum instead of per-class checksums
+{
+    my $key = 'lazycksum';
+    my $info = $mogc->file_info($key);
+    $sto->delete_checksum($info->{fid});
+
+    ok($tmptrack->mogadm("settings", "set", "fsck_auto_checksum", "MD5"), "enable fsck_auto_checksum=MD5");
+    wait_for_monitor($be);
+    full_fsck($tmptrack);
+    do {
+        @fsck_log = $sto->fsck_log_rows;
+    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+    is(scalar(@fsck_log), 1, "fsck log has one row");
+    is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
+    is($fsck_log[0]->{evcode}, "MSUM", "MSUM logged");
+}
+
+# ensure server setting is visible
+use MogileFS::Admin;
+{
+    my $moga = MogileFS::Admin->new(hosts => [ "127.0.0.1:7001" ]);
+    my $settings = $moga->server_settings;
+    is($settings->{fsck_auto_checksum}, 'MD5', "fsck_auto_checksum server setting visible");
 }
