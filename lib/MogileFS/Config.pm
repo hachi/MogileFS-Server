@@ -317,7 +317,7 @@ sub hostname {
 
 sub server_setting_is_readable {
     my ($class, $key) = @_;
-    return 1 if $key eq 'fsck_auto_checksum';
+    return 1 if $key eq 'fsck_checksum';
     return 0 if $key =~ /^fsck_/;
     return 1;
 }
@@ -388,10 +388,11 @@ sub server_setting_is_writable {
     # should probably restrict to (\d+)
     if ($key =~ /^queue_/) { return $any };
 
-    if ($key eq "fsck_auto_checksum") {
+    if ($key eq "fsck_checksum") {
         return sub {
             my $v = shift;
-            return "0" if $v =~ /^(0|f|off|n)/i;
+            return "off" if $v eq "off";
+            return undef if $v eq "class";
             return $v if MogileFS::Checksum->valid_alg($v);
             die "Not a valid checksum algorithm";
         }

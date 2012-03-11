@@ -11,7 +11,7 @@ find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
 if ($sto) {
-    plan tests => 117;
+    plan tests => 141;
 } else {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
@@ -43,6 +43,7 @@ ok($tmptrack);
 
 my $admin = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001');
 $admin or die "failed to create admin socket: $!";
+my $moga = MogileFS::Admin->new(hosts => [ "127.0.0.1:7001" ]);
 my $mogc = MogileFS::Client->new(
                                  domain => "testdom",
                                  hosts  => [ "127.0.0.1:7001" ],
@@ -377,13 +378,13 @@ use Digest::MD5 qw/md5_hex/;
     wait_for_monitor($be);
 }
 
-# use fsck_auto_checksum instead of per-class checksums
+# use fsck_checksum=MD5 instead of per-class checksums
 {
     my $key = 'lazycksum';
     my $info = $mogc->file_info($key);
     $sto->delete_checksum($info->{fid});
 
-    ok($tmptrack->mogadm("settings", "set", "fsck_auto_checksum", "MD5"), "enable fsck_auto_checksum=MD5");
+    ok($tmptrack->mogadm("settings", "set", "fsck_checksum", "MD5"), "enable fsck_checksum=MD5");
     wait_for_monitor($be);
     full_fsck($tmptrack);
     do {
@@ -397,7 +398,49 @@ use Digest::MD5 qw/md5_hex/;
 # ensure server setting is visible
 use MogileFS::Admin;
 {
-    my $moga = MogileFS::Admin->new(hosts => [ "127.0.0.1:7001" ]);
     my $settings = $moga->server_settings;
-    is($settings->{fsck_auto_checksum}, 'MD5', "fsck_auto_checksum server setting visible");
+    is($settings->{fsck_checksum}, 'MD5', "fsck_checksum server setting visible");
+}
+
+use MogileFS::Config;
+
+# disable checksumming entirely, regardless of class setting
+{
+    %opts = ( domain => "testdom", class => "2copies",
+              hashtype => "MD5", mindevcount => 2 );
+    ok($be->do_request("update_class", \%opts), "update class");
+    wait_for_monitor($be);
+
+    ok($tmptrack->mogadm("settings", "set", "fsck_checksum", "off"), "set fsck_checksum=off");
+    wait_for_monitor($be);
+    my $settings = $moga->server_settings;
+    is($settings->{fsck_checksum}, 'off', "fsck_checksum server setting visible");
+    full_fsck($tmptrack);
+    my $nr;
+    foreach my $i (0..100) {
+        $nr = $sto->file_queue_length(FSCK_QUEUE);
+        last if ($nr eq '0');
+        sleep 0.1;
+    }
+    is($nr, '0', "fsck finished");
+    @fsck_log = $sto->fsck_log_rows;
+    is(scalar(@fsck_log), 0, "fsck log is empty with fsck_checksum=off");
+}
+
+# set fsck_checksum=class and ensure that works again
+{
+    my $info = $mogc->file_info('lazycksum');
+    ok($tmptrack->mogadm("settings", "set", "fsck_checksum", "class"), "set fsck_checksum=class");
+    wait_for_monitor($be);
+    my $settings = $moga->server_settings;
+    ok(! defined($settings->{fsck_checksum}), "fsck_checksum=class server setting hidden (default)");
+    full_fsck($tmptrack);
+
+    do {
+        @fsck_log = $sto->fsck_log_rows;
+    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+
+    is(scalar(@fsck_log), 1, "fsck log has one row");
+    is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
+    is($fsck_log[0]->{evcode}, "BSUM", "BSUM logged");
 }

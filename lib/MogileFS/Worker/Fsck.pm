@@ -4,7 +4,7 @@ use strict;
 use base 'MogileFS::Worker';
 use fields (
             'opt_nostat',          # bool: do we trust mogstoreds? skipping size stats?
-            'opt_auto_checksum',   # (off|MD5) checksum regardless of per-class hashtype to look for mismatches
+            'opt_checksum',        # (class|off|MD5) checksum mode
             );
 use MogileFS::Util qw(every error debug);
 use MogileFS::Config;
@@ -68,8 +68,12 @@ sub work {
         return unless @fids;
 
         $self->{opt_nostat} = MogileFS::Config->server_setting('fsck_opt_policy_only')     || 0;
-        my $alg = MogileFS::Config->server_setting_cached("fsck_auto_checksum");
-        $self->{opt_auto_checksum} = MogileFS::Checksum->valid_alg($alg) ? $alg : 0;
+        my $alg = MogileFS::Config->server_setting_cached("fsck_checksum");
+        if (defined($alg) && $alg eq "off") {
+            $self->{opt_checksum} = "off";
+        } else {
+            $self->{opt_checksum} = MogileFS::Checksum->valid_alg($alg) ? $alg : 0;
+        }
         MogileFS::FID->mass_load_devids(@fids);
 
         # don't sleep in loop, next round, since we found stuff to work on
@@ -147,14 +151,14 @@ sub check_fid {
         return $fix->();
     }
 
-    if ($self->{opt_auto_checksum}) {
-        return $fix->();
-    }
-
     # in the fast case, do nothing else (don't check if assumed file
     # locations are actually there).  in the fast case, all we do is
     # check the replication policy, which is already done, so finish.
     return HANDLED if $self->{opt_nostat};
+
+    if ($self->{opt_checksum}) {
+        return $fix->();
+    }
 
     # stat each device to see if it's still there.  on first problem,
     # stop and go into the slow(er) fix function.
@@ -223,7 +227,7 @@ sub fix_fid {
     my @good_devs;
     my @bad_devs;
     my %already_checked;  # devid -> 1.
-    my $alg = $fid->class->hashname || $self->{opt_auto_checksum};
+    my $alg = $fid->class->hashname || $self->{opt_checksum};
     my $checksums = {};
     my $ping_cb = sub { $self->still_alive };
 
@@ -245,7 +249,7 @@ sub fix_fid {
             die "dev " . $dev->id . " unreachable" unless defined $disk_size;
 
             if ($disk_size == $fid->length) {
-                if ($alg) {
+                if ($alg && $alg ne "off") {
                     my $digest = $self->checksum_on_disk($dfid, $alg, $ping_cb);
                     unless (defined $digest) {
                         die "dev " . $dev->id . " unreachable";
@@ -317,7 +321,7 @@ sub fix_fid {
     # in case the devcount or similar was fixed.
     $fid->want_reload;
 
-    $self->fix_checksums($fid, $checksums) if $alg;
+    $self->fix_checksums($fid, $checksums) if $alg && $alg ne "off";
 
     # Note: this will reload devids, if they called 'note_on_device'
     # or 'forget_about_device'
@@ -381,7 +385,7 @@ sub bad_checksums_errmsg {
 # of the devices had checksums that didn't match the other(s).
 sub auto_checksums_bad {
     my ($self, $fid, $checksums) = @_;
-    my $alg = $self->{opt_auto_checksum};
+    my $alg = $self->{opt_checksum};
     my $err = $self->bad_checksums_errmsg($alg, $checksums);
 
     error("$fid has multiple checksums: $err");
@@ -426,8 +430,8 @@ sub fix_checksums {
                 $new_checksum->save;
             } else {
                 my $hex_checksum = unpack("H*", $disk_checksum);
-                my $alg = $self->{opt_auto_checksum};
-                debug("fsck_auto_checksum good: $fid $alg:$hex_checksum");
+                my $alg = $self->{opt_checksum};
+                debug("fsck_checksum=auto good: $fid $alg:$hex_checksum");
             }
         }
     } elsif ($cur_checksum) {
@@ -438,7 +442,7 @@ sub fix_checksums {
         } else {
             $self->all_checksums_bad($fid, $checksums);
         }
-    } elsif ($self->{opt_auto_checksum}) {
+    } elsif ($self->{opt_checksum}) {
         $self->auto_checksums_bad($fid, $checksums);
     } else {
         $self->all_checksums_bad($fid, $checksums);
