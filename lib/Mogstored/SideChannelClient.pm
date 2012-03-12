@@ -10,6 +10,10 @@ use fields (
             );
 use Digest;
 use POSIX qw(O_RDONLY);
+use Mogstored::TaskQueue;
+
+# TODO: interface to make this tunable
+my %digest_queues;
 
 # needed since we're pretending to be a Perlbal::Socket... never idle out
 sub max_idle_time { return 0; }
@@ -68,14 +72,15 @@ sub read_buf_consume {
             }
             $self->watch_read(0);
             Mogstored->iostat_subscribe($self);
-        } elsif ($cmd =~ /^(MD5) (\S+)$/) {
+        } elsif ($cmd =~ /^(MD5) (\S+)(?: (\w+))?$/) {
             # we can easily enable other hash algorithms with the above
             # regexp, but we won't for now (see MogileFS::Checksum)
             my $alg = $1;
             my $uri = $self->validate_uri($2);
+            my $reason = $3;
             return unless defined($uri);
 
-            return $self->digest($alg, $path, $uri);
+            return $self->digest($alg, $path, $uri, $reason);
         } else {
             # we don't understand this so pass it on to manage command interface
             my @out;
@@ -117,9 +122,10 @@ sub die_gracefully {
 }
 
 sub digest {
-    my ($self, $alg, $path, $uri) = @_;
+    my ($self, $alg, $path, $uri, $reason) = @_;
 
     $self->watch_read(0);
+
     Perlbal::AIO::aio_open("$path$uri", O_RDONLY, 0, sub {
         my $fh = shift;
 
@@ -128,7 +134,16 @@ sub digest {
             return;
         }
         if ($fh) {
-            $self->digest_fh($alg, $fh, $uri);
+            my $queue;
+
+            if ($reason && $reason eq "fsck") {
+                # fstat(2) should return immediately, no AIO needed
+                my $devid = (stat($fh))[0];
+                $queue = $digest_queues{$devid} ||= Mogstored::TaskQueue->new;
+                $queue->run(sub { $self->digest_fh($alg, $fh, $uri, $queue) });
+            } else {
+                $self->digest_fh($alg, $fh, $uri);
+            }
         } else {
             $self->write("$uri $alg=-1\r\n");
             $self->after_long_request;
@@ -137,7 +152,7 @@ sub digest {
 }
 
 sub digest_fh {
-    my ($self, $alg, $fh, $uri) = @_;
+    my ($self, $alg, $fh, $uri, $queue) = @_;
     my $offset = 0;
     my $data = '';
     my $digest = Digest->new($alg);
@@ -155,11 +170,13 @@ sub digest_fh {
             CORE::close($fh);
             $digest = $digest->hexdigest;
             $self->write("$uri $alg=$digest\r\n");
+            $queue->task_done if $queue;
             $self->after_long_request;
         } else {
             $cb = undef;
             CORE::close($fh);
             $self->write("ERR read $uri at $offset failed\r\n");
+            $queue->task_done if $queue;
             $self->after_long_request; # should we try to continue?
         }
     };

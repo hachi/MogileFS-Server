@@ -139,15 +139,16 @@ sub size {
 }
 
 sub digest_mgmt {
-    my ($self, $alg, $ping_cb) = @_;
+    my ($self, $alg, $ping_cb, $reason) = @_;
     my $mogconn = $self->host->mogstored_conn;
     my $node_timeout = MogileFS->config("node_timeout");
     my $sock;
     my $rv;
     my $expiry;
 
+    $reason = defined($reason) ? " $reason" : "";
     my $uri = $self->{uri};
-    my $req = "$alg $uri\r\n";
+    my $req = "$alg $uri$reason\r\n";
     my $reqlen = length $req;
 
     # a dead/stale socket may not be detected until we try to recv on it
@@ -237,8 +238,8 @@ sub digest_http {
 }
 
 sub digest {
-    my ($self, $alg, $ping_cb) = @_;
-    my $digest = $self->digest_mgmt($alg, $ping_cb);
+    my ($self, $alg, $ping_cb, $reason) = @_;
+    my $digest = $self->digest_mgmt($alg, $ping_cb, $reason);
 
     return $digest if ($digest && $digest ne FILE_MISSING);
 

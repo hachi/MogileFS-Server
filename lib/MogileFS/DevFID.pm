@@ -72,11 +72,11 @@ sub size_on_disk {
 # undef on connectivity error,
 # else checksum of file on disk (after HTTP GET or mogstored read)
 sub checksum_on_disk {
-    my ($self, $alg, $ping_cb) = @_;
+    my ($self, $alg, $ping_cb, $reason) = @_;
     my $url = $self->get_url;
 
     # check that it has size (>0) and is reachable (not undef)
-    return MogileFS::HTTPFile->at($url)->digest($alg, $ping_cb);
+    return MogileFS::HTTPFile->at($url)->digest($alg, $ping_cb, $reason);
 }
 
 # returns true if size seen matches fid's length

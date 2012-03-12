@@ -365,7 +365,7 @@ sub size_on_disk {
 sub checksum_on_disk {
     my ($self, $dfid, $alg, $ping_cb) = @_;
     return undef if $dfid->device->dstate->is_perm_dead;
-    return $dfid->checksum_on_disk($alg, $ping_cb);
+    return $dfid->checksum_on_disk($alg, $ping_cb, "fsck");
 }
 
 sub bad_checksums_errmsg {
