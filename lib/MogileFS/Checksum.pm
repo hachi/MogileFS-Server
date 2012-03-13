@@ -5,9 +5,9 @@ use overload '""' => \&as_string;
 
 my %TYPE = (
     "MD5"     => { type => 1, bytelen => 128 / 8 },
+    "SHA-1"   => { type => 2, bytelen => 160 / 8 },
 
 # see POD for rationale below
-#   "SHA-1"   => { type => 2, bytelen => 160 / 8 },
 #   "SHA-224" => { type => 3, bytelen => 224 / 8 },
 #   "SHA-256" => { type => 4, bytelen => 256 / 8 },
 #   "SHA-384" => { type => 5, bytelen => 384 / 8 },

@@ -72,7 +72,7 @@ sub read_buf_consume {
             }
             $self->watch_read(0);
             Mogstored->iostat_subscribe($self);
-        } elsif ($cmd =~ /^(MD5) (\S+)(?: (\w+))?$/) {
+        } elsif ($cmd =~ /^(MD5|SHA-1) (\S+)(?: (\w+))?$/) {
             # we can easily enable other hash algorithms with the above
             # regexp, but we won't for now (see MogileFS::Checksum)
             my $alg = $1;
