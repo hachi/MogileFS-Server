@@ -63,9 +63,10 @@ sub vivify_directories {
 sub size_on_disk {
     my $self = shift;
     my $url = $self->get_url;
+    my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
 
     # check that it has size (>0) and is reachable (not undef)
-    return MogileFS::HTTPFile->at($url)->size;
+    return $httpfile->size;
 }
 
 # returns -1 on missing,
@@ -74,9 +75,10 @@ sub size_on_disk {
 sub checksum_on_disk {
     my ($self, $alg, $ping_cb, $reason) = @_;
     my $url = $self->get_url;
+    my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
 
     # check that it has size (>0) and is reachable (not undef)
-    return MogileFS::HTTPFile->at($url)->digest($alg, $ping_cb, $reason);
+    return $httpfile->digest($alg, $ping_cb, $reason);
 }
 
 # returns true if size seen matches fid's length

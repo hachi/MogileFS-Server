@@ -98,6 +98,9 @@ sub delete {
 use constant FILE_MISSING => -1;
 sub size {
     my $self = shift;
+
+    return $self->{_size} if defined $self->{_size};
+
     my ($host, $port, $uri, $path) = map { $self->{$_} } qw(host port uri url);
 
     return undef if (exists $size_check_retry_after{$host}
@@ -118,8 +121,10 @@ sub size {
             $res->header('server') =~ m/^lighttpd/) {
             # lighttpd 1.4.x (main release) does not return content-length for
             # 0 byte files.
+            $self->{_size} = 0;
             return 0;
         }
+        $self->{_size} = $size;
         return $size;
     } else {
         if ($res->code == 404) {
