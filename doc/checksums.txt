@@ -11,7 +11,7 @@ tracker protocol
 Hex is used instead of binary over the wire, hex is already immune to
 URL encoding in the tracker protocol.
 
-Hashes are represented with in the $NAME:$HEXDIGEST format:
+Hashes are represented with in the $HASHTYPE:$HEXDIGEST format:
 
 	MD5:68b329da9893e34099c7d8ad5cb9c940
 
@@ -19,7 +19,7 @@ verifying checksums (on disk)
 -----------------------------
 
 Ideally, mogstored checksum calculation is done by mogstored and only
-the checksum (in $NAME=$HEXDIGEST format) is sent over the wire.
+the checksum (in $HASHTYPE=$HEXDIGEST format) is sent over the wire.
 
 If mogstored is not available, the checksum is calculated on the tracker
 by streaming the file with HTTP GET.
@@ -30,7 +30,7 @@ create_close (query worker)
 New optional parameters:
 
 - checksumverify=(0|1) default: 0 (false)
-- checksum=$NAME:$HEXDIGEST
+- checksum=$HASHTYPE:$HEXDIGEST
 
 If "checksumverify" is "1" and "checksum" is present, "create_close"
 will not return until it has verified the checksum.
