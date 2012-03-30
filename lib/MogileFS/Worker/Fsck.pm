@@ -156,7 +156,7 @@ sub check_fid {
     # check the replication policy, which is already done, so finish.
     return HANDLED if $self->{opt_nostat};
 
-    if ($self->{opt_checksum}) {
+    if ($self->{opt_checksum} && $self->{opt_checksum} ne "off") {
         return $fix->();
     }
 
@@ -184,7 +184,8 @@ sub check_fid {
     });
 
     if ($rv) {
-        return $fid->class->hashtype ? $fix->() : HANDLED;
+        return ($fid->class->hashtype && !($self->{opt_checksum} && $self->{opt_checksum} eq "off"))
+            ? $fix->() : HANDLED;
     } elsif ($err eq "stalled") {
         return STALLED;
     } elsif ($err eq "needfix") {
