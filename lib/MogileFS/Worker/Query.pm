@@ -1479,7 +1479,8 @@ sub cmd_fsck_start {
     my $intss       = sub { MogileFS::Config->server_setting($_[0]) || 0 };
     my $checked_fid = $intss->("fsck_highest_fid_checked");
     my $final_fid   = $intss->("fsck_fid_at_end");
-    if ($checked_fid && $final_fid && $checked_fid >= $final_fid) {
+    if (($checked_fid && $final_fid && $checked_fid >= $final_fid) ||
+        (!$final_fid && !$checked_fid)) {
         $self->_do_fsck_reset or return $self->err_line;
     }
 
