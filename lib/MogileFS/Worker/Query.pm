@@ -584,6 +584,15 @@ sub cmd_file_debug {
     }
     $ret->{devids} = join(',', @devids) if @devids;
 
+    # Always look for a checksum
+    my $checksum = Mgd::get_store()->get_checksum($fidid);
+    if ($checksum) {
+        $checksum = MogileFS::Checksum->new($checksum);
+        $ret->{checksum} = $checksum->info;
+    } else {
+        $ret->{checksum} = 'NONE';
+    }
+
     # Return file row (if found) and all other data.
     my %toret = (fid => $fid, tempfile => $tfile, replqueue => $repl,
         delqueue => $del, rebqueue => $reb, fsckqueue => $fsck);
