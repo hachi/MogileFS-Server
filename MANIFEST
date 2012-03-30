@@ -6,6 +6,8 @@ doc/fsck-notes.txt
 doc/memcache-support.txt
 doc/pluggable-replication-policies.txt
 doc/testing.txt
+doc/checksums.txt
+lib/MogileFS/Checksum.pm
 lib/MogileFS/Class.pm
 lib/MogileFS/Config.pm
 lib/MogileFS/Connection/Client.pm
@@ -59,6 +61,7 @@ lib/Mogstored/HTTPServer/Perlbal.pm
 lib/Mogstored/HTTPServer/None.pm
 lib/Mogstored/SideChannelClient.pm
 lib/Mogstored/SideChannelListener.pm
+lib/Mogstored/TaskQueue.pm
 Makefile.PL
 MANIFEST
 mogautomount
@@ -71,6 +74,9 @@ t/02-host-device.t
 t/10-weighting.t
 t/20-filepaths.t
 t/30-rebalance.t
+t/40-httpfile.t
+t/50-checksum.t
+t/checksum.t
 t/fid-stat.t
 t/mogstored-shutdown.t
 t/multiple-hosts-replpol.t

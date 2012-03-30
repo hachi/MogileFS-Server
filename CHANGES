@@ -1,3 +1,12 @@
+2012-03-30: Release version 2.60
+
+   * Fix fsck status when running for the first time (dormando <dormando@rydia.net>)
+
+   * Checksum support (Major update!) (Eric Wong <normalperson@yhbt.net>)
+     See doc/checksums.txt for an overview of how the new checksum system
+     works. Also keep an eye on the wiki (http://www.mogilefs.org) for more
+     complete documentation in the coming weeks.
+
 2012-02-29: Release version 2.59
 
    * don't make SQLite error out on lock calls (dormando <dormando@rydia.net>)
