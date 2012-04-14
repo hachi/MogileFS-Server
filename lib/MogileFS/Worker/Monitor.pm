@@ -457,8 +457,12 @@ sub check_bogus_md5 {
     # most servers /will/ succeed here :<
     my $resp = $self->ua->request($req);
     my $rej = $resp->is_success ? 0 : 1;
-    debug("dev$devid: reject_bad_md5 = $rej");
-    $self->state_event('device', $devid, { reject_bad_md5 => $rej });
+    my $prev = $dev->reject_bad_md5;
+
+    if (!defined($prev) || $prev != $rej) {
+        debug("dev$devid: reject_bad_md5 = $rej");
+        $self->state_event('device', $devid, { reject_bad_md5 => $rej });
+    }
 }
 
 1;

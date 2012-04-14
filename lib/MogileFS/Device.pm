@@ -301,4 +301,8 @@ sub devices {
     return Mgd::device_factory()->get_all;
 }
 
+sub reject_bad_md5 {
+    return $_[0]->{reject_bad_md5};
+}
+
 1;
