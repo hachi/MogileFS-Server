@@ -857,6 +857,7 @@ sub cmd_delete_domain {
 
     my $err = error_code($@);
     return $self->err_line('domain_has_files') if $err eq "has_files";
+    return $self->err_line('domain_has_classes') if $err eq "has_classes";
     return $self->err_line("failure");
 }
 
