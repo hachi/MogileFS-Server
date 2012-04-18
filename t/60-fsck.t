@@ -207,7 +207,8 @@ use Data::Dumper;
 {
     @paths = $mogc->get_paths($key);
     is(scalar(@paths), 2, "two paths returned from get_paths");
-    $rv = $ua->delete($paths[0]);
+    $req = HTTP::Request->new(DELETE => $paths[0]);
+    $rv = $ua->request($req);
     ok($rv->is_success, "DELETE successful");
 
     full_fsck($tmptrack, $dbh);
@@ -266,7 +267,8 @@ use Data::Dumper;
     @paths = $mogc->get_paths($key);
     is(scalar(@paths), 2, "two paths returned from get_paths");
     foreach my $path (@paths) {
-        $rv = $ua->delete($path);
+        $req = HTTP::Request->new(DELETE => $path);
+        $rv = $ua->request($req);
         ok($rv->is_success, "DELETE successful");
     }
 
