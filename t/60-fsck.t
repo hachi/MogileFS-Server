@@ -124,7 +124,11 @@ use Data::Dumper;
     # ensure repl queue is empty before destroying file_on
     wait_for_empty_queue("file_to_replicate", $dbh);
 
-    is($dbh->do("DELETE FROM file_on"), 1, "delete $key from file_on table");
+    my @devids = $sto->fid_devids($info->{fid});
+    is(scalar(@devids), 1, "devids retrieved");
+    is($sto->remove_fidid_from_devid($info->{fid}, $devids[0]), 1,
+       "delete $key from file_on table");
+
     full_fsck($tmptrack, $dbh);
     do {
         @fsck_log = $sto->fsck_log_rows;
@@ -157,7 +161,7 @@ use Data::Dumper;
 
     # _NOT_ using "updateclass" command since that enqueues for replication
     my $fid = MogileFS::FID->new($info->{fid});
-    my $classid_2copies = $dbh->selectrow_array("SELECT classid FROM class WHERE dmid = ? AND classname = ?", undef, $fid->dmid, "2copies");
+    my $classid_2copies = $sto->get_classid_by_name($fid->dmid, "2copies");
     is($fid->update_class(classid => $classid_2copies), 1, "classid updated");
 
     full_fsck($tmptrack, $dbh);
