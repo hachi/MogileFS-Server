@@ -176,7 +176,7 @@ use Data::Dumper;
 
     do {
         @fsck_log = $sto->fsck_log_rows;
-    } while (scalar(@fsck_log) == 0 and sleep(10));
+    } while (scalar(@fsck_log) == 0 and sleep(0.1));
 
     my $povi = $fsck_log[0];
     is($povi->{evcode}, "POVI", "policy violation logged by fsck");
