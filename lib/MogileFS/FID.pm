@@ -228,11 +228,6 @@ sub devids_meet_policy {
         or die "No global device map";
 
     my @devs = $self->devs;
-    # This is a little heavy handed just to fix the 'devcount' cache, but
-    # doing it here ensures we get the error logged.
-    unless (MogileFS::Config->server_setting_cached('skip_devcount') || @devs == $self->devcount) {
-        return 0;
-    }
 
     my %rep_args = (
                     fid       => $self->id,

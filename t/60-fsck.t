@@ -202,10 +202,9 @@ use Data::Dumper;
         } while ($info->{devcount} == $wrong_devcount && sleep(0.1));
         is($info->{devcount}, 2, "devcount is corrected by fsck");
 
-        # XXX POVI gets logged here, but BCNT might be more correct...
         wait_for_empty_queue("file_to_queue", $dbh);
         @fsck_log = $sto->fsck_log_rows;
-        is($fsck_log[0]->{evcode}, "POVI", "policy violation logged");
+        is($fsck_log[0]->{evcode}, "BCNT", "bad count logged");
     }
 }
 
