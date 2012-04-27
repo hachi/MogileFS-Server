@@ -22,7 +22,8 @@ use File::Temp;
 my %mogroot;
 $mogroot{1} = File::Temp::tempdir( CLEANUP => 1 );
 $mogroot{2} = File::Temp::tempdir( CLEANUP => 1 );
-my $dev2host = { 1 => 1, 2 => 2, };
+$mogroot{3} = File::Temp::tempdir( CLEANUP => 1 );
+my $dev2host = { 1 => 1, 2 => 2, 3 => 2 };
 foreach (sort { $a <=> $b } keys %$dev2host) {
     my $root = $mogroot{$dev2host->{$_}};
     mkdir("$root/dev$_") or die "Failed to create dev$_ dir: $!";
@@ -33,8 +34,9 @@ ok($ms1, "got mogstored1");
 my $ms2 = create_mogstored("127.0.1.2", $mogroot{2});
 ok($ms1, "got mogstored2");
 
-while (! -e "$mogroot{1}/dev1/usage" &&
-       ! -e "$mogroot{2}/dev2/usage") {
+while (! -e "$mogroot{1}/dev1/usage" ||
+       ! -e "$mogroot{2}/dev2/usage" ||
+       ! -e "$mogroot{2}/dev3/usage") {
     print "Waiting on usage...\n";
     sleep(.25);
 }
@@ -293,6 +295,162 @@ use Data::Dumper;
     # is($info->{devcount}, 2, "devcount updated to zero");
     @paths = $mogc->get_paths($key);
     is(scalar(@paths), 0, "get_paths returns nothing");
+}
+
+# upload a file and wait for replica to appear
+{
+    my $fh = $mogc->new_file($key, "2copies");
+    print $fh "hello\n";
+    ok(close($fh), "closed file");
+
+    do {
+        $info = $mogc->file_info($key);
+    } while ($info->{devcount} < 2);
+    is($info->{devcount}, 2, "ensure devcount is correct at start");
+}
+
+# stall fsck with a non-responsive host
+{
+    is(kill("STOP", $ms1->pid), 1, "send SIGSTOP to mogstored1");
+    wait_for_monitor($be);
+
+    my $delay = 10;
+    ok($tmptrack->mogadm("fsck", "start"), "started fsck, sleeping ${delay}s");
+    sleep $delay;
+    is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 1, "fsck queue still blocked");
+}
+
+# resume fsck when host is responsive again
+{
+    is(kill("CONT", $ms1->pid), 1, "send SIGCONT to mogstored1");
+    wait_for_monitor($be);
+
+    # force fsck to wakeup and do work again
+    my $now = $sto->unix_timestamp;
+    is($sto->dbh->do("UPDATE file_to_queue SET nexttry = $now"), 1, "unblocked fsck queue");
+    ok($admin->syswrite("!to fsck :wake_up\n"), "force fsck to wake up");
+    ok($admin->getline, "got wakeup response 1");
+    ok($admin->getline, "got wakeup response 2");
+
+    foreach my $i (1..30) {
+        last if $sto->file_queue_length(MogileFS::Config::FSCK_QUEUE) == 0;
+
+        sleep 1;
+    }
+
+    is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 0, "fsck queue emptied");
+}
+
+# upload a file and wait for replica to appear
+{
+    my $fh = $mogc->new_file($key, "2copies");
+    print $fh "hello\n";
+    ok(close($fh), "closed file");
+
+    do {
+        $info = $mogc->file_info($key);
+    } while ($info->{devcount} < 2);
+    is($info->{devcount}, 2, "ensure devcount is correct at start");
+}
+
+# stall fsck with a non-responsive host
+# resume fsck when host is responsive again
+{
+    is(kill("STOP", $ms1->pid), 1, "send SIGSTOP to mogstored1 to stall");
+    wait_for_monitor($be);
+
+    my $delay = 10;
+    ok($tmptrack->mogadm("fsck", "start"), "started fsck, sleeping ${delay}s");
+    sleep $delay;
+    is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 1, "fsck queue still blocked");
+
+    is(kill("CONT", $ms1->pid), 1, "send SIGCONT to mogstored1 to resume");
+    wait_for_monitor($be);
+
+    # force fsck to wakeup and do work again
+    my $now = $sto->unix_timestamp;
+    is($sto->dbh->do("UPDATE file_to_queue SET nexttry = $now"), 1, "unblocked fsck queue");
+    ok($admin->syswrite("!to fsck :wake_up\n"), "force fsck to wake up");
+    ok($admin->getline, "got wakeup response 1");
+    ok($admin->getline, "got wakeup response 2");
+
+    foreach my $i (1..30) {
+        last if $sto->file_queue_length(MogileFS::Config::FSCK_QUEUE) == 0;
+
+        sleep 1;
+    }
+
+    is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 0, "fsck queue emptied");
+}
+
+# cleanup over-replicated file
+{
+    $info = $mogc->file_info($key);
+    is($info->{devcount}, 2, "ensure devcount is correct at start");
+
+    # _NOT_ using "updateclass" command since that enqueues for replication
+    my $fid = MogileFS::FID->new($info->{fid});
+    my $classid_1copy = $sto->get_classid_by_name($fid->dmid, "1copy");
+    is($fid->update_class(classid => $classid_1copy), 1, "classid updated");
+
+    full_fsck($tmptrack, $dbh);
+
+    sleep(1) while $mogc->file_info($key)->{devcount} == 2;
+    is($mogc->file_info($key)->{devcount}, 1, "too-happy file cleaned up");
+
+    @fsck_log = $sto->fsck_log_rows;
+    is($fsck_log[0]->{evcode}, "POVI", "policy violation logged");
+
+    # replicator is requested to delete too-happy file
+    is($fsck_log[1]->{evcode}, "REPL", "replication request logged");
+}
+
+# kill a device and replace it with another, without help from reaper
+# this test may become impossible if monitor + reaper are merged...
+{
+    ok($mogc->update_class($key, "2copies"), "request 2 replicas again");
+    do {
+        $info = $mogc->file_info($key);
+    } while ($info->{devcount} < 2);
+    is($info->{devcount}, 2, "ensure devcount is correct at start");
+    wait_for_empty_queue("file_to_replicate", $dbh);
+
+    $admin->syswrite("!jobs\n");
+    my $reaper_pid;
+
+    while (my $line = $admin->getline) {
+        last if $line =~ /^\.\r?\n/;
+
+        if ($line =~ /^reaper pids (\d+)\r?\n/) {
+            $reaper_pid = $1;
+        }
+    }
+    ok($reaper_pid, "got pid of reaper");
+
+    # reaper is watchdog is 240s, and it wakes up in 5s intervals right now
+    # so we should be safe from watchdog for now...
+    ok(kill("STOP", $reaper_pid), "stopped reaper from running");
+
+    ok($tmptrack->mogadm("device", "mark", "hostB", 2, "dead"), "mark dev2 as dead");
+    ok($tmptrack->mogadm("device", "add", "hostB", 3), "created dev3 on hostB");
+    wait_for_monitor($be);
+
+    full_fsck($tmptrack, $dbh);
+
+    sleep 1 while MogileFS::Config->server_setting("fsck_host");
+
+    foreach my $i (1..30) {
+        last if $sto->file_queue_length(MogileFS::Config::FSCK_QUEUE) == 0;
+        sleep 1;
+    }
+    is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 0, "fsck queue empty");
+
+    # fsck should've corrected what reaper missed
+    @fsck_log = $sto->fsck_log_rows;
+    is(scalar(@fsck_log), 1, "fsck log populated");
+    is($fsck_log[0]->{evcode}, "REPL", "replication enqueued");
+
+    ok(kill("CONT", $reaper_pid), "resumed reaper");
 }
 
 done_testing();
