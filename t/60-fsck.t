@@ -452,4 +452,59 @@ use Data::Dumper;
     ok(kill("CONT", $reaper_pid), "resumed reaper");
 }
 
+{
+    foreach my $i (1..10) {
+        my $fh = $mogc->new_file("k$i", "1copy");
+        print $fh "$i\n";
+        ok(close($fh), "closed file ($i)");
+    }
+    $info = $mogc->file_info("k10");
+
+    ok($tmptrack->mogadm("settings", "set", "queue_rate_for_fsck", 1), "set queue_rate_for_fsck to 1");
+    ok($tmptrack->mogadm("settings", "set", "queue_size_for_fsck", 1), "set queue_size_for_fsck to 1");
+    wait_for_monitor($be);
+
+    ok($tmptrack->mogadm("fsck", "start"), "start fsck with slow queue rate");
+
+    ok(MogileFS::Config->server_setting("fsck_host"), "fsck_host set");
+    is(MogileFS::Config->server_setting("fsck_fid_at_end"), $info->{fid}, "fsck_fid_at_end matches");
+
+    my $highest = undef;
+    foreach my $i (1..100) {
+        $highest = MogileFS::Config->server_setting("fsck_highest_fid_checked");
+        last if defined $highest;
+        sleep 0.1;
+    }
+    ok($highest, "fsck_highest_fid_checked is set");
+    like($highest, qr/\A\d+\z/, "fsck_highest_fid_checked is a digit");
+
+    # wait for something to get fscked
+    foreach my $i (1..100) {
+        last if MogileFS::Config->server_setting("fsck_highest_fid_checked") != $highest;
+        sleep 0.1;
+    }
+
+    my $old_highest = $highest;
+    $highest = MogileFS::Config->server_setting("fsck_highest_fid_checked");
+    isnt($highest, $old_highest, "moved to next FID");
+
+    ok($tmptrack->mogadm("fsck", "stop"), "stop fsck");
+    ok(! MogileFS::Config->server_setting("fsck_host"), "fsck_host unset");
+    is(MogileFS::Config->server_setting("fsck_fid_at_end"), $info->{fid}, "fsck_fid_at_end matches");
+
+    # resume paused fsck
+    ok($tmptrack->mogadm("fsck", "start"), "restart fsck");
+    $highest = MogileFS::Config->server_setting("fsck_highest_fid_checked");
+    cmp_ok($highest, '>=', $old_highest, "fsck resumed without resetting fsck_highest_fid_checked");
+
+    # wait for something to get fscked
+    foreach my $i (1..200) {
+        last if MogileFS::Config->server_setting("fsck_highest_fid_checked") != $highest;
+        sleep 0.1;
+    }
+
+    $highest = MogileFS::Config->server_setting("fsck_highest_fid_checked");
+    cmp_ok($highest, '>', $old_highest, "fsck continued to higher FID");
+}
+
 done_testing();
