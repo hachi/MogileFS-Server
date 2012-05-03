@@ -102,6 +102,13 @@ sub full_fsck {
     ok($tmptrack->mogadm("fsck", "start"), "started fsck");
 }
 
+sub unblock_fsck_queue {
+    my ($sto, $expect) = @_;
+    my $now = $sto->unix_timestamp;
+    my $upd = sub { $sto->dbh->do("UPDATE file_to_queue SET nexttry = $now") };
+    is($sto->retry_on_deadlock($upd), $expect, "unblocked fsck queue");
+}
+
 wait_for_monitor($be);
 
 my ($req, $rv, %opts, @paths, @fsck_log, $info);
@@ -190,7 +197,11 @@ use Data::Dumper;
 # wrong devcount in file column, but otherwise everything is OK
 {
     foreach my $wrong_devcount (13, 0, 1) {
-        is($dbh->do("UPDATE file SET devcount = ? WHERE fid = ?", undef, $wrong_devcount, $info->{fid}), 1, "set improper devcount");
+        my $upd = sub {
+            $dbh->do("UPDATE file SET devcount = ? WHERE fid = ?",
+                     undef, $wrong_devcount, $info->{fid});
+        };
+        is($sto->retry_on_deadlock($upd), 1, "set improper devcount");
 
         $info = $mogc->file_info($key);
         is($info->{devcount}, $wrong_devcount, "devcount is set to $wrong_devcount");
@@ -325,8 +336,8 @@ use Data::Dumper;
     wait_for_monitor($be);
 
     # force fsck to wakeup and do work again
-    my $now = $sto->unix_timestamp;
-    is($sto->dbh->do("UPDATE file_to_queue SET nexttry = $now"), 1, "unblocked fsck queue");
+    unblock_fsck_queue($sto, 1);
+
     ok($admin->syswrite("!to fsck :wake_up\n"), "force fsck to wake up");
     ok($admin->getline, "got wakeup response 1");
     ok($admin->getline, "got wakeup response 2");
@@ -367,8 +378,7 @@ use Data::Dumper;
     wait_for_monitor($be);
 
     # force fsck to wakeup and do work again
-    my $now = $sto->unix_timestamp;
-    is($sto->dbh->do("UPDATE file_to_queue SET nexttry = $now"), 1, "unblocked fsck queue");
+    unblock_fsck_queue($sto, 1);
     ok($admin->syswrite("!to fsck :wake_up\n"), "force fsck to wake up");
     ok($admin->getline, "got wakeup response 1");
     ok($admin->getline, "got wakeup response 2");
