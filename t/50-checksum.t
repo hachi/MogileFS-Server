@@ -10,9 +10,7 @@ use HTTP::Request;
 find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 141;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -444,3 +442,5 @@ use MogileFS::Config;
     is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
     is($fsck_log[0]->{evcode}, "BSUM", "BSUM logged");
 }
+
+done_testing();

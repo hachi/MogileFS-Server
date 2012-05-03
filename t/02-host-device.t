@@ -17,9 +17,7 @@ use MogileFS::Device;
 use Data::Dumper qw/Dumper/;
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 21;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -119,3 +117,4 @@ observed_state => 'writeable'});
     }, 'dev2 is as expected');
 }
 
+done_testing();

@@ -26,9 +26,7 @@ find_mogclient_or_skip();
 # etc
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 19;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -122,3 +120,4 @@ for (1..100) {
 ok($stats{1} < 15, "Device 1 should get roughly 5% of traffic, got: $stats{1}");
 ok($stats{2} > 80, "Device 2 should get roughly 95% of traffic, got: $stats{2}");
 
+done_testing();

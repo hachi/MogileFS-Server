@@ -10,8 +10,6 @@ use MogileFS::Util qw(error_code);
 use MogileFS::ReplicationPolicy::MultipleHosts;
 use MogileFS::Test;
 
-plan tests => 13;
-
 # already good.
 is(rr("min=2  h1[d1=X d2=_] h2[d3=X d4=_]"),
    "all_good", "all good");
@@ -124,3 +122,4 @@ sub rr {
     return $rr->t_as_string;
 }
 
+done_testing();

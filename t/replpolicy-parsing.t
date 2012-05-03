@@ -10,8 +10,6 @@ use MogileFS::Server;
 use MogileFS::Util qw(error_code);
 use MogileFS::Test;
 
-plan tests => 31;
-
 my $obj;
 
 $obj = MogileFS::ReplicationPolicy->new_from_policy_string("MultipleHosts(5)");
@@ -39,4 +37,4 @@ foreach my $str ("Union(MultipleHosts(5), MultipleHosts(2))",
     isa_ok($obj->{policies}[1], "MogileFS::ReplicationPolicy::MultipleHosts");
 }
 
-
+done_testing();

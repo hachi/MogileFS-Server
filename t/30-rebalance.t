@@ -12,9 +12,7 @@ use MogileFS::Test;
 find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 48;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -277,3 +275,5 @@ sub try_for {
     }
     return 0;
 }
+
+done_testing();

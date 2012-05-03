@@ -12,9 +12,7 @@ use MogileFS::Test;
 find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 16;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -127,3 +125,5 @@ $file = MogileFS::HTTPFile->at($paths[0]);
 ok($size == $file->size, "big file size match $size");
 ok($file->digest_mgmt('MD5', sub {}) eq $expect, "digest_mgmt('MD5') on big file");
 ok($file->digest_http('MD5', sub {}) eq $expect, "digest_http('MD5') on big file");
+
+done_testing();

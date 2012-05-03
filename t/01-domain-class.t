@@ -17,9 +17,7 @@ use MogileFS::Class;
 use Data::Dumper qw/Dumper/;
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 35;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -158,3 +156,5 @@ ok($domfac != $classfac, "factories are not the same singleton");
         'hashtype' => undef,
     }, 'class baz came back as boo');
 }
+
+done_testing();

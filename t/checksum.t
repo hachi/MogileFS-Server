@@ -11,9 +11,7 @@ use MogileFS::Checksum;
 use Digest::MD5 qw(md5 md5_hex);
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 7;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -34,3 +32,5 @@ my $reloaded = MogileFS::Checksum->new($hash);
 is("d41d8cd98f00b204e9800998ecf8427e", $reloaded->hexdigest, "hex matches");
 my $fid_checksum = MogileFS::FID->new(6)->checksum;
 is_deeply($fid_checksum, $csum, "MogileFS::FID->checksum works");
+
+done_testing();

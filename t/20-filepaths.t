@@ -27,9 +27,7 @@ plan skip_all => "Filepaths plugin has been separated from the server, a bit of 
 exit 0;
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 19;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -137,5 +135,7 @@ my $data = "My test file.\n" x 1024;
 }
 
 ok($mogc->filepaths_disable, "Filepaths disabled successfully");
+
+done_testing();
 
 # vim: filetype=perl

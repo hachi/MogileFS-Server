@@ -10,9 +10,7 @@ use MogileFS::Util qw(error_code);
 use MogileFS::Test;
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 30;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -193,3 +191,5 @@ ok($hash->{hashtype} == 2, "hashtype set correctly");
 ok(1 == $sto->delete_checksum(6), "checksum deleted OK");
 ok(0 == $sto->delete_checksum(6), "checksum delete MISS");
 ok(!defined $sto->get_checksum(6), "undef on missing checksum");
+
+done_testing();

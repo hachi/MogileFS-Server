@@ -13,8 +13,6 @@ unless ((`netstat -nap --inet` || "") =~ m!PID/Program!) {
     exit 0;
 }
 
-plan tests => 4;
-
 my $TEST_IP = '127.0.1.1';
 
 my $rv;
@@ -88,3 +86,5 @@ sub try {
     }
     return undef;
 }
+
+done_testing();
