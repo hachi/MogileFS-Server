@@ -29,7 +29,7 @@ sub set_config {
     # if a child, propagate to parent
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->send_to_parent(":set_config_from_child $k $v");
-    } else {
+    } elsif (defined $v) {
         MogileFS::ProcManager->send_to_all_children(":set_config_from_parent $k $v");
     }
 
