@@ -485,7 +485,7 @@ use Data::Dumper;
         last if defined $highest;
         sleep 0.1;
     }
-    ok($highest, "fsck_highest_fid_checked is set");
+    ok(defined($highest), "fsck_highest_fid_checked is set");
     like($highest, qr/\A\d+\z/, "fsck_highest_fid_checked is a digit");
 
     # wait for something to get fscked
