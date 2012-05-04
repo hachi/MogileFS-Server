@@ -696,12 +696,6 @@ sub HandleChildRequest {
     } elsif ($cmd =~ /^:wake_a (\w+)$/) {
 
         MogileFS::ProcManager->wake_a($1, $child);
-
-    } elsif ($cmd =~ /^:invalidate_meta (\w+)/) {
-
-        my $what = $1;
-        MogileFS::ProcManager->send_to_all_children(":invalidate_meta_once $what", $child);
-
     } elsif ($cmd =~ /^:set_config_from_child (\S+) (.+)/) {
         # and this will rebroadcast it to all other children
         # (including the one that just set it to us, but eh)

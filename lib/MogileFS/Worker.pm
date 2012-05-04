@@ -187,12 +187,6 @@ sub parent_ping {
     }
 }
 
-sub invalidate_meta {
-    my ($self, $what) = @_;
-    return if $Mgd::INVALIDATE_NO_PROPOGATE;  # anti recursion
-    $self->send_to_parent(":invalidate_meta $what");
-}
-
 # tries to parse generic (not job-specific) commands sent from parent
 # to child.  returns 1 on success, or 0 if command given isn't generic,
 # and child should parse.
