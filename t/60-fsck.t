@@ -109,6 +109,24 @@ sub unblock_fsck_queue {
     is($sto->retry_on_deadlock($upd), $expect, "unblocked fsck queue");
 }
 
+sub get_worker_pids {
+    my ($admin, $worker) = @_;
+
+    ok($admin->syswrite("!jobs\n"), "requested jobs");
+    my @pids;
+
+    while (my $line = $admin->getline) {
+        last if $line =~ /^\.\r?\n/;
+
+        if ($line =~ /^$worker pids (\d[\d+\s]*)\r?\n/) {
+            @pids = split(/\s+/, $1);
+        }
+    }
+    ok(scalar(@pids), "got pid(s) of $worker");
+
+    return @pids;
+}
+
 wait_for_monitor($be);
 
 my ($req, $rv, %opts, @paths, @fsck_log, $info);
@@ -322,10 +340,18 @@ use Data::Dumper;
 # stall fsck with a non-responsive host
 {
     is(kill("STOP", $ms1->pid), 1, "send SIGSTOP to mogstored1");
-    wait_for_monitor($be);
+    wait_for_monitor($be) foreach (1..3);
+
+    foreach my $worker (qw/job_master fsck/) {
+        my (@pids) = get_worker_pids($admin, $worker);
+        is(scalar(@pids), 1, "got one $worker pid");
+        ok(kill("KILL", $pids[0]),
+           "killed $worker to reload observed down state of mogstored1");
+    }
 
     my $delay = 10;
-    ok($tmptrack->mogadm("fsck", "start"), "started fsck, sleeping ${delay}s");
+    $sto->retry_on_deadlock(sub { $sto->dbh->do("DELETE FROM file_to_queue") });
+    full_fsck($tmptrack, $dbh);
     sleep $delay;
     is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 1, "fsck queue still blocked");
 }
@@ -334,6 +360,11 @@ use Data::Dumper;
 {
     is(kill("CONT", $ms1->pid), 1, "send SIGCONT to mogstored1");
     wait_for_monitor($be);
+
+    my (@fsck_pids) = get_worker_pids($admin, "fsck");
+    is(scalar(@fsck_pids), 1, "got one fsck pid");
+    ok(kill("TERM", $fsck_pids[0]),
+       "kill fsck worker to reload observed alive state of mogstored1");
 
     # force fsck to wakeup and do work again
     unblock_fsck_queue($sto, 1);
@@ -370,7 +401,7 @@ use Data::Dumper;
     wait_for_monitor($be);
 
     my $delay = 10;
-    ok($tmptrack->mogadm("fsck", "start"), "started fsck, sleeping ${delay}s");
+    full_fsck($tmptrack, $dbh);
     sleep $delay;
     is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 1, "fsck queue still blocked");
 
@@ -424,16 +455,9 @@ use Data::Dumper;
     is($info->{devcount}, 2, "ensure devcount is correct at start");
     wait_for_empty_queue("file_to_replicate", $dbh);
 
-    $admin->syswrite("!jobs\n");
-    my $reaper_pid;
-
-    while (my $line = $admin->getline) {
-        last if $line =~ /^\.\r?\n/;
-
-        if ($line =~ /^reaper pids (\d+)\r?\n/) {
-            $reaper_pid = $1;
-        }
-    }
+    my (@reaper_pids) = get_worker_pids($admin, "reaper");
+    is(scalar(@reaper_pids), 1, "only one reaper pid");
+    my $reaper_pid = $reaper_pids[0];
     ok($reaper_pid, "got pid of reaper");
 
     # reaper is watchdog is 240s, and it wakes up in 5s intervals right now
@@ -463,6 +487,8 @@ use Data::Dumper;
 }
 
 {
+    ok($tmptrack->mogadm("fsck", "stop"), "stop fsck");
+
     foreach my $i (1..10) {
         my $fh = $mogc->new_file("k$i", "1copy");
         print $fh "$i\n";
@@ -472,8 +498,19 @@ use Data::Dumper;
 
     ok($tmptrack->mogadm("settings", "set", "queue_rate_for_fsck", 1), "set queue_rate_for_fsck to 1");
     ok($tmptrack->mogadm("settings", "set", "queue_size_for_fsck", 1), "set queue_size_for_fsck to 1");
-    wait_for_monitor($be);
 
+    wait_for_monitor($be) foreach (1..3);
+
+    foreach my $worker (qw/job_master fsck/) {
+        my (@pids) = get_worker_pids($admin, $worker);
+        is(scalar(@pids), 1, "got one $worker pid");
+        ok(kill("KILL", $pids[0]),
+           "killed $worker to reload server settings cache");
+    }
+
+    ok($tmptrack->mogadm("fsck", "clearlog"), "clear fsck log");
+    ok($tmptrack->mogadm("fsck", "reset"), "reset fsck");
+    $sto->retry_on_deadlock(sub { $sto->dbh->do("DELETE FROM file_to_queue") });
     ok($tmptrack->mogadm("fsck", "start"), "start fsck with slow queue rate");
 
     ok(MogileFS::Config->server_setting("fsck_host"), "fsck_host set");
@@ -487,6 +524,7 @@ use Data::Dumper;
     }
     ok(defined($highest), "fsck_highest_fid_checked is set");
     like($highest, qr/\A\d+\z/, "fsck_highest_fid_checked is a digit");
+    isnt($highest, $info->{fid}, "fsck is not running too fast");
 
     # wait for something to get fscked
     foreach my $i (1..100) {
