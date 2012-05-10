@@ -1269,12 +1269,12 @@ sub delete_and_return_tempfile_row {
 
 sub replace_into_file {
     my $self = shift;
-    my %arg  = $self->_valid_params([qw(fidid dmid key length classid)], @_);
+    my %arg  = $self->_valid_params([qw(fidid dmid key length classid devcount)], @_);
     die "Your database does not support REPLACE! Reimplement replace_into_file!" unless $self->can_replace;
     eval {
         $self->dbh->do("REPLACE INTO file (fid, dmid, dkey, length, classid, devcount) ".
-                       "VALUES (?,?,?,?,?,0) ", undef,
-                       @arg{'fidid', 'dmid', 'key', 'length', 'classid'});
+                       "VALUES (?,?,?,?,?,?) ", undef,
+                       @arg{'fidid', 'dmid', 'key', 'length', 'classid', 'devcount'});
     };
     $self->condthrow;
 }

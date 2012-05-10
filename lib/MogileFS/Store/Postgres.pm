@@ -741,12 +741,12 @@ sub delete_fidid {
 
 sub replace_into_file {
     my $self = shift;
-    my %arg  = $self->_valid_params([qw(fidid dmid key length classid)], @_);
+    my %arg  = $self->_valid_params([qw(fidid dmid key length classid devcount)], @_);
     $self->insert_or_update(
-        insert => "INSERT INTO file (fid, dmid, dkey, length, classid, devcount) VALUES (?, ?, ?, ?, ?, 0)",
-        insert_vals => [ @arg{'fidid', 'dmid', 'key', 'length', 'classid'} ],
-        update => "UPDATE file SET dmid=?, dkey=?, length=?, classid=?, devcount=0 WHERE fid=?",
-        update_vals => [ @arg{'dmid', 'key', 'length', 'classid', 'fidid'} ],
+        insert => "INSERT INTO file (fid, dmid, dkey, length, classid, devcount) VALUES (?, ?, ?, ?, ?, ?)",
+        insert_vals => [ @arg{'fidid', 'dmid', 'key', 'length', 'classid', 'devcount'} ],
+        update => "UPDATE file SET dmid=?, dkey=?, length=?, classid=?, devcount=? WHERE fid=?",
+        update_vals => [ @arg{'dmid', 'key', 'length', 'classid', 'fidid', 'devcount'} ],
     );
     $self->condthrow;
 }

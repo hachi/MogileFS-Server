@@ -455,25 +455,21 @@ sub cmd_create_close {
                             key     => $key,
                             length  => $size,
                             classid => $trow->{classid},
+                            devcount => 1,
                             );
 
     # mark it as needing replicating:
     $fid->enqueue_for_replication();
 
-    if ($fid->update_devcount) {
-        # call the hook - if this fails, we need to back the file out
-        my $rv = MogileFS::run_global_hook('file_stored', $args);
-        if (defined $rv && ! $rv) { # undef = no hooks, 1 = success, 0 = failure
-            $fid->delete;
-            return $self->err_line("plugin_aborted");
-        }
-
-        # all went well
-        return $self->ok_line;
-    } else {
-        # FIXME: handle this better
-        return $self->err_line("db_error");
+    # call the hook - if this fails, we need to back the file out
+    my $rv = MogileFS::run_global_hook('file_stored', $args);
+    if (defined $rv && ! $rv) { # undef = no hooks, 1 = success, 0 = failure
+        $fid->delete;
+        return $self->err_line("plugin_aborted");
     }
+
+    # all went well, we would've hit condthrow on DB errors
+    return $self->ok_line;
 }
 
 sub cmd_updateclass {
