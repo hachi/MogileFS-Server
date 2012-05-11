@@ -303,7 +303,11 @@ sub fix_fid {
         $check_dfids->("desperate");
 
         # still can't fix it?
-        return CANT_FIX unless @good_devs;
+        unless (@good_devs) {
+            $self->forget_bad_devs($fid, @bad_devs);
+            $fid->update_devcount;
+            return CANT_FIX;
+        }
 
         # wow, we actually found it!
         $fid->fsck_log(EV_FOUND_FID);
@@ -313,12 +317,7 @@ sub fix_fid {
         # wrong, with only one file_on record...) and re-replicate
     }
 
-    # remove the file_on mappings for devices that were bogus/missing.
-    foreach my $bdev (@bad_devs) {
-        error("removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
-        $fid->forget_about_device($bdev);
-    }
-
+    $self->forget_bad_devs($fid, @bad_devs);
     # in case the devcount or similar was fixed.
     $fid->want_reload;
 
@@ -447,6 +446,15 @@ sub fix_checksums {
         $self->auto_checksums_bad($fid, $checksums);
     } else {
         $self->all_checksums_bad($fid, $checksums);
+    }
+}
+
+# remove the file_on mappings for devices that were bogus/missing.
+sub forget_bad_devs {
+    my ($self, $fid, @bad_devs) = @_;
+    foreach my $bdev (@bad_devs) {
+        error("removing file_on mapping for fid=" . $fid->id . ", dev=" . $bdev->id);
+        $fid->forget_about_device($bdev);
     }
 }
 

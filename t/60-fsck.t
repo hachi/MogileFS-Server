@@ -319,8 +319,7 @@ use Data::Dumper;
     wait_for_empty_queue("file_to_queue", $dbh);
     $info = $mogc->file_info($key);
 
-    # XXX devcount probably needs to be updated on GONE
-    # is($info->{devcount}, 2, "devcount updated to zero");
+    is($info->{devcount}, 0, "devcount updated to zero");
     @paths = $mogc->get_paths($key);
     is(scalar(@paths), 0, "get_paths returns nothing");
 }
