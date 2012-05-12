@@ -106,10 +106,6 @@ sub size {
     return undef if (exists $size_check_retry_after{$host}
         && $size_check_retry_after{$host} > Time::HiRes::time());
 
-    # don't SIGPIPE us
-    my $flag_nosignal = MogileFS::Sys->flag_nosignal;
-    local $SIG{'PIPE'} = "IGNORE" unless $flag_nosignal;
-
     my $node_timeout = MogileFS->config("node_timeout");
     # Hardcoded connection cache size of 20 :(
     $user_agent ||= LWP::UserAgent->new(timeout => $node_timeout, keep_alive => 20);
@@ -163,12 +159,9 @@ sub digest_mgmt {
     # assuming the storage node can checksum at >=2MB/s, low expectations here
     my $response_timeout = $self->size / (2 * 1024 * 1024);
 
-    my $flag_nosignal = MogileFS::Sys->flag_nosignal;
-    local $SIG{'PIPE'} = "IGNORE" unless $flag_nosignal;
-
 retry:
     $sock = $mogconn->sock($node_timeout) or return;
-    $rv = send($sock, $req, $flag_nosignal);
+    $rv = send($sock, $req, 0);
     if ($! || $rv != $reqlen) {
         my $err = $!;
         $mogconn->mark_dead;
@@ -213,10 +206,6 @@ retry:
 
 sub digest_http {
     my ($self, $alg, $ping_cb) = @_;
-
-    # don't SIGPIPE us (why don't we just globally ignore SIGPIPE?)
-    my $flag_nosignal = MogileFS::Sys->flag_nosignal;
-    local $SIG{'PIPE'} = "IGNORE" unless $flag_nosignal;
 
     # TODO: refactor
     my $node_timeout = MogileFS->config("node_timeout");
