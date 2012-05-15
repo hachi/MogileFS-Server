@@ -336,11 +336,6 @@ sub check_device {
     my $response = $ua->get($url);
     my $res_time = Time::HiRes::time();
 
-    $hostip ||= 'unknown';
-    $get_port ||= 'unknown';
-    $devid ||= 'unknown';
-    $timeout ||= 'unknown';
-    $url ||= 'unknown';
     unless ($response->is_success) {
         my $failed_after = $res_time - $start_time;
         if ($failed_after < 0.5) {
