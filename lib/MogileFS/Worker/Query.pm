@@ -215,6 +215,8 @@ sub cmd_create_open {
     my $dmid = $args->{dmid};
     my $key = $args->{key} || "";
     my $multi = $args->{multi_dest} ? 1 : 0;
+    my $size = $args->{size} || undef; # Size is optional at create time,
+                                       # but used to grep devices if available
 
     # optional profiling of stages, if $args->{debug_profile}
     my @profpoints;  # array of [point,hires-starttime]
@@ -251,6 +253,10 @@ sub cmd_create_open {
 
     unless (MogileFS::run_global_hook('cmd_create_open_order_devices', [Mgd::device_factory()->get_all], \@devices)) {
         @devices = sort_devs_by_freespace(Mgd::device_factory()->get_all);
+    }
+
+    if ($size) {
+        @devices = grep { ($_->mb_free * 1024*1024) > $size } @devices;
     }
 
     # find suitable device(s) to put this file on.
