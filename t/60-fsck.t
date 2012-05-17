@@ -143,6 +143,16 @@ sub get_worker_pids {
     return @pids;
 }
 
+sub shutdown_worker {
+    my ($admin, $worker) = @_;
+
+    watcher_wait_for(qr/Job $worker has only 0/, sub {
+        $admin->syswrite("!to $worker :shutdown\r\n");
+        like($admin->getline, qr/^Message sent to 1 children/, "tracker sent message to child");
+        like($admin->getline, qr/^\./, "tracker ended transmission");
+    });
+}
+
 wait_for_monitor($be);
 
 my ($req, $rv, %opts, @paths, @fsck_log, $info);
@@ -357,12 +367,8 @@ use Data::Dumper;
     is(kill("STOP", $ms1->pid), 1, "send SIGSTOP to mogstored1");
     wait_for_monitor($be) foreach (1..3);
 
-    foreach my $worker (qw/job_master fsck/) {
-        my (@pids) = get_worker_pids($admin, $worker);
-        is(scalar(@pids), 1, "got one $worker pid");
-        ok(kill("KILL", $pids[0]),
-           "killed $worker to reload observed down state of mogstored1");
-    }
+    shutdown_worker($admin, "job_master");
+    shutdown_worker($admin, "fsck");
 
     $sto->retry_on_deadlock(sub { $sto->dbh->do("DELETE FROM file_to_queue") });
     watcher_wait_for(qr/\[fsck\(\d+\)] Connectivity problem reaching device/, sub {
@@ -376,10 +382,7 @@ use Data::Dumper;
     is(kill("CONT", $ms1->pid), 1, "send SIGCONT to mogstored1");
     wait_for_monitor($be);
 
-    my (@fsck_pids) = get_worker_pids($admin, "fsck");
-    is(scalar(@fsck_pids), 1, "got one fsck pid");
-    ok(kill("TERM", $fsck_pids[0]),
-       "kill fsck worker to reload observed alive state of mogstored1");
+    shutdown_worker($admin, "fsck");
 
     # force fsck to wakeup and do work again
     unblock_fsck_queue($sto, 1);
@@ -516,12 +519,8 @@ use Data::Dumper;
 
     wait_for_monitor($be) foreach (1..3);
 
-    foreach my $worker (qw/job_master fsck/) {
-        my (@pids) = get_worker_pids($admin, $worker);
-        is(scalar(@pids), 1, "got one $worker pid");
-        ok(kill("KILL", $pids[0]),
-           "killed $worker to reload server settings cache");
-    }
+    shutdown_worker($admin, "job_master");
+    shutdown_worker($admin, "fsck");
 
     ok($tmptrack->mogadm("fsck", "clearlog"), "clear fsck log");
     ok($tmptrack->mogadm("fsck", "reset"), "reset fsck");
