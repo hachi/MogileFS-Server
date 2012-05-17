@@ -75,6 +75,22 @@ sub wait_for_monitor {
     $be->{timeout} = $was;
 }
 
+sub watcher_wait_for {
+    my ($re, $cb) = @_;
+    my $line;
+    my $watcher = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001');
+    $watcher or die "failed to create watcher socket: $!";
+    $watcher->syswrite("!watch\r\n");
+
+    $cb->(); # usually this is to start fsck
+
+    do {
+        $line = $watcher->getline;
+    } until ($line =~ /$re/);
+
+    $watcher->close;
+}
+
 sub wait_for_empty_queue {
     my ($table, $dbh) = @_;
     my $limit = 600;
@@ -348,10 +364,10 @@ use Data::Dumper;
            "killed $worker to reload observed down state of mogstored1");
     }
 
-    my $delay = 10;
     $sto->retry_on_deadlock(sub { $sto->dbh->do("DELETE FROM file_to_queue") });
-    full_fsck($tmptrack, $dbh);
-    sleep $delay;
+    watcher_wait_for(qr/\[fsck\(\d+\)] Connectivity problem reaching device/, sub {
+        full_fsck($tmptrack, $dbh);
+    });
     is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 1, "fsck queue still blocked");
 }
 
@@ -399,9 +415,9 @@ use Data::Dumper;
     is(kill("STOP", $ms1->pid), 1, "send SIGSTOP to mogstored1 to stall");
     wait_for_monitor($be);
 
-    my $delay = 10;
-    full_fsck($tmptrack, $dbh);
-    sleep $delay;
+    watcher_wait_for(qr/\[fsck\(\d+\)] Connectivity problem reaching device/, sub {
+        full_fsck($tmptrack, $dbh);
+    });
     is($sto->file_queue_length(MogileFS::Config::FSCK_QUEUE), 1, "fsck queue still blocked");
 
     is(kill("CONT", $ms1->pid), 1, "send SIGCONT to mogstored1 to resume");
