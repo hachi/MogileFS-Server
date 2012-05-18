@@ -1580,27 +1580,6 @@ sub get_fidid_chunks_by_device {
     return $fidids;
 }
 
-# takes two arguments, fidid to be above, and optional limit (default
-# 1,000).  returns up to that that many fidids above the provided
-# fidid.  returns array of MogileFS::FID objects, sorted by fid ids.
-sub get_fids_above_id {
-    my ($self, $fidid, $limit) = @_;
-    $limit ||= 1000;
-    $limit = int($limit);
-
-    my @ret;
-    my $dbh = $self->dbh;
-    my $sth = $dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
-                            "FROM   file ".
-                            "WHERE  fid > ? ".
-                            "ORDER BY fid LIMIT $limit");
-    $sth->execute($fidid);
-    while (my $row = $sth->fetchrow_hashref) {
-        push @ret, MogileFS::FID->new_from_db_row($row);
-    }
-    return @ret;
-}
-
 # gets fidids above fidid_low up to (and including) fidid_high
 sub get_fidids_between {
     my ($self, $fidid_low, $fidid_high, $limit) = @_;
