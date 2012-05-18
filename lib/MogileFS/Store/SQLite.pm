@@ -67,6 +67,7 @@ sub lockid {
 sub lock_holder_alive {
     my ($self, $lockid, $lockname) = @_;
     my $max_age = 3600;
+    my $force_unlock;
 
     my $dbh = $self->dbh;
     my ($hostname, $pid, $acquiredat) = $dbh->selectrow_array('SELECT hostname,pid,acquiredat FROM lock WHERE lockid = ?', undef, $lockid);
@@ -74,28 +75,29 @@ sub lock_holder_alive {
     # maybe the lock was _just_ released
     return 0 unless defined $pid;
 
-    # weird setups using NFS? can't ping the pid if it's not us
-    return 1 if $hostname ne MogileFS::Config->hostname;
-
-    # maybe we were unlucky and the PID got recycled
-    if ($pid == $$) {
-        if (($acquiredat + $max_age) >= time) {
+    # if the lock is too old, don't check anything else
+    if (($acquiredat + $max_age) < time) {
+        $force_unlock = 1;
+    } elsif ($hostname eq MogileFS::Config->hostname) {
+        # maybe we were unlucky and the PID got recycled
+        if ($pid == $$) {
             die("Possible lock recursion inside DB but not process (grabbing $lockname ($lockid, acquiredat=$acquiredat)");
-        } else {
-            debug("lock for $lockname ($lockid,acquiredat=$acquiredat is more than ${max_age}s old, assuming it is stale");
         }
-    } else {
-        # ping the process to see if it's alive
+
+        # don't force the lock if the process is still alive
         return 1 if kill(0, $pid);
+
+        $force_unlock = 1;
     }
 
-    # lock holder died, delete the lock and retry immediately
+    return 0 unless $force_unlock;
+
+    # lock holder is dead or the lock is too old: kill the lock
     my $rv = $self->retry_on_deadlock(sub {
-        $dbh->do('DELETE FROM lock WHERE lockid = ? AND pid = ? AND hostname = ?', undef, $lockid, $pid, MogileFS::Config->hostname);
+        $dbh->do('DELETE FROM lock WHERE lockid = ? AND pid = ? AND hostname = ?', undef, $lockid, $pid, $hostname);
     });
 
-    # if delete can fail if another process just deleted and regrabbed
-    # this lock
+    # delete can fail if another process just deleted and regrabbed this lock
     return $rv ? 0 : 1;
 }
 
