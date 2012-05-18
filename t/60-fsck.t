@@ -569,4 +569,24 @@ use Data::Dumper;
     cmp_ok($highest, '>', $old_highest, "fsck continued to higher FID");
 }
 
+# upload new files, but ensure fsck does NOT reach them
+{
+    my $last_fid = $sto->max_fidid;
+
+    foreach my $i (1..10) {
+        my $fh = $mogc->new_file("z$i", "1copy");
+        print $fh "$i\n";
+        ok(close($fh), "closed file (z$i)");
+    }
+
+    # crank up fsck speed again
+    ok($tmptrack->mogadm("settings", "set", "queue_rate_for_fsck", 100), "set queue_rate_for_fsck to 100");
+    ok($tmptrack->mogadm("settings", "set", "queue_size_for_fsck", 100), "set queue_size_for_fsck to 100");
+
+    sleep 0.1 while MogileFS::Config->server_setting("fsck_host");
+
+    my $highest = MogileFS::Config->server_setting("fsck_highest_fid_checked");
+    is($highest, $last_fid, "fsck didn't advance beyond what we started with");
+}
+
 done_testing();

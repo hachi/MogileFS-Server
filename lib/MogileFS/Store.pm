@@ -1601,15 +1601,16 @@ sub get_fids_above_id {
     return @ret;
 }
 
-# Same as above, but returns unblessed hashref.
-sub get_fidids_above_id {
-    my ($self, $fidid, $limit) = @_;
+# gets fidids above fidid_low up to (and including) fidid_high
+sub get_fidids_between {
+    my ($self, $fidid_low, $fidid_high, $limit) = @_;
     $limit ||= 1000;
     $limit = int($limit);
 
     my $dbh = $self->dbh;
-    my $fidids = $dbh->selectcol_arrayref(qq{SELECT fid FROM file WHERE fid > ?
-        ORDER BY fid LIMIT $limit}, undef, $fidid);
+    my $fidids = $dbh->selectcol_arrayref(qq{SELECT fid FROM file
+        WHERE fid > ? and fid <= ?
+        ORDER BY fid LIMIT $limit}, undef, $fidid_low, $fidid_high);
     return $fidids;
 }
 

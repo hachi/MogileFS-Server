@@ -148,15 +148,19 @@ sub _inject_fsck_queues {
     return if ($queue_size >= $max_queue);
 
     my $max_checked = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
+    my $fid_at_end = MogileFS::Config->server_setting('fsck_fid_at_end');
     my $to_inject   =
         MogileFS::Config->server_setting_cached('queue_rate_for_fsck') ||
             DEF_FSCK_QUEUE_INJECT;
-    my $fids        = $sto->get_fidids_above_id($max_checked, $to_inject);
+    my $fids = $sto->get_fidids_between($max_checked, $fid_at_end, $to_inject);
     unless (@$fids) {
-        $sto->set_server_setting("fsck_host", undef);
-        $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
         MogileFS::Config->set_server_setting('fsck_highest_fid_checked',
             $max_checked);
+
+        # set these last since tests/scripts may rely on these to
+        # determine when fsck (injection) is complete
+        $sto->set_server_setting("fsck_host", undef);
+        $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
         return;
     }
 
