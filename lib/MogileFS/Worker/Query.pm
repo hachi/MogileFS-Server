@@ -101,12 +101,12 @@ sub process_line {
 
     # fallback to normal command handling
     if ($line =~ /^(\w+)\s*(.*)/) {
-        my ($cmd, $args) = ($1, $2);
+        my ($cmd, $orig_args) = ($1, $2);
         $cmd = lc($cmd);
 
         no strict 'refs';
         my $cmd_handler = *{"cmd_$cmd"}{CODE};
-        my $args = decode_url_args(\$args);
+        my $args = decode_url_args(\$orig_args);
         $self->{callid} = $args->{callid};
         if ($cmd_handler) {
             local $MogileFS::REQ_altzone = ($args->{zone} && $args->{zone} eq 'alt');
