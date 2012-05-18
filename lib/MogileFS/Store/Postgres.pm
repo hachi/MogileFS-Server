@@ -62,7 +62,8 @@ sub init {
     $self->SUPER::init;
     my $database_version = $self->dbh->get_info(18); # SQL_DBMS_VER
     # We need >=pg-8.2 because we use SAVEPOINT and ROLLBACK TO.
-    die "Postgres is too old! Must use >=postgresql-8.2!" if($database_version =~ /\A0[0-7]\.|08\.0[01]/);
+    # We need >=pg-8.4 for working advisory locks
+    die "Postgres is too old! Must use >=postgresql-8.4!" if($database_version =~ /\A0[0-7]\.|08\.0[0123]/);
     $self->{lock_depth} = 0;
 }
 
@@ -787,27 +788,30 @@ sub lockid {
 # returns 1 on success and 0 on timeout
 sub get_lock {
     my ($self, $lockname, $timeout) = @_;
+    my $hostid = lockid(hostname);
     my $lockid = lockid($lockname);
-    die "Lock recursion detected (grabbing $lockname ($lockid), had $self->{last_lock} (".lockid($self->{last_lock}).").  Bailing out." if $self->{lock_depth};
+    die "Lock recursion detected (grabbing ".hostname."$lockname ($hostid/$lockid), had $self->{last_lock} (".lockid($self->{last_lock}).").  Bailing out." if $self->{lock_depth};
 
     debug("$$ Locking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
 
     my $lock = undef;
-    while($timeout >= 0 and not defined($lock)) {
-        $lock = eval { $self->dbh->do('INSERT INTO lock (lockid,hostname,pid,acquiredat) VALUES (?, ?, ?, '.$self->unix_timestamp().')', undef, $lockid, hostname, $$) };
-        if($self->was_duplicate_error) {
-            $timeout--;
-            sleep 1 if $timeout > 0;
-            next;
-        }
+    while($timeout >= 0) {
+        $lock = $self->dbh->selectrow_array("SELECT pg_try_advisory_lock(?, ?)", undef, $hostid, $lockid);
         $self->condthrow;
-        #$lock = $self->dbh->selectrow_array("SELECT pg_try_advisory_lock(?, ?)", undef, $lockid, $timeout);
-        #warn("$$ Lock result=$lock\n");
-        if (defined $lock and $lock == 1) {
-            $self->{lock_depth} = 1;
-            $self->{last_lock}  = $lockname;
+        if (defined $lock) {
+            if($lock == 1) {
+                $self->{lock_depth} = 1;
+                $self->{last_lock}  = $lockname;
+                last;
+            } elsif($lock == 0) {
+                $timeout--;
+                sleep 1 if $timeout > 0;
+                next;
+            } else {
+                die "Something went horribly wrong while getting lock $lockname - unknown return value";
+            }
         } else {
-            die "Something went horribly wrong while getting lock $lockname";
+            die "Something went horribly wrong while getting lock $lockname - undefined lock";
         }
     }
     return $lock;
@@ -817,10 +821,10 @@ sub get_lock {
 # returns 1 on success and 0 if no lock we have has that name.
 sub release_lock {
     my ($self, $lockname) = @_;
+    my $hostid = lockid(hostname);
     my $lockid = lockid($lockname);
     debug("$$ Unlocking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
-    #my $rv = $self->dbh->selectrow_array("SELECT pg_advisory_unlock(?)", undef, $lockid);
-    my $rv = $self->dbh->do('DELETE FROM lock WHERE lockid=? AND pid=? AND hostname=?', undef, $lockid, $$, hostname);
+    my $rv = $self->dbh->selectrow_array("SELECT pg_advisory_unlock(?, ?)", undef, $hostid, $lockid);
     debug("Double-release of lock $lockname!") if $self->{lock_depth} != 0 and $rv == 0 and $Mgd::DEBUG >= 2;
     $self->condthrow;
     $self->{lock_depth} = 0;
