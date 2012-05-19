@@ -144,6 +144,10 @@ use Digest::MD5 qw/md5_hex/;
 # save new row to checksum table
 {
     my $key = 'savecksum';
+
+    syswrite($admin, "!want 0 replicate\n"); # disable replication
+    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "disabled replicate");
+
     %opts = ( domain => "testdom", class => "2copies", key => $key );
     $rv = $be->do_request("create_open", \%opts);
     %opts = %$rv;
@@ -163,9 +167,21 @@ use Digest::MD5 qw/md5_hex/;
     my $info = $mogc->file_info($key);
     ok($info, "file_info($key) is sane");
     is($info->{checksum}, "MD5:".md5_hex('blah'), 'checksum shows up');
-    $sto->delete_checksum($info->{fid});
+    is($sto->delete_checksum($info->{fid}), 1, "$key checksum row deleted");
     $info = $mogc->file_info($key);
     is($info->{checksum}, "MISSING", 'checksum is MISSING after delete');
+
+    syswrite($admin, "!want 1 replicate\n"); # disable replication
+    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "enabled replicate");
+
+    # wait for replicate to recreate checksum
+    do {
+        @paths = $mogc->get_paths($key);
+    } while (scalar(@paths) == 1 and sleep(0.1));
+    is(scalar(@paths), 2, "replicate successfully with good checksum");
+
+    $info = $mogc->file_info($key);
+    is($info->{checksum}, "MD5:".md5_hex('blah'), 'checksum recreated on repl');
 }
 
 # flip checksum classes around
@@ -187,16 +203,6 @@ use Digest::MD5 qw/md5_hex/;
     ok($be->do_request("update_class", \%opts), "update class");
     @classes = grep { $_->{classname} eq '1copy' } $sto->get_all_classes;
     is($classes[0]->{hashtype}, undef, "hashtype unset");
-}
-
-# wait for replicate to verify existing (valid) checksum
-{
-    my $key = 'savecksum';
-
-    do {
-        @paths = $mogc->get_paths($key);
-    } while (scalar(@paths) == 1 and sleep(0.1));
-    is(scalar(@paths), 2, "replicate successfully with good checksum");
 }
 
 # save checksum on replicate, client didn't care to provide one
