@@ -5,6 +5,10 @@
 
    * avoid unnecessary devcount update in create_close (Eric Wong <normalperson@yhbt.net>)
 
+   * size arg check from tomas doran (dormando <dormando@rydia.net>)
+     (pass in a "size" argument (in bytes) to create_open and mogilefs will
+      ensure there's enough free space for it)
+
    * sqlite: implement locking via tables (Eric Wong <normalperson@yhbt.net>)
 
    * worker/query: Add optional callid parameter (Gernot Vormayr <notti@bgcc.at>)
@@ -20,7 +24,7 @@
 
    * fsck: log bad count correctly instead of policy violation (Eric Wong <normalperson@yhbt.net>)
 
-   * tests: add test for fsck functionality (Eric Wong <normalperson@yhbt.net>)
+   * tests: add tests for fsck functionality (Eric Wong <normalperson@yhbt.net>)
 
    * monitor: only broadcast reject_bad_md5 on change (Eric Wong <normalperson@yhbt.net>)
 
