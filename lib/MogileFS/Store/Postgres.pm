@@ -790,7 +790,7 @@ sub get_lock {
     my ($self, $lockname, $timeout) = @_;
     my $hostid = lockid(hostname);
     my $lockid = lockid($lockname);
-    die "Lock recursion detected (grabbing ".hostname."$lockname ($hostid/$lockid), had $self->{last_lock} (".lockid($self->{last_lock}).").  Bailing out." if $self->{lock_depth};
+    die sprintf("Lock recursion detected (grabbing %s on %s (%s/%s), had %s (%s). Bailing out.", $lockname, hostname, $hostid, $lockid, $self->{last_lock}, lockid($self->{last_lock})) if $self->{lock_depth};
 
     debug("$$ Locking $lockname ($lockid)\n") if $Mgd::DEBUG >= 5;
 
@@ -804,8 +804,8 @@ sub get_lock {
                 $self->{last_lock}  = $lockname;
                 last;
             } elsif($lock == 0) {
-                $timeout--;
                 sleep 1 if $timeout > 0;
+                $timeout--;
                 next;
             } else {
                 die "Something went horribly wrong while getting lock $lockname - unknown return value";
