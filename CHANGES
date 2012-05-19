@@ -1,3 +1,33 @@
+2012-05-18: Release version 2.61
+
+   * fix issue #57 by Pyry and Eric (dormando <dormando@rydia.net>)
+     (mogadm host status sometimes allowed typos)
+
+   * avoid unnecessary devcount update in create_close (Eric Wong <normalperson@yhbt.net>)
+
+   * sqlite: implement locking via tables (Eric Wong <normalperson@yhbt.net>)
+
+   * worker/query: Add optional callid parameter (Gernot Vormayr <notti@bgcc.at>)
+     (allows command pipelining)
+
+   * delete: prevent orphan files from replicator race (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: prevent running over 100% completion (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: cleanup and reduce unnecessary devcount updates (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: update devcount, forget devs on unfixable FIDs (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: log bad count correctly instead of policy violation (Eric Wong <normalperson@yhbt.net>)
+
+   * tests: add test for fsck functionality (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor: only broadcast reject_bad_md5 on change (Eric Wong <normalperson@yhbt.net>)
+
+   * worker: delete_domain returns has_classes error (Eric Wong <normalperson@yhbt.net>)
+
+   * log: enable autoflush for stdout logging (Eric Wong <normalperson@yhbt.net>)
+
 2012-03-30: Release version 2.60
 
    * Fix fsck status when running for the first time (dormando <dormando@rydia.net>)
