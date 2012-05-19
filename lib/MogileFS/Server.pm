@@ -30,7 +30,6 @@ use List::Util;
 use Socket qw(SO_KEEPALIVE);
 
 use MogileFS::Util qw(daemonize);
-use MogileFS::Sys;
 use MogileFS::Config;
 
 use MogileFS::ProcManager;
