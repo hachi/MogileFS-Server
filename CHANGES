@@ -1,3 +1,9 @@
+2012-05-19: Release version 2.62
+
+   * Critical bugfix for a compilation error (dormando, reported by Robin)
+
+   * Fix for upgrading a Postgres install for checksums (Robin * H. Johnson <robbat2@gentoo.org>)
+
 2012-05-18: Release version 2.61
 
    * fix issue #57 by Pyry and Eric (dormando <dormando@rydia.net>)
