@@ -33,7 +33,7 @@ sub new_from_args {
 
 sub valid_state {
     my ($class, $state) = @_;
-    return $state && $state =~ /^alive|dead|down$/;
+    return $state && $state =~ /\A(?:alive|dead|down)\z/;
 }
 
 # Instance methods:
