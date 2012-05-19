@@ -310,6 +310,13 @@ sub upgrade_modify_device_size {
     return 1;
 }
 
+sub upgrade_add_class_hashtype {
+    my ($self) = @_;
+    unless ($self->column_type("class", "hashtype")) {
+        $self->dowell("ALTER TABLE class ADD COLUMN hashtype SMALLINT");
+    }
+}
+
 # return 1 on success.  die otherwise.
 sub enqueue_fids_to_delete {
     # My kingdom for a real INSERT IGNORE implementation!
