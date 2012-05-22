@@ -23,11 +23,6 @@ sub sock {
     return $self->{sock};
 }
 
-sub sock_if_connected {
-    my $self = shift;
-    return $self->{sock};
-}
-
 sub mark_dead {
     my $self = shift;
     $self->{sock} = undef;
