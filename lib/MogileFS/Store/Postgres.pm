@@ -753,7 +753,7 @@ sub replace_into_file {
         insert => "INSERT INTO file (fid, dmid, dkey, length, classid, devcount) VALUES (?, ?, ?, ?, ?, ?)",
         insert_vals => [ @arg{'fidid', 'dmid', 'key', 'length', 'classid', 'devcount'} ],
         update => "UPDATE file SET dmid=?, dkey=?, length=?, classid=?, devcount=? WHERE fid=?",
-        update_vals => [ @arg{'dmid', 'key', 'length', 'classid', 'fidid', 'devcount'} ],
+        update_vals => [ @arg{'dmid', 'key', 'length', 'classid', 'devcount', 'fidid'} ],
     );
     $self->condthrow;
 }
