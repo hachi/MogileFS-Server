@@ -1,3 +1,8 @@
+2012-05-29: Release version 2.63
+
+   * Critical bugfix for Postgres users introduced by 2.61. New file uploads
+     would fail. (noticed by robin H. Johnson, fixed by Eric Wong)
+
 2012-05-19: Release version 2.62
 
    * Critical bugfix for a compilation error (dormando, reported by Robin)
