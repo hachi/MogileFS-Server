@@ -351,6 +351,22 @@ foreach my $t (qw(file file_on file_to_delete)) {
     # TODO: test double closing, etc.
 }
 
+# give an explicit fid, to prevent bugs like the reason behind
+# commit ac5534a0c3d046e660fa7581c9173857f182bd81
+# This is functionality is a bad idea otherwise.
+{
+    my $expfid = 2147483632;
+    my $opts = { fid => $expfid };
+    my $fh = $mogc->new_file("explicit_fid", "1copy", 2, $opts);
+    die "Error: " . $mogc->errstr unless $fh;
+    ok((print $fh "hi" ), "wrote 2 bytes");
+    ok(close($fh), "closed file");
+    my $info = $mogc->file_info("explicit_fid");
+
+    is($info->{devcount}, 1, "devcount is 1");
+    is($info->{fid}, $opts->{fid}, "explicit fid is correctly set");
+}
+
 sub try_for {
     my ($tries, $code) = @_;
     for (1..$tries) {
