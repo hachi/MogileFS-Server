@@ -120,7 +120,7 @@ sub can_delete_from {
 }
 
 sub can_read_from {
-    return $_[0]->dstate->can_read_from;
+    return $_[0]->host->alive && $_[0]->dstate->can_read_from;
 }
 
 # FIXME: Is there a (unrelated to this code) bug where new files aren't tested
@@ -131,7 +131,7 @@ sub should_get_new_files {
 
     return 0 unless $dstate->should_get_new_files;
     return 0 unless $self->observed_writeable;
-    return 0 unless $self->host->should_get_new_files;
+    return 0 unless $self->host->alive;
     # have enough disk space? (default: 100MB)
     my $min_free = MogileFS->config("min_free_space");
     return 0 if $self->{mb_total} &&

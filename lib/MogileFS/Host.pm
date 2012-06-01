@@ -70,7 +70,7 @@ sub observed_fields {
     return $_[0]->fields(@observed_fields);
 }
 
-sub should_get_new_files {
+sub alive {
     return $_[0]->status eq 'alive';
 }
 

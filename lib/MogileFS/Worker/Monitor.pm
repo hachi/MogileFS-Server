@@ -97,7 +97,7 @@ sub usage_refresh {
         $cur_iow->{$dev->id} = $self->{devutil}->{cur}->{$dev->id};
         next if $self->{skip_host}{$dev->hostid};
         $self->check_device($dev, $have_dbh, $updateable_devices)
-            if $dev->dstate->should_monitor;
+            if $dev->can_read_from;
         $self->still_alive; # Ping parent if needed so we don't time out
                             # given lots of devices.
     }
