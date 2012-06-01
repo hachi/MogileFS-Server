@@ -89,21 +89,27 @@ sub observed_utilization {
     return $self->{utilization};
 }
 
+sub host_ok {
+    my $host = $_[0]->host;
+    return ($host && $host->observed_reachable);
+}
+
 sub observed_writeable {
     my $self = shift;
-    return 0 unless $self->{observed_state} && $self->{observed_state} eq 'writeable';
-    my $host = $self->host or return 0;
-    return 0 unless $host->observed_reachable;
-    return 1;
+    return 0 unless $self->host_ok;
+    return $self->{observed_state} && $self->{observed_state} eq 'writeable';
 }
 
 sub observed_readable {
     my $self = shift;
+    return 0 unless $self->host_ok;
     return $self->{observed_state} && $self->{observed_state} eq 'readable';
 }
 
 sub observed_unreachable {
     my $self = shift;
+    # host is unreachability implies device unreachability
+    return 1 unless $self->host_ok;
     return $self->{observed_state} && $self->{observed_state} eq 'unreachable';
 }
 
