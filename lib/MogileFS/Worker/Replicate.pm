@@ -170,10 +170,10 @@ sub replicate_using_torepl_table {
         # First one we can delete from, we try to rebalance away from.
         for (@devs) {
             my $dev = Mgd::device_factory()->get_by_id($_);
-            # Not positive 'can_read_from' needs to be here.
+            # Not positive 'should_read_from' needs to be here.
             # We must be able to delete off of this dev so the fid can
             # move.
-            if ($dev->can_delete_from && $dev->can_read_from) {
+            if ($dev->can_delete_from && $dev->should_read_from) {
                 $devfid = MogileFS::DevFID->new($dev, $f);
                 last;
             }
@@ -373,7 +373,7 @@ sub replicate {
         if ($d->dstate->should_have_files && ! $mask_devids->{$devid}) {
             push @on_devs_tellpol, $d;
         }
-        if ($d->dstate->can_read_from) {
+        if ($d->should_read_from) {
             push @on_up_devid, $devid;
         }
     }

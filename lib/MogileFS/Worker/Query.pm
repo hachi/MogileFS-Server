@@ -1145,16 +1145,13 @@ sub cmd_get_paths {
 
     # construct result paths
     foreach my $dev (@sorted_devs) {
-        next unless $dev && ($dev->can_read_from);
+        next unless $dev && $dev->host;
 
-        my $host = $dev->host;
-        next unless $dev && $host;
         my $dfid = MogileFS::DevFID->new($dev, $fid);
         my $path = $dfid->get_url;
-        my $currently_down =
-            $host->observed_unreachable || $dev->observed_unreachable;
+        my $currently_up = $dev->should_read_from;
 
-        if ($currently_down) {
+        if (! $currently_up) {
             $backup_path = $path;
             next;
         }
@@ -1309,12 +1306,8 @@ sub cmd_edit_file {
     @list = grep {
         my $devid = $_;
         my $dev = $dmap->{$devid};
-        my $host = $dev ? $dev->host : undef;
 
-        $dev
-        && $host
-        && $dev->can_read_from
-        && !($host->observed_unreachable || $dev->observed_unreachable);
+        $dev && $dev->should_read_from;
     } @list;
 
     # Take first remaining device from list
