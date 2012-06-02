@@ -62,6 +62,9 @@ sub vivify_directories {
 # else size of file on disk (after HTTP HEAD or mogstored stat)
 sub size_on_disk {
     my $self = shift;
+
+    return undef unless $self->device->should_read_from;
+
     my $url = $self->get_url;
     my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
 
@@ -74,6 +77,9 @@ sub size_on_disk {
 # else checksum of file on disk (after HTTP GET or mogstored read)
 sub checksum_on_disk {
     my ($self, $alg, $ping_cb, $reason) = @_;
+
+    return undef unless $self->device->should_read_from;
+
     my $url = $self->get_url;
     my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
 

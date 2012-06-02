@@ -195,7 +195,7 @@ sub parallel_check_sizes {
     # serial, for now: (just prepping for future parallel future,
     # getting interface right)
     foreach my $df (@$dflist) {
-        my $size = $self->size_on_disk($df);
+        my $size = $df->size_on_disk;
         return 0 unless $cb->($df, $size);
     }
     return 1;
@@ -238,7 +238,7 @@ sub fix_fid {
                 next;
             }
 
-            my $disk_size = $self->size_on_disk($dfid);
+            my $disk_size = $dfid->size_on_disk;
             die "dev " . $dev->id . " unreachable" unless defined $disk_size;
 
             if ($disk_size == $fid->length) {
@@ -339,21 +339,11 @@ sub forget_file_on_with_bad_checksums {
     }
 }
 
-# returns 0 on missing,
-# undef on connectivity error,
-# else size of file on disk (after HTTP HEAD or mogstored stat)
-sub size_on_disk {
-    my ($self, $dfid) = @_;
-    return undef if $dfid->device->dstate->is_perm_dead;
-    return $dfid->size_on_disk;
-}
-
 # returns -1 on missing,
 # undef on connectivity error,
 # else checksum of file on disk (after HTTP GET or mogstored read)
 sub checksum_on_disk {
     my ($self, $dfid, $alg, $ping_cb) = @_;
-    return undef if $dfid->device->dstate->is_perm_dead;
     return $dfid->checksum_on_disk($alg, $ping_cb, "fsck");
 }
 
