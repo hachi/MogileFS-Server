@@ -1143,6 +1143,9 @@ sub cmd_get_paths {
     # keep one partially-bogus path around just in case we have nothing else to send.
     my $backup_path;
 
+    # files on devices set for drain may disappear soon.
+    my @drain_paths;
+
     # construct result paths
     foreach my $dev (@sorted_devs) {
         next unless $dev && $dev->host;
@@ -1162,9 +1165,24 @@ sub cmd_get_paths {
             $args->{noverify}    ||
             $dfid->size_matches;
 
+        if ($dev->dstate->should_drain) {
+            push @drain_paths, $path;
+            next;
+        }
+
         my $n = ++$ret->{paths};
         $ret->{"path$n"} = $path;
         last if $n == $pathcount;   # one verified, one likely seems enough for now.  time will tell.
+    }
+
+    # deprioritize devices set for drain, they could disappear soon...
+    # Clients /should/ try to use lower-numbered paths first to avoid this.
+    if ($ret->{paths} < $pathcount && @drain_paths) {
+        foreach my $path (@drain_paths) {
+            my $n = ++$ret->{paths};
+            $ret->{"path$n"} = $path;
+            last if $n == $pathcount;
+        }
     }
 
     # use our backup path if all else fails
