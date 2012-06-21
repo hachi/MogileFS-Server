@@ -66,26 +66,21 @@ sub run {
         my $mog_sysid = mog_sysid_map();  # 5 (mogdevid) -> 2340 (os devid)
         my $dev_sysid = {};  # hashref, populated lazily:  { /dev/sdg => system dev_t }
         my %devt_util;  # dev_t => 52.55
-        my $init = 0;
+        my $stats = 0;
         while (<$iofh>) {
-            if (m/^Device:/) {
-                %devt_util = ();
-                $init = 1;
-                next;
-            }
-            next unless $init;
-            if (m/^ (\S+) .*? ([\d.]+) \n/x) {
+            if (m/^\s*(\S+)\s.*?([\d.]+)\s*$/) {
                 my ($devnode, $util) = ("/dev/$1", $2);
                 unless (exists $dev_sysid->{$devnode}) {
                     $dev_sysid->{$devnode} = (stat($devnode))[6]; # rdev
                 }
                 my $devt = $dev_sysid->{$devnode};
                 $devt_util{$devt} = $util;
-                next;
-            }
-            # blank line is the end.
-            if (m!^\s*\n!) {
-                $init = 0;
+                $stats++;
+            } elsif ($stats) {
+                # blank line is the end, or any other line we don't understand
+                # if we have stats, we print them, otherwise do nothing
+                $stats = 0;
+
                 my $ret = "";
                 foreach my $mogdevid (sort { $a <=> $b } keys %$mog_sysid) {
                     my $devt = $mog_sysid->{$mogdevid};
@@ -96,7 +91,7 @@ sub run {
                 print $ret;
 
                 $check_for_parent->();
-                next;
+                %devt_util = ();
             }
         }
     }
