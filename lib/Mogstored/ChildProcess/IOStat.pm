@@ -4,7 +4,7 @@ use base 'Mogstored::ChildProcess';
 
 my $docroot;
 
-my $iostat_cmd = "iostat -dx 1 30";
+my $iostat_cmd = $ENV{MOG_IOSTAT_CMD} || "iostat -dx 1 30";
 if ($^O =~ /darwin/) { $iostat_cmd =~ s/x// }
 
 sub pre_exec_init {
