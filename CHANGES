@@ -1,3 +1,15 @@
+2012-06-21: Release version 2.64
+
+   * Delete memcache data when we replicate fids (Pyry Hakulinen <pyry@automattic.com>)
+
+   * implement "case_sensitive_list_keys" server setting (Eric Wong <normalperson@yhbt.net>)
+
+   * get_paths: deprioritize devs in "drain" state (Eric Wong <normalperson@yhbt.net>)
+
+   * make marking a host down cause devices to act as down (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor skips hosts marked dead or down (Eric Wong <normalperson@yhbt.net>)
+
 2012-05-29: Release version 2.63
 
    * Critical bugfix for Postgres users introduced by 2.61. New file uploads
