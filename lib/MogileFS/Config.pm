@@ -365,7 +365,6 @@ sub server_setting_is_writable {
 
     # let slave settings go through unmodified, for now.
     if ($key =~ /^slave_/) { return $del_if_blank };
-    if ($key eq "enable_rebalance") { return $bool };
     if ($key eq "skip_devcount") { return $bool };
     if ($key eq "skip_mkcol") { return $bool };
     if ($key eq "case_sensitive_list_keys") { return $bool };
@@ -376,15 +375,6 @@ sub server_setting_is_writable {
     # ReplicationPolicy::MultipleNetworks
     if ($key eq 'network_zones') { return $any };
     if ($key =~ /^zone_/) { return $valid_netmask_list };
-
-    if ($key eq "rebalance_policy") { return sub {
-        my $v = shift;
-        return undef unless $v;
-        # TODO: actually load the provided class and test if it loads?
-        die "Doesn't match acceptable format" unless
-            $v =~ /^[\w:\-]+$/;
-        return $v;
-    }}
 
     # should probably restrict to (\d+)
     if ($key =~ /^queue_/) { return $any };
