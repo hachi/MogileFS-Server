@@ -82,6 +82,31 @@ ok($be->do_request("test", {}), "test ping worked");
 ok(!$be->do_request("test", {crash => 1}), "crash didn't");
 ok($be->do_request("test", {}), "test ping again worked");
 
+{
+    my $c = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001', Timeout => 3);
+    $c->syswrite("!want 1 queryworker\r\n");
+    my $res1 = <$c> . <$c>;
+    like($res1, qr/Now desiring 1 children doing 'queryworker'/, "set 1 queryworker");
+
+    my $expect = "ERR no_domain No+domain+provided\r\n" x 2;
+
+    # bad domain won't return twice
+    my $cmd = "list_keys domain=\r\n";
+    $c->syswrite($cmd x 2);
+    my $r;
+    my $resp = "";
+    do {
+        $r = $c->sysread(my $buf, 500);
+        if (defined $r && $r > 0) {
+            $resp .= $buf;
+        }
+    } while ($r && length($resp) != length($expect));
+    is($resp, $expect, "response matches expected");
+
+    $c->syswrite("!want 2 queryworker\r\n");
+    my $res2 = <$c> . <$c>;
+    like($res2, qr/Now desiring 2 children doing 'queryworker'/, "restored 2 queryworkers");
+}
 
 ok($tmptrack->mogadm("domain", "add", "todie"), "created todie domain");
 ok($tmptrack->mogadm("domain", "delete", "todie"), "delete todie domain");

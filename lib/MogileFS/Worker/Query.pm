@@ -1783,6 +1783,9 @@ sub err_line {
     if ($self->{querystarttime}) {
         $delay = sprintf("%.4f ", Time::HiRes::tv_interval($self->{querystarttime}));
         $self->{querystarttime} = undef;
+    } else {
+        # don't send another ERR line if we already sent one
+        return 0;
     }
 
     my $id = defined $self->{reqid} ? "$self->{reqid} " : '';
