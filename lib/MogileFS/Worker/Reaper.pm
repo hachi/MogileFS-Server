@@ -65,9 +65,10 @@ sub work {
             my $sto = Mgd::get_store();
             my $lock = "mgfs:reaper";
             my $lock_timeout = $self->watchdog_timeout / 4;
+            my $limit = MogileFS::Config->server_setting_cached('queue_rate_for_reaper') || 1000;
 
             if ($sto->get_lock($lock, $lock_timeout)) {
-                my @fids = $dev->fid_list(limit => 1000);
+                my @fids = $dev->fid_list(limit => $limit);
                 if (@fids) {
                     $self->still_alive;
                     foreach my $fid (@fids) {

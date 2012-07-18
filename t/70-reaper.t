@@ -51,6 +51,7 @@ ok($tmptrack->mogadm("device", "add", "hostA", 2), "created dev2 on hostA");
 
 ok($tmptrack->mogadm("domain", "add", "testdom"), "created test domain");
 ok($tmptrack->mogadm("class", "add", "testdom", "2copies", "--mindevcount=2"), "created 2copies class in testdom");
+ok($tmptrack->mogadm("settings", "set", "queue_rate_for_reaper", 123), "set queue_rate_for_reaper");
 
 # create one sample file with 2 copies
 my $fh = $mogc->new_file("file1", "2copies");
