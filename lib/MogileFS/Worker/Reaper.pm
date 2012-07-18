@@ -21,6 +21,34 @@ sub watchdog_timeout {
 
 my %all_empty;  # devid -> bool, if all empty of files in file_on
 
+# order is important here:
+#
+# first, add fid to file_to_replicate table.  it
+# shouldn't matter if the replicator gets to this
+# before the subsequent 'forget_about' method, as the
+# replicator will treat dead file_on devices as
+# non-existent anyway.  however, it is important that
+# we enqueue it for replication first, before we
+# forget about that file_on row, otherwise a failure
+# after/during 'forget_about' could leave a stranded
+# file on a dead device and we'd never fix it.
+#
+# and just for extra safety, in case replication happened
+# on another machine after 'enqueue_for_replication' but
+# before 'forget_about', and that other machine hadn't yet
+# re-read the device table to learn that this device
+# was dead, we delay the replication for the amount of time
+# that the device summary table is valid for (presumably
+# the other trackers are running identical software, or
+# at least have the same timeout value)
+sub reap_fid {
+    my ($self, $fid, $dev) = @_;
+
+    $fid->enqueue_for_replication(in => DEVICE_SUMMARY_CACHE_TIMEOUT + 1);
+    $dev->forget_about($fid);
+    $fid->update_devcount;
+}
+
 sub work {
     my $self = shift;
 
@@ -42,30 +70,7 @@ sub work {
             $self->still_alive;
 
             foreach my $fid (@fids) {
-                # order is important here:
-
-                # first, add fid to file_to_replicate table.  it
-                # shouldn't matter if the replicator gets to this
-                # before the subsequent 'forget_about' method, as the
-                # replicator will treat dead file_on devices as
-                # non-existent anyway.  however, it is important that
-                # we enqueue it for replication first, before we
-                # forget about that file_on row, otherwise a failure
-                # after/during 'forget_about' could leave a stranded
-                # file on a dead device and we'd never fix it.
-                #
-                # and just for extra safety, in case replication happened
-                # on another machine after 'enqueue_for_replication' but
-                # before 'forget_about', and that other machine hadn't yet
-                # re-read the device table to learn that this device
-                # was dead, we delay the replication for the amount of time
-                # that the device summary table is valid for (presumably
-                # the other trackers are running identical software, or
-                # at least have the same timeout value)
-
-                $fid->enqueue_for_replication(in => DEVICE_SUMMARY_CACHE_TIMEOUT + 1);
-                $dev->forget_about($fid);
-                $fid->update_devcount;
+                $self->reap_fid($fid, $dev);
             }
         }
     });
