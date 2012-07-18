@@ -62,15 +62,23 @@ sub work {
             my $devid = $dev->id;
             next if $all_empty{$devid};
 
-            my @fids = $dev->fid_list(limit => 1000);
-            unless (@fids) {
-                $all_empty{$devid} = 1;
-                next;
-            }
-            $self->still_alive;
+            my $sto = Mgd::get_store();
+            my $lock = "mgfs:reaper";
+            my $lock_timeout = $self->watchdog_timeout / 4;
 
-            foreach my $fid (@fids) {
-                $self->reap_fid($fid, $dev);
+            if ($sto->get_lock($lock, $lock_timeout)) {
+                my @fids = $dev->fid_list(limit => 1000);
+                if (@fids) {
+                    $self->still_alive;
+                    foreach my $fid (@fids) {
+                        $self->reap_fid($fid, $dev);
+                    }
+                } else {
+                    $all_empty{$devid} = 1;
+                }
+                $sto->release_lock($lock);
+            } else {
+                debug("get_lock($lock, $lock_timeout) failed");
             }
         }
     });
