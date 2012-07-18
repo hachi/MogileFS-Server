@@ -15,12 +15,6 @@ use MogileFS::ReplicationRequest qw(rr_upgrade);
 use Digest;
 use MIME::Base64 qw(encode_base64);
 
-# setup the value used in a 'nexttry' field to indicate that this item will never
-# actually be tried again and require some sort of manual intervention.
-use constant ENDOFTIME => 2147483647;
-
-sub end_of_time { ENDOFTIME; }
-
 sub new {
     my ($class, $psock) = @_;
     my $self = fields::new($class);
@@ -140,7 +134,7 @@ sub replicate_using_torepl_table {
             # special; update to a time that won't happen again,
             # as we've encountered a scenario in which case we're
             # really hosed
-            $sto->reschedule_file_to_replicate_absolute($fid, ENDOFTIME);
+            $sto->reschedule_file_to_replicate_absolute($fid, $sto->end_of_time);
         } elsif ($type eq "offset") {
             $sto->reschedule_file_to_replicate_relative($fid, $delay+0);
         } else {

@@ -2160,6 +2160,12 @@ sub delete_checksum {
     $self->dbh->do("DELETE FROM checksum WHERE fid = ?", undef, $fidid);
 }
 
+# setup the value used in a 'nexttry' field to indicate that this item will
+# never actually be tried again and require some sort of manual intervention.
+use constant ENDOFTIME => 2147483647;
+
+sub end_of_time { ENDOFTIME; }
+
 1;
 
 __END__
