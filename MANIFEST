@@ -76,6 +76,7 @@ t/30-rebalance.t
 t/40-httpfile.t
 t/50-checksum.t
 t/60-fsck.t
+t/70-reaper.t
 t/checksum.t
 t/fid-stat.t
 t/mogstored-shutdown.t
