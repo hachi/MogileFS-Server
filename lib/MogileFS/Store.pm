@@ -2166,6 +2166,15 @@ use constant ENDOFTIME => 2147483647;
 
 sub end_of_time { ENDOFTIME; }
 
+# returns the size of the non-urgent replication queue
+# nexttry == 0                        - the file is urgent
+# nexttry != 0 && nexttry < ENDOFTIME - the file is deferred
+sub deferred_repl_queue_length {
+    my ($self) = @_;
+
+    return $self->dbh->selectrow_array('SELECT COUNT(*) FROM file_to_replicate WHERE nexttry != 0 AND nexttry < ?', undef, $self->end_of_time);
+}
+
 1;
 
 __END__

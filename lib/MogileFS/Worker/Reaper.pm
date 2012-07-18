@@ -49,6 +49,32 @@ sub reap_fid {
     $fid->update_devcount;
 }
 
+# this returns 1000 by default
+sub reaper_inject_limit {
+    my ($self) = @_;
+
+    my $sto = Mgd::get_store();
+    my $max = MogileFS::Config->server_setting_cached('queue_size_for_reaper');
+    my $limit = MogileFS::Config->server_setting_cached('queue_rate_for_reaper') || 1000;
+
+    # max defaults to zero, meaning we inject $limit every wakeup
+    if ($max) {
+        # if a queue size limit is configured for reaper, prevent too many
+        # files from entering the repl queue:
+        my $len = $sto->deferred_repl_queue_length;
+        my $space_left = $max - $len;
+
+        $limit = $space_left if ($limit > $space_left);
+
+        # limit may end up being negative here since other processes
+        # can inject into the deferred replication queue, reaper is
+        # the only one which can respect this queue size
+        $limit = 0 if $limit < 0;
+    }
+
+    return $limit;
+}
+
 sub work {
     my $self = shift;
 
@@ -61,12 +87,11 @@ sub work {
         {
             my $devid = $dev->id;
             next if $all_empty{$devid};
+            my $limit = $self->reaper_inject_limit or next;
 
             my $sto = Mgd::get_store();
             my $lock = "mgfs:reaper";
             my $lock_timeout = $self->watchdog_timeout / 4;
-            my $limit = MogileFS::Config->server_setting_cached('queue_rate_for_reaper') || 1000;
-
             if ($sto->get_lock($lock, $lock_timeout)) {
                 my @fids = $dev->fid_list(limit => $limit);
                 if (@fids) {
