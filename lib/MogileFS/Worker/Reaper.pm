@@ -40,7 +40,6 @@ sub reap_fid {
 
     $fid->enqueue_for_replication(in => 1);
     $dev->forget_about($fid);
-    $fid->update_devcount;
 }
 
 # this returns 1000 by default
