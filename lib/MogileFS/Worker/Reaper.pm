@@ -98,16 +98,19 @@ sub reap_dev {
                 }
             }
             $sto->release_lock($lock);
-        } else {
-            debug("get_lock($lock, $lock_timeout) failed");
-        }
 
-        # if we've found any FIDs (perhaps even while backing off)
-        # ensure we try to find more soon:
-        if (@fids) {
-            $delay = REAP_INTERVAL;
+            # if we've found any FIDs (perhaps even while backing off)
+            # ensure we try to find more soon:
+            if (@fids) {
+                $delay = REAP_INTERVAL;
+            } else {
+                $delay = $self->reap_dev_backoff_delay($delay);
+            }
         } else {
-            $delay = $self->reap_dev_backoff_delay($delay);
+            # No lock after a long lock_timeout?  Try again soon.
+            # We should never get here under MySQL, and rarely for other DBs.
+            debug("get_lock($lock, $lock_timeout) failed");
+            $delay = REAP_INTERVAL;
         }
     }
 
