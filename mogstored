@@ -37,6 +37,7 @@ my $iostat_available = 1; # bool: iostat working.  assume working to start.
 my ($iostat_pipe_r, $iostat_pipe_w);  # pipes for talking to iostat process
 
 # Config:
+my $opt_skipconfig;
 my $opt_daemonize;
 my $opt_config;
 my $opt_iostat = 1;  # default to on now
@@ -54,6 +55,7 @@ $0 = "mogstored";
 
 my %config_opts = (
                    'iostat'       => \$opt_iostat,
+                   's|skipconfig' => \$opt_skipconfig,
                    'daemonize|d'  => \$opt_daemonize,
                    'config=s'     => \$opt_config,
                    'httplisten=s' => \$http_listen,
@@ -70,7 +72,7 @@ die "Unknown server type.  Valid options: --server={perlbal,lighttpd,apache,none
     unless $server =~ /^perlbal|lighttpd|apache|none$/;
 
 $opt_config = $default_config if ! $opt_config && -e $default_config;
-load_config_file($opt_config => \%config_opts) if $opt_config;
+load_config_file($opt_config => \%config_opts) if $opt_config && !$opt_skipconfig;
 
 # initialize basic required Perlbal machinery, for any HTTP server
 my $perlbal_init = qq{

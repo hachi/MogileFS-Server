@@ -123,6 +123,7 @@ sub create_mogstored {
     die "Failed:  tracker already running on port 7500?\n" if $conn;
     $ENV{PERL5LIB} .= ":$Bin/../lib";
     my @args = ("$Bin/../mogstored",
+                "--skipconfig",
                 "--httplisten=$ip:7500",
                 "--mgmtlisten=$ip:7501",
                 "--maxconns=1000",  # because we're not root, put it below 1024
