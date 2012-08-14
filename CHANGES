@@ -1,3 +1,28 @@
+2012-08-13: Release version 2.65
+
+   * Postgres advisory lock instead of table-based lock (Robin H. Johnson <robbat2@gentoo.org>)
+     Now requires minimum Postgres version of pg8.4.
+
+   * reaper: switch to Danga::Socket for scheduling (Eric Wong <normalperson@yhbt.net>)
+
+   * reaper: add queue_size_for_reaper server setting (Eric Wong <normalperson@yhbt.net>)
+
+   * reaper: add "queue_rate_for_reaper" server setting (Eric Wong <normalperson@yhbt.net>)
+     defaults to 1000, same as previously.
+
+   * reaper: global lock around DB interaction (Eric Wong <normalperson@yhbt.net>)
+     prevents reapers clobbering each other, causing a reduction in DB writes.
+
+   * tests: add basic test for reaper (Eric Wong <normalperson@yhbt.net>)
+
+   * fix tests when /etc/mogilefs/mogstored.conf exists (Eric Wong <normalperson@yhbt.net>)
+
+   * iostat: increase flexibility of iostat parser (Eric Wong <normalperson@yhbt.net>)
+
+   * iostat: allow MOG_IOSTAT_CMD env override (Eric Wong <normalperson@yhbt.net>)
+
+   * When a mogstored is down, die with a more informative message. (Dave Lambley <davel@state51.co.uk>)
+
 2012-06-21: Release version 2.64
 
    * Delete memcache data when we replicate fids (Pyry Hakulinen <pyry@automattic.com>)
