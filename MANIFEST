@@ -11,9 +11,12 @@ lib/MogileFS/Checksum.pm
 lib/MogileFS/Class.pm
 lib/MogileFS/Config.pm
 lib/MogileFS/Connection/Client.pm
+lib/MogileFS/Connection/HTTP.pm
 lib/MogileFS/Connection/Mogstored.pm
 lib/MogileFS/Connection/Parent.pm
+lib/MogileFS/Connection/Poolable.pm
 lib/MogileFS/Connection/Worker.pm
+lib/MogileFS/ConnectionPool.pm
 lib/MogileFS/DevFID.pm
 lib/MogileFS/Device.pm
 lib/MogileFS/DeviceState.pm
@@ -84,6 +87,7 @@ t/70-reaper.t
 t/80-job_master.t
 t/checksum.t
 t/fid-stat.t
+t/http.t
 t/mogstored-shutdown.t
 t/multiple-devices-replpol.t
 t/multiple-hosts-replpol.t

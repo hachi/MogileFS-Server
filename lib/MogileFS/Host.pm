@@ -5,15 +5,9 @@ use MogileFS::Util qw(throw);
 use Net::Netmask;
 use Carp qw(croak);
 use MogileFS::Connection::Mogstored;
-
-# temporary...
-use LWP::UserAgent;
-sub ua {
-    LWP::UserAgent->new(
-        timeout => MogileFS::Config->config('conn_timeout') || 2,
-        keep_alive => 20,
-    );
-}
+use MogileFS::Connection::HTTP;
+use MogileFS::ConnectionPool;
+our $http_pool;
 
 =head1
 
@@ -109,43 +103,59 @@ sub sidechannel_port {
     MogileFS->config("mogstored_stream_port");
 }
 
-sub _http_req {
-    my ($self, $method, $uri, $opts, $cb) = @_;
+# starts an HTTP request on the given $port with $method to $path
+# Calls cb with an HTTP::Response object when done
+sub _http_conn {
+    my ($self, $port, $method, $path, $opts, $cb) = @_;
+    _init_pools();
 
-    $opts ||= {};
-    my $h = $opts->{headers} || {};
-    my $req = HTTP::Request->new($method, $uri, [ %$h ]);
-    $req->content($opts->{content}) if exists $opts->{content};
-    Danga::Socket->AddTimer(0, sub {
-        my $response = $self->ua->request($req);
-        Danga::Socket->AddTimer(0, sub { $cb->($response) });
+    $http_pool->start($opts->{ip} || $self->ip, $port, sub {
+        $_[0]->start($method, $path, $opts, $cb);
     });
 }
 
-# FIXME: make async
-sub http_get {
-    my ($self, $method, $uri, $opts, $cb) = @_;
+# Returns a ready, blocking HTTP connection
+# This is only used by replicate
+sub http_conn_get {
+    my ($self, $opts) = @_;
+    my $ip = $opts->{ip} || $self->ip;
+    my $port = $opts->{port} || $self->http_port;
 
-    if ($method !~ /\A(?:GET|HEAD)\z/) {
-        die "Bad method for HTTP get port: $method";
-    }
-
-    # convert path-only URL to full URL
-    if ($uri =~ m{\A/}) {
-        $uri = 'http://' . $self->ip . ':' . $self->http_get_port . $uri;
-    }
-    $self->_http_req($method, $uri, $opts, $cb);
+    _init_pools();
+    my $conn = $http_pool->conn_get($ip, $port);
+    $conn->sock->blocking(1);
+    return $conn;
 }
 
-# FIXME: make async
-sub http {
-    my ($self, $method, $uri, $opts, $cb) = @_;
+# Returns a blocking HTTP connection back to the pool.
+# This is the inverse of http_conn_get, and should be called when
+# done using a connection (iff the connection is really still alive)
+# (and makes it non-blocking for future use)
+# This is only used by replicate.
+sub http_conn_put {
+    my ($self, $conn) = @_;
+    $conn->sock->blocking(0);
+    $http_pool->conn_put($conn);
+}
 
-    # convert path-only URL to full URL
-    if ($uri =~ m{\A/}) {
-        $uri = 'http://' . $self->ip . ':' . $self->http_port . $uri;
-    }
-    $self->_http_req($method, $uri, $opts, $cb);
+sub http_get {
+    my ($self, $method, $path, $opts, $cb) = @_;
+    $opts ||= {};
+    $self->_http_conn($self->http_get_port, $method, $path, $opts, $cb);
+}
+
+sub http {
+    my ($self, $method, $path, $opts, $cb) = @_;
+    $opts ||= {};
+    my $port = delete $opts->{port} || $self->http_port;
+    $self->_http_conn($port, $method, $path, $opts, $cb);
+}
+
+# FIXME - make these customizable
+sub _init_pools {
+    return if $http_pool;
+
+    $http_pool = MogileFS::ConnectionPool->new("MogileFS::Connection::HTTP");
 }
 
 1;
