@@ -363,8 +363,9 @@ sub SetAsChild {
     %idle_workers = ();
     %pending_work = ();
 
-    # and now kill off our event loop so that we don't waste time
-    Danga::Socket->SetPostLoopCallback(sub { return 0; });
+    # we just forked from our parent process, also using Danga::Socket,
+    # so we need to lose all that state and start afresh.
+    Danga::Socket->Reset;
 }
 
 # called when a child has died.  a child is someone doing a job for us,

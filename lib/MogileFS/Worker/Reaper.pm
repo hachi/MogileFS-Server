@@ -144,10 +144,6 @@ sub reap_dev_backoff_delay {
 sub work {
     my $self = shift;
 
-    # we just forked from our parent process, also using Danga::Socket,
-    # so we need to lose all that state and start afresh.
-    Danga::Socket->Reset;
-
     # ensure we get monitor updates
     Danga::Socket->AddOtherFds($self->psock_fd, sub{ $self->read_from_parent });
 

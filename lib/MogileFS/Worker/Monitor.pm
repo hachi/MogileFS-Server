@@ -117,10 +117,6 @@ sub usage_refresh {
 sub work {
     my $self = shift;
 
-    # we just forked from our parent process, also using Danga::Socket,
-    # so we need to lose all that state and start afresh.
-    Danga::Socket->Reset;
-
     my $iow = $self->{iow};
     $iow->on_stats(sub {
         my ($hostname, $stats) = @_;
