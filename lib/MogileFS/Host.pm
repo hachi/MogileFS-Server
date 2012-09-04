@@ -6,6 +6,15 @@ use Net::Netmask;
 use Carp qw(croak);
 use MogileFS::Connection::Mogstored;
 
+# temporary...
+use LWP::UserAgent;
+sub ua {
+    LWP::UserAgent->new(
+        timeout => MogileFS::Config->config('conn_timeout') || 2,
+        keep_alive => 20,
+    );
+}
+
 =head1
 
 MogileFS::Host - host class
@@ -98,6 +107,45 @@ sub sidechannel_port {
     # TODO: let this be configurable per-host?  currently it's configured
     # once for all machines.
     MogileFS->config("mogstored_stream_port");
+}
+
+sub _http_req {
+    my ($self, $method, $uri, $opts, $cb) = @_;
+
+    $opts ||= {};
+    my $h = $opts->{headers} || {};
+    my $req = HTTP::Request->new($method, $uri, [ %$h ]);
+    $req->content($opts->{content}) if exists $opts->{content};
+    Danga::Socket->AddTimer(0, sub {
+        my $response = $self->ua->request($req);
+        Danga::Socket->AddTimer(0, sub { $cb->($response) });
+    });
+}
+
+# FIXME: make async
+sub http_get {
+    my ($self, $method, $uri, $opts, $cb) = @_;
+
+    if ($method !~ /\A(?:GET|HEAD)\z/) {
+        die "Bad method for HTTP get port: $method";
+    }
+
+    # convert path-only URL to full URL
+    if ($uri =~ m{\A/}) {
+        $uri = 'http://' . $self->ip . ':' . $self->http_get_port . $uri;
+    }
+    $self->_http_req($method, $uri, $opts, $cb);
+}
+
+# FIXME: make async
+sub http {
+    my ($self, $method, $uri, $opts, $cb) = @_;
+
+    # convert path-only URL to full URL
+    if ($uri =~ m{\A/}) {
+        $uri = 'http://' . $self->ip . ':' . $self->http_port . $uri;
+    }
+    $self->_http_req($method, $uri, $opts, $cb);
 }
 
 1;

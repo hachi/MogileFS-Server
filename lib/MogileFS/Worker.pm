@@ -41,6 +41,11 @@ sub psock_fd {
     return fileno($self->{psock});
 }
 
+sub psock {
+    my $self = shift;
+    return $self->{psock};
+}
+
 sub validate_dbh {
     return Mgd::validate_dbh();
 }
