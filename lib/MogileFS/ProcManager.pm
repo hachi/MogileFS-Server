@@ -362,6 +362,10 @@ sub SetAsChild {
     %ErrorsTo = ();
     %idle_workers = ();
     %pending_work = ();
+    %ChildrenByJob = ();
+    %child = ();
+    %todie = ();
+    %jobs = ();
 
     # we just forked from our parent process, also using Danga::Socket,
     # so we need to lose all that state and start afresh.
