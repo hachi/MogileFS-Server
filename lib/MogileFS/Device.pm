@@ -299,11 +299,6 @@ sub vivify_directories {
     $self->create_directory("/dev$devid/$p1/$p2/$p3");
 }
 
-# FIXME: Remove this once vestigial code is removed.
-sub set_observed_utilization {
-    return 1;
-}
-
 # Compatibility interface since this old routine is unfortunately called
 # internally within plugins. This data should be passed into any hooks which
 # may need it?
