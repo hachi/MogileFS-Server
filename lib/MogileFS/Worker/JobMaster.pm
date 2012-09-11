@@ -46,19 +46,30 @@ sub work {
     $self->{dele_queue_limit} = 100;
     $self->{rebl_queue_limit} = 100;
 
-    every(1, sub {
-        # 'pings' parent and populates all queues.
-        return unless $self->validate_dbh;
+    Danga::Socket->AddOtherFds($self->psock_fd, sub{ $self->read_from_parent });
+
+    # kick off the initial run
+    $self->check_queues;
+    Danga::Socket->EventLoop;
+}
+
+# 'pings' parent and populates all queues.
+sub check_queues {
+    my $self = shift;
+
+    my $active = 0;
+    if ($self->validate_dbh) {
         $self->send_to_parent("queue_depth all");
         my $sto = Mgd::get_store();
-        $self->read_from_parent(1);
-        my $active = 0;
+        $self->parent_ping;
         $active += $self->_check_replicate_queues($sto);
         $active += $self->_check_delete_queues($sto);
         $active += $self->_check_fsck_queues($sto);
         $active += $self->_check_rebal_queues($sto);
-        $_[0]->(0) if $active;
-    });
+    }
+
+    # don't sleep if active (just avoid recursion)
+    Danga::Socket->AddTimer($active ? 0 : 1, sub { $self->check_queues });
 }
 
 sub _check_delete_queues {
