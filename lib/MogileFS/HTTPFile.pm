@@ -94,18 +94,42 @@ sub delete {
 # returns size of file, (doing a HEAD request and looking at content-length)
 # returns -1 on file missing (404),
 # returns undef on connectivity error
+#
+# If an optional callback is supplied, the return value is given to the
+# callback.
+#
+# workers running Danga::Socket->EventLoop must supply a callback
+# workers NOT running Danga::Socket->EventLoop msut not supply a callback
 use constant FILE_MISSING => -1;
 sub size {
-    my $self = shift;
+    my ($self, $cb) = @_;
+    my %opts = ( port => $self->{port} );
 
-    return $self->{_size} if defined $self->{_size};
+    if ($cb) { # run asynchronously
+        if (defined $self->{_size}) {
+            Danga::Socket->AddTimer(0, sub { $cb->($self->{_size}) });
+        } else {
+            $self->host->http("HEAD", $self->{uri}, \%opts, sub {
+                $cb->($self->on_size_response(@_));
+            });
+        }
+        return undef;
+    } else { # run synchronously
+        return $self->{_size} if defined $self->{_size};
 
-    my ($host, $port, $uri, $path) = map { $self->{$_} } qw(host port uri url);
+        my $res;
+        $self->host->http("HEAD", $self->{uri}, \%opts, sub { ($res) = @_ });
 
-    my $node_timeout = MogileFS->config("node_timeout");
-    # Hardcoded connection cache size of 20 :(
-    $user_agent ||= LWP::UserAgent->new(timeout => $node_timeout, keep_alive => 20);
-    my $res = $user_agent->head($path);
+        Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+        Danga::Socket->EventLoop;
+
+        return $self->on_size_response($res);
+    }
+}
+
+sub on_size_response {
+    my ($self, $res) = @_;
+
     if ($res->is_success) {
         my $size = $res->header('content-length');
         if (! defined $size &&
@@ -121,7 +145,7 @@ sub size {
         if ($res->code == 404) {
             return FILE_MISSING;
         }
-        return undeferr("Failed HEAD check for $path (" . $res->code . "): "
+        return undeferr("Failed HEAD check for $self->{url} (" . $res->code . "): "
             . $res->message); 
     }
 }

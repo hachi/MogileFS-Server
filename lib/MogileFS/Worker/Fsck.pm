@@ -211,15 +211,24 @@ sub check_fid {
     }
 }
 
+# returns true if all size checks succeeded, false otherwise
 sub parallel_check_sizes {
     my ($self, $dflist, $cb) = @_;
-    # serial, for now: (just prepping for future parallel future,
-    # getting interface right)
+    my $expect = scalar @$dflist;
+    my ($good, $done) = (0, 0);
+
     foreach my $df (@$dflist) {
-        my $size = $df->size_on_disk;
-        return 0 unless $cb->($df, $size);
+        $df->size_on_disk(sub {
+            my ($size) = @_;
+            $done++;
+            $good++ if $cb->($df, $size);
+        });
     }
-    return 1;
+
+    Danga::Socket->SetPostLoopCallback(sub { $done != $expect });
+    Danga::Socket->EventLoop;
+
+    return $good == $expect;
 }
 
 # this is the slow path.  if something above in check_fid finds

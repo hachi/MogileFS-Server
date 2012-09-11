@@ -60,16 +60,22 @@ sub vivify_directories {
 # returns 0 on missing,
 # undef on connectivity error,
 # else size of file on disk (after HTTP HEAD or mogstored stat)
+# invokes $cb on the size if $cb is supplied (and Danga::Socket->EventLoop runs)
 sub size_on_disk {
-    my $self = shift;
+    my ($self, $cb) = @_;
 
-    return undef unless $self->device->should_read_from;
+    if ($self->device->should_read_from) {
+        my $url = $self->get_url;
+        my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
 
-    my $url = $self->get_url;
-    my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
+        # check that it has size (>0) and is reachable (not undef)
+        return $httpfile->size($cb);
+    } else {
+        # monitor says we cannot read from this device, so do not try
 
-    # check that it has size (>0) and is reachable (not undef)
-    return $httpfile->size;
+        Danga::Socket->AddTimer(0, sub { $cb->(undef) }) if $cb;
+        return undef;
+    }
 }
 
 # returns -1 on missing,
