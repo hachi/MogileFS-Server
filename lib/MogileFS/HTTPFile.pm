@@ -10,9 +10,6 @@ use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability)
 # (caching the connection used for HEAD requests)
 my $user_agent;
 
-my %size_check_retry_after; # host => $hirestime.
-my %size_check_failcount;   # host => $count.
-
 my %sidechannel_nexterr;    # host => next error log time
 
 # create a new MogileFS::HTTPFile instance from a URL.  not called
@@ -105,15 +102,11 @@ sub size {
 
     my ($host, $port, $uri, $path) = map { $self->{$_} } qw(host port uri url);
 
-    return undef if (exists $size_check_retry_after{$host}
-        && $size_check_retry_after{$host} > Time::HiRes::time());
-
     my $node_timeout = MogileFS->config("node_timeout");
     # Hardcoded connection cache size of 20 :(
     $user_agent ||= LWP::UserAgent->new(timeout => $node_timeout, keep_alive => 20);
     my $res = $user_agent->head($path);
     if ($res->is_success) {
-        delete $size_check_failcount{$host} if exists $size_check_failcount{$host};
         my $size = $res->header('content-length');
         if (! defined $size &&
             $res->header('server') =~ m/^lighttpd/) {
@@ -126,15 +119,7 @@ sub size {
         return $size;
     } else {
         if ($res->code == 404) {
-            delete $size_check_failcount{$host} if exists $size_check_failcount{$host};
             return FILE_MISSING;
-        }
-        if ($res->message =~ m/connect:/) {
-            my $count = $size_check_failcount{$host};
-            $count ||= 1;
-            $count *= 2 unless $count > 360;
-            $size_check_retry_after{$host} = Time::HiRes::time() + $count;
-            $size_check_failcount{$host}   = $count;
         }
         return undeferr("Failed HEAD check for $path (" . $res->code . "): "
             . $res->message); 
