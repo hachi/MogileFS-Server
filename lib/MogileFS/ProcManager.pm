@@ -557,7 +557,7 @@ sub ProcessQueues {
         next unless $clref;
 
         # get worker and make sure it's not closed already
-        my MogileFS::Connection::Worker $worker = shift @IdleQueryWorkers;
+        my MogileFS::Connection::Worker $worker = pop @IdleQueryWorkers;
         if (!defined $worker || $worker->{closed}) {
             unshift @PendingQueries, $clref;
             next;
