@@ -7,9 +7,6 @@ use Digest;
 use MogileFS::Server;
 use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability);
 
-# (caching the connection used for HEAD requests)
-my $user_agent;
-
 my %sidechannel_nexterr;    # host => next error log time
 
 # create a new MogileFS::HTTPFile instance from a URL.  not called
@@ -242,27 +239,27 @@ retry:
 sub digest_http {
     my ($self, $alg, $ping_cb) = @_;
 
-    # TODO: refactor
-    my $node_timeout = MogileFS->config("node_timeout");
-    # Hardcoded connection cache size of 20 :(
-    $user_agent ||= LWP::UserAgent->new(timeout => $node_timeout, keep_alive => 20);
     my $digest = Digest->new($alg);
-
     my %opts = (
+        port => $self->{port},
         # default (4K) is tiny, use 1M like replicate
-        ':read_size_hint' => 0x100000,
-        ':content_cb' => sub {
+        read_size_hint => 0x100000,
+        content_cb => sub {
             $digest->add($_[0]);
             $ping_cb->();
-        }
+        },
     );
 
-    my $path = $self->{url};
-    my $res = $user_agent->get($path, %opts);
+    my $res;
+    $self->host->http("GET", $self->{uri}, \%opts, sub { ($res) = @_ });
+
+    # TODO: async interface for workers already running Danga::Socket->EventLoop
+    Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+    Danga::Socket->EventLoop;
 
     return $digest->digest if $res->is_success;
     return FILE_MISSING if $res->code == 404;
-    return undeferr("Failed $alg (GET) check for $path (" . $res->code . "): "
+    return undeferr("Failed $alg (GET) check for $self->{url} (" . $res->code . "): "
                     . $res->message);
 }
 

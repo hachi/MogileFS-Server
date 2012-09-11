@@ -25,7 +25,6 @@ use File::Path ();
 use Sys::Syslog ();
 use Time::HiRes ();
 use Net::Netmask;
-use LWP::UserAgent;
 use List::Util;
 use Socket qw(SO_KEEPALIVE IPPROTO_TCP TCP_NODELAY);
 

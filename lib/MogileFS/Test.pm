@@ -7,6 +7,7 @@ use DBI;
 use FindBin qw($Bin);
 use IO::Socket::INET;
 use MogileFS::Server;
+use LWP::UserAgent;
 use base 'Exporter';
 
 our @EXPORT = qw(&find_mogclient_or_skip &temp_store &create_mogstored &create_temp_tracker &try_for &want);
