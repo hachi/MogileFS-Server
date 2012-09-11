@@ -2,7 +2,6 @@ package MogileFS::HTTPFile;
 use strict;
 use warnings;
 use Carp qw(croak);
-use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
 use Digest;
 use MogileFS::Server;
 use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability);
@@ -56,36 +55,19 @@ sub delete {
     my $self = shift;
     my %opts = @_;
     my ($host, $port) = ($self->{host}, $self->{port});
+    my %http_opts = ( port => $port );
+    my $res;
 
-    my $httpsock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 2)
-        or die "can't connect to $host:$port in 2 seconds";
+    $self->host->http("DELETE", $self->{uri}, \%http_opts, sub { ($res) = @_ });
 
-    $httpsock->write("DELETE $self->{uri} HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
+    Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+    Danga::Socket->EventLoop;
 
-    my $keep_alive = 0;
-    my $did_del    = 0;
-
-    while (defined (my $line = <$httpsock>)) {
-        $line =~ s/[\s\r\n]+$//;
-        last unless length $line;
-        if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-            my $rescode = $1;
-            # make sure we get a good response
-            if ($rescode == 404 && $opts{ignore_missing}) {
-                $did_del = 1;
-                next;
-            }
-            unless ($rescode == 204) {
-                die "Bad response from $host:$port: [$line]";
-            }
-            $did_del = 1;
-            next;
-        }
-        die "Unexpected HTTP response line during DELETE from $host:$port: [$line]" unless $did_del;
+    if ($res->code == 204 || ($res->code == 404 && $opts{ignore_missing})) {
+        return 1;
     }
-    die "Didn't get valid HTTP response during DELETE from $host:port" unless $did_del;
-
-    return 1;
+    my $line = $res->status_line;
+    die "Bad response on DELETE $self->{url}: [$line]";
 }
 
 # returns size of file, (doing a HEAD request and looking at content-length)
