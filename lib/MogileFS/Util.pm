@@ -252,16 +252,6 @@ sub wait_for_writeability {
     return $nfound ? 1 : 0;
 }
 
-# if given an HTTP URL, break it down into [ host, port, URI ], else
-# returns die, because we don't support non-http-mode anymore
-sub url_parts {
-    my $path = shift;
-    if ($path =~ m!^http://(.+?)(?::(\d+))?(/.+)$!) {
-        return [ $1, $2 || 80, $3 ];
-    }
-    Carp::croak("Bogus URL: $path");
-}
-
 sub max {
     my ($n1, $n2) = @_;
     return $n1 if $n1 > $n2;
