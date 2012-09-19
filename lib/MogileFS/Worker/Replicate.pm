@@ -477,9 +477,7 @@ sub replicate {
         my $rv = http_copy(
                            sdevid       => $sdevid,
                            ddevid       => $ddevid,
-                           fid          => $fidid,
-                           rfid         => $fid,
-                           expected_len => undef,  # FIXME: get this info to pass along
+                           fid          => $fid,
                            errref       => \$copy_err,
                            callback     => sub { $worker->still_alive; },
                            digest       => $digest,
@@ -529,20 +527,21 @@ sub replicate {
 # copies a file from one Perlbal to another utilizing HTTP
 sub http_copy {
     my %opts = @_;
-    my ($sdevid, $ddevid, $fid, $rfid, $expected_clen, $intercopy_cb, $errref, $digest) =
+    my ($sdevid, $ddevid, $fid, $intercopy_cb, $errref, $digest) =
         map { delete $opts{$_} } qw(sdevid
                                     ddevid
                                     fid
-                                    rfid
-                                    expected_len
                                     callback
                                     errref
                                     digest
                                     );
     die if %opts;
 
+    $fid = MogileFS::FID->new($fid) unless ref($fid);
+    my $fidid = $fid->id;
+    my $expected_clen = $fid->length;
     my $content_md5 = '';
-    my $fid_checksum = $rfid->checksum;
+    my $fid_checksum = $fid->checksum;
     if ($fid_checksum && $fid_checksum->hashname eq "MD5") {
         # some HTTP servers may be able to verify Content-MD5 on PUT
         # and reject corrupted requests.  no HTTP server should reject
@@ -556,7 +555,7 @@ sub http_copy {
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error_unreachable = sub {
         $$errref = "src_error" if $errref;
-        return error("Fid $fid unreachable while replicating: $_[0]");
+        return error("Fid $fidid unreachable while replicating: $_[0]");
     };
 
     my $dest_error = sub {
@@ -575,7 +574,7 @@ sub http_copy {
     my $sdev = Mgd::device_factory()->get_by_id($sdevid);
     my $ddev = Mgd::device_factory()->get_by_id($ddevid);
 
-    return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid")
+    return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fidid")
         unless $sdev && $ddev;
 
     my $s_dfid = MogileFS::DevFID->new($sdev, $fid);
@@ -591,7 +590,7 @@ sub http_copy {
     my ($dhostip, $dport) = ($dhost->ip, $dhost->http_port);
     unless (defined $spath && defined $dpath && defined $shostip && defined $dhostip && $sport && $dport) {
         # show detailed information to find out what's not configured right
-        error("Error: unable to replicate file fid=$fid from device id $sdevid to device id $ddevid");
+        error("Error: unable to replicate file fid=$fidid from device id $sdevid to device id $ddevid");
         error("       http://$shostip:$sport$spath -> http://$dhostip:$dport$dpath");
         return 0;
     }
@@ -607,7 +606,7 @@ sub http_copy {
     # for specific files.
     my $shttphost;
     MogileFS::run_global_hook('replicate_alternate_source',
-                              $rfid, \$shostip, \$sport, \$spath, \$shttphost);
+                              $fid, \$shostip, \$sport, \$spath, \$shttphost);
 
     # okay, now get the file
     my $sock = IO::Socket::INET->new(PeerAddr => $shostip, PeerPort => $sport, Timeout => 2)
@@ -636,7 +635,7 @@ sub http_copy {
         $clen = $1;
     }
     return $error_unreachable->("File $spath has unexpected content-length of $clen, not $expected_clen")
-        if defined $expected_clen && $clen != $expected_clen;
+        if $clen != $expected_clen;
 
     # open target for put
     my $dsock = IO::Socket::INET->new(PeerAddr => $dhostip, PeerPort => $dport, Timeout => 2)
@@ -702,7 +701,7 @@ sub http_copy {
     if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
         if ($1 >= 200 && $1 <= 299) {
             if ($digest) {
-                my $alg = ($fid_checksum && $fid_checksum->hashname) || $rfid->class->hashname;
+                my $alg = ($fid_checksum && $fid_checksum->hashname) || $fid->class->hashname;
 
                 if ($ddev->{reject_bad_md5} && ($alg eq "MD5")) {
                     # dest device would've rejected us with a error,
