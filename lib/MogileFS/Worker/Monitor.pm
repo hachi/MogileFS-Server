@@ -495,9 +495,9 @@ sub check_device {
         # first, create the test-write directory.  this will return
         # immediately after the first time, as the 'create_directory'
         # function caches what it's already created.
-        $dev->create_directory("/dev$devid/test-write"); # XXX synchronous
-
-        return $self->check_write($dev);
+        $dev->create_directory("/dev$devid/test-write", sub {
+            $self->check_write($dev);
+        });
     });
 }
 

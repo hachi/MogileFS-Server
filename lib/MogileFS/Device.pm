@@ -182,52 +182,60 @@ sub doesnt_know_mkcol {
 # Gross class-based singleton cache.
 my %dir_made;  # /dev<n>/path -> $time
 my $dir_made_lastclean = 0;
-# returns 1 on success, 0 on failure
+
+# if no callback is supplied: returns 1 on success, 0 on failure
+# if a callback is supplied, the return value will be passed to the callback
+# upon completion.
 sub create_directory {
-    my ($self, $uri) = @_;
-    return 1 if $self->doesnt_know_mkcol || MogileFS::Config->server_setting_cached('skip_mkcol');
+    my ($self, $uri, $cb) = @_;
+    if ($self->doesnt_know_mkcol || MogileFS::Config->server_setting_cached('skip_mkcol')) {
+        return $cb ? $cb->(1) : 1;
+    }
 
     # rfc2518 says we "should" use a trailing slash. Some servers
     # (nginx) appears to require it.
     $uri .= '/' unless $uri =~ m/\/$/;
 
-    return 1 if $dir_made{$uri};
-
-    my $hostid = $self->hostid;
-    my $host   = $self->host;
-    my $hostip = $host->ip        or return 0;
-    my $port   = $host->http_port or return 0;
-    my $peer = "$hostip:$port";
-
-    my $sock = IO::Socket::INET->new(PeerAddr => $peer, Timeout => 1)
-        or return 0;
-
-    print $sock "MKCOL $uri HTTP/1.0\r\n".
-        "Content-Length: 0\r\n\r\n";
-
-    my $ans = <$sock>;
-
-    # if they don't support this method, remember that
-    if ($ans && $ans =~ m!HTTP/1\.[01] (400|501)!) {
-        $self->{no_mkcol} = 1;
-        # TODO: move this into method in *monitor* worker
-        return 1;
+    if ($dir_made{$uri}) {
+        return $cb ? $cb->(1) : 1;
     }
 
-    return 0 unless $ans && $ans =~ m!^HTTP/1.[01] 2\d\d!;
+    my $res;
+    my $on_mkcol_response = sub {
+        if ($res->is_success) {
+            my $now = time();
+            $dir_made{$uri} = $now;
 
-    my $now = time();
-    $dir_made{$uri} = $now;
-
-    # cleanup %dir_made occasionally.
-    my $clean_interval = 300;  # every 5 minutes.
-    if ($dir_made_lastclean < $now - $clean_interval) {
-        $dir_made_lastclean = $now;
-        foreach my $k (keys %dir_made) {
-            delete $dir_made{$k} if $dir_made{$k} < $now - 3600;
+            # cleanup %dir_made occasionally.
+            my $clean_interval = 300;  # every 5 minutes.
+            if ($dir_made_lastclean < $now - $clean_interval) {
+                $dir_made_lastclean = $now;
+                foreach my $k (keys %dir_made) {
+                    delete $dir_made{$k} if $dir_made{$k} < $now - 3600;
+                }
+            }
+            return 1;
+        } elsif ($res->code =~ /\A(?:400|501)\z/) {
+            # if they don't support this method, remember that
+            # TODO: move this into method in *monitor* worker
+            $self->{no_mkcol} = 1;
+            return 1;
+        } else {
+            return 0;
         }
-    }
-    return 1;
+    };
+
+    my %opts = ( headers => { "Content-Length" => "0" } );
+    $self->host->http("MKCOL", $uri, \%opts, sub {
+       ($res) = @_;
+       $cb->($on_mkcol_response->()) if $cb;
+    });
+
+    return if $cb;
+
+    Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+    Danga::Socket->EventLoop;
+    return $on_mkcol_response->();
 }
 
 sub fid_list {
