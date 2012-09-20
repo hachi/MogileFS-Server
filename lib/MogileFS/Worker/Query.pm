@@ -294,12 +294,22 @@ sub cmd_create_open {
     }
 
     # make sure directories exist for client to be able to PUT into
+    my %dir_done;
+    $profstart->("vivify_dir_on_all_devs");
+
+    my $t0 = Time::HiRes::time();
     foreach my $dev (@dests) {
-        $profstart->("vivify_dir_on_dev" . $dev->id);
         my $dfid = MogileFS::DevFID->new($dev, $fidid);
-        $dfid->vivify_directories;
+        $dfid->vivify_directories(sub {
+            $dir_done{$dfid->devid} = Time::HiRes::time() - $t0;
+        });
     }
 
+    # don't start the event loop if results are all cached
+    if (scalar keys %dir_done != scalar @dests) {
+        Danga::Socket->SetPostLoopCallback(sub { scalar keys %dir_done != scalar @dests });
+        Danga::Socket->EventLoop;
+    }
     $profstart->("end");
 
     # common reply variables
@@ -316,6 +326,11 @@ sub cmd_create_open {
             $res->{"prof_${ptnum}_time"} =
                 sprintf("%0.03f",
                         $profpoints[$i+1]->[1] - $profpoints[$i]->[1]);
+        }
+        while (my ($devid, $time) = each %dir_done) {
+            my $ptnum = ++$res->{profpoints};
+            $res->{"prof_${ptnum}_name"} = "vivify_dir_on_dev$devid";
+            $res->{"prof_${ptnum}_time"} = sprintf("%0.03f", $time);
         }
     }
 

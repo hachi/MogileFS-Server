@@ -286,7 +286,7 @@ sub can_change_to_state {
 }
 
 sub vivify_directories {
-    my ($self, $path) = @_;
+    my ($self, $path, $cb) = @_;
 
     # $path is something like:
     #    http://10.0.0.26:7500/dev2/0/000/148/0000148056.fid
@@ -302,9 +302,17 @@ sub vivify_directories {
 
     die "devid mismatch" unless $self->id == $devid;
 
-    $self->create_directory("/dev$devid/$p1");
-    $self->create_directory("/dev$devid/$p1/$p2");
-    $self->create_directory("/dev$devid/$p1/$p2/$p3");
+    if ($cb) {
+        $self->create_directory("/dev$devid/$p1", sub {
+            $self->create_directory("/dev$devid/$p1/$p2", sub {
+                $self->create_directory("/dev$devid/$p1/$p2/$p3", $cb);
+            });
+        });
+    } else {
+        $self->create_directory("/dev$devid/$p1");
+        $self->create_directory("/dev$devid/$p1/$p2");
+        $self->create_directory("/dev$devid/$p1/$p2/$p3");
+    }
 }
 
 # Compatibility interface since this old routine is unfortunately called

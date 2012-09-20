@@ -52,9 +52,9 @@ sub get_url {
 }
 
 sub vivify_directories {
-    my $self = shift;
+    my ($self, $cb) = @_;
     my $url = $self->url;
-    $self->device()->vivify_directories($url);
+    $self->device()->vivify_directories($url, $cb);
 }
 
 # returns 0 on missing,
