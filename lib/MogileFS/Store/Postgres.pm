@@ -292,6 +292,13 @@ sub upgrade_add_device_drain {
     }
 }
 
+sub upgrade_add_host_readonly {
+    my $self = shift;
+    unless ($self->column_constraint("host", "status") =~ /\breadonly\b/) {
+        $self->dowell("ALTER TABLE host MODIFY COLUMN status VARCHAR(8) CHECK(status IN ('alive', 'dead', 'down', 'readonly'))");
+    }
+}
+
 sub upgrade_modify_server_settings_value {
     my $self = shift;
     unless ($self->column_type("server_settings", "value" =~ /text/i)) {

@@ -62,8 +62,13 @@ observed_state => 'writeable'});
             ok(!$dev->can_read_from, "can_read_from for device fails when host is $s");
             ok(!$dev->should_read_from, "device should not be readable when host is $s");
         }
+        $host->{status} = "readonly";
+        ok($dev->can_read_from, "device is readable from again");
+        ok(! $dev->should_get_new_files, "device should not get new files");
+
         $host->{status} = "alive";
         ok($dev->can_read_from, "device is readable from again");
+        ok($dev->should_get_new_files, "device should get new files again");
     }
 
     # first ensure device status is respected

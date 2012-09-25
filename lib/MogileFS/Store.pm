@@ -20,7 +20,8 @@ use List::Util qw(shuffle);
 #     also adds a TEXT 'arg' column to file_to_queue for passing arguments
 # 14: modifies 'device' mb_total, mb_used to INT for devs > 16TB
 # 15: adds checksum table, adds 'hashtype' column to 'class' table
-use constant SCHEMA_VERSION => 15;
+# 16: adds 'readonly' state to enum in host table
+use constant SCHEMA_VERSION => 16;
 
 sub new {
     my ($class) = @_;

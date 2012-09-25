@@ -122,12 +122,12 @@ sub dstate {
 }
 
 sub can_delete_from {
-    return $_[0]->dstate->can_delete_from;
+    return $_[0]->host->alive && $_[0]->dstate->can_delete_from;
 }
 
 # this method is for Monitor, other workers should use should_read_from
 sub can_read_from {
-    return $_[0]->host->alive && $_[0]->dstate->can_read_from;
+    return $_[0]->host->should_read_from && $_[0]->dstate->can_read_from;
 }
 
 # this is the only method a worker should call for checking for readability

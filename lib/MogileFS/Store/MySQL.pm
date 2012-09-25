@@ -396,6 +396,13 @@ sub upgrade_modify_device_size {
     }
 }
 
+sub upgrade_add_host_readonly {
+    my $self = shift;
+    unless ($self->column_type("host", "status") =~ /\breadonly\b/) {
+        $self->dowell("ALTER TABLE host MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly')");
+    }
+}
+
 sub pre_daemonize_checks {
     my $self = shift;
     # Jay Buffington, from the mailing lists, writes:
