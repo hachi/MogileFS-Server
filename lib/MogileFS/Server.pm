@@ -27,7 +27,7 @@ use Time::HiRes ();
 use Net::Netmask;
 use LWP::UserAgent;
 use List::Util;
-use Socket qw(SO_KEEPALIVE);
+use Socket qw(SO_KEEPALIVE IPPROTO_TCP TCP_NODELAY);
 
 use MogileFS::Util qw(daemonize);
 use MogileFS::Config;
@@ -130,6 +130,7 @@ sub run {
                                            Listen    => 1024 )
             or die "Error creating socket: $@\n";
         $server->sockopt(SO_KEEPALIVE, 1);
+        $server->setsockopt(IPPROTO_TCP, TCP_NODELAY, 1);
 
         # save sub to accept a client
         push @servers, $server;
