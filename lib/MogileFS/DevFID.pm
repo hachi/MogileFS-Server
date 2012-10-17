@@ -170,7 +170,7 @@ sub destroy {
 
     my $sto = Mgd::get_store();
     $sto->remove_fidid_from_devid($self->fidid, $self->devid);
-    $sto->update_devcount($self->fidid);
+    $self->fid->update_devcount(no_lock => 1);
 }
 
 1;
