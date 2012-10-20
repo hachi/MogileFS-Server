@@ -370,6 +370,7 @@ sub dbh {
             AutoCommit => 1,
             # FUTURE: will default to on (have to validate all callers first):
             RaiseError => ($self->{raise_errors} || 0),
+            sqlite_use_immediate_transaction => 1,
         });
     };
     alarm(0);
