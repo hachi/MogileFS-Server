@@ -7,7 +7,7 @@ Standards-Version: 3.6.1.0
 
 Package: mogstored
 Architecture: all
-Depends: ${perl:Depends}, libperlbal-perl (>= 1.79), libio-aio-perl, debconf (>= 1.2.0)
+Depends: ${perl:Depends}, libperlbal-perl (>= 1.79), libio-aio-perl, debconf (>= 1.2.0), sysstat
 Suggests: mogilefs-utils
 Description: storage node daemon for MogileFS
  Mogstored is a storage node daemon for MogileFS, the open-source
