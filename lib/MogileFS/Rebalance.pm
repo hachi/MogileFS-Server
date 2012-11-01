@@ -309,7 +309,7 @@ sub _choose_dest_devs {
     my @shuffled_devs = List::Util::shuffle(@$filtered_devs);
     return \@shuffled_devs if ($p->{use_dest_devs} eq 'all');
 
-    return splice @shuffled_devs, 0, $p->{use_dest_devs};
+    return [splice @shuffled_devs, 0, $p->{use_dest_devs}];
 }
 
 # Iterate through all possible constraints until we have a final list.
