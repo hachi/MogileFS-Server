@@ -23,6 +23,7 @@ use Mogstored::HTTPServer::Perlbal;
 use Mogstored::HTTPServer::Lighttpd;
 use Mogstored::HTTPServer::None;
 use Mogstored::HTTPServer::Apache;
+use Mogstored::HTTPServer::Nginx;
 use Mogstored::SideChannelListener;
 use Mogstored::SideChannelClient;
 
