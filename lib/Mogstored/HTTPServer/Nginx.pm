@@ -55,9 +55,9 @@ sub start {
 
     foreach my $devid (@devdirs) {
     	my $devseg = qq{
-        location /dev$devid {
+        location /$devid {
             root $self->{docroot};
-            client_body_temp_path $self->{docroot}/dev$devid/.tmp;
+            client_body_temp_path $self->{docroot}/$devid/.tmp;
             dav_methods put delete;
             dav_access user:rw group:rw all:r;
             create_full_put_path on;
@@ -105,7 +105,7 @@ http {
 sub _disks {
     my $root = shift;
     opendir(my $dh, $root) or die "Failed to open docroot: $root: $!";
-    return scalar grep { /^dev\d+$/ } readdir($dh);
+    return grep { /^dev\d+$/ } readdir($dh);
 }
 
 sub _getpid {
