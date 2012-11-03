@@ -26,7 +26,7 @@ sub start {
         }
     }
 
-    $nginxpidfile = "/var/run/nginx.pid";
+    $nginxpidfile = $self->{docroot} . "/nginx.pid";
 
     my $nginxpid = _getpid();
     # TODO: Support reloading of nginx instead?
@@ -67,6 +67,7 @@ sub start {
     }
     
     print $fh qq{
+pid $nginxpidfile;
 worker_processes 15;
 events {
     worker_connections 1024;
@@ -78,8 +79,8 @@ http {
     tcp_nodelay on;
     client_max_body_size $client_max_body_size;
     server_tokens off;
-    access_log /var/log/nginx/mogile-access.log;
-    error_log /var/log/nginx/mogile-error.log;
+	access_log off;
+	error_log /dev/null crit;
     server {
         listen $bind_ip:$portnum;
         charset utf-8;
