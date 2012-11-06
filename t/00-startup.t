@@ -392,13 +392,4 @@ foreach my $t (qw(file file_on file_to_delete)) {
     is($info->{fid}, $opts->{fid}, "explicit fid is correctly set");
 }
 
-sub try_for {
-    my ($tries, $code) = @_;
-    for (1..$tries) {
-        return 1 if $code->();
-        sleep 1;
-    }
-    return 0;
-}
-
 done_testing();

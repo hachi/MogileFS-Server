@@ -9,7 +9,7 @@ use IO::Socket::INET;
 use MogileFS::Server;
 use base 'Exporter';
 
-our @EXPORT = qw(&find_mogclient_or_skip &temp_store &create_mogstored &create_temp_tracker);
+our @EXPORT = qw(&find_mogclient_or_skip &temp_store &create_mogstored &create_temp_tracker &try_for);
 
 sub find_mogclient_or_skip {
 
@@ -150,6 +150,15 @@ sub create_mogstored {
         select undef, undef, undef, 0.25;
     }
     return undef;
+}
+
+sub try_for {
+    my ($tries, $code) = @_;
+    for (1..$tries) {
+        return 1 if $code->();
+        sleep 1;
+    }
+    return 0;
 }
 
 ############################################################################
