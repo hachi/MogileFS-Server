@@ -76,7 +76,9 @@ sub maybe_save {
 
     # $class may be undef as it could've been deleted between
     # create_open and create_close, we've never verified this before...
-    if ($class && $self->{hashtype} eq $class->{hashtype}) {
+    # class->{hashtype} is also undef, as we allow create_close callers
+    # to specify a hash regardless of class.
+    if ($class && defined($class->{hashtype}) && $self->{hashtype} eq $class->{hashtype}) {
         $self->save;
     }
 }
