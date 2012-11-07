@@ -3,7 +3,6 @@ use strict;
 use warnings;
 use Test::More;
 use FindBin qw($Bin);
-use Time::HiRes qw(sleep);
 use MogileFS::Server;
 use MogileFS::Test;
 use HTTP::Request;
@@ -30,11 +29,10 @@ ok($ms1, "got mogstored1");
 my $ms2 = create_mogstored("127.0.1.2", $mogroot{2});
 ok($ms1, "got mogstored2");
 
-while (! -e "$mogroot{1}/dev1/usage" &&
-       ! -e "$mogroot{2}/dev2/usage") {
+try_for(30, sub {
     print "Waiting on usage...\n";
-    sleep(.25);
-}
+    -e "$mogroot{1}/dev1/usage" && -e "$mogroot{2}/dev2/usage";
+});
 
 my $tmptrack = create_temp_tracker($sto);
 ok($tmptrack);
@@ -175,9 +173,10 @@ use Digest::MD5 qw/md5_hex/;
     ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "enabled replicate");
 
     # wait for replicate to recreate checksum
-    do {
+    try_for(30, sub {
         @paths = $mogc->get_paths($key);
-    } while (scalar(@paths) == 1 and sleep(0.1));
+        scalar(@paths) != 1;
+    });
     is(scalar(@paths), 2, "replicate successfully with good checksum");
 
     $info = $mogc->file_info($key);
@@ -221,9 +220,10 @@ use Digest::MD5 qw/md5_hex/;
     syswrite($admin, "!want 1 replicate\n"); # disable replication
     ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "enabled replicate");
 
-    do {
+    try_for(30, sub {
         @paths = $mogc->get_paths($key);
-    } while (scalar(@paths) == 1 && sleep(0.1));
+        scalar(@paths) != 1;
+    });
     is(scalar(@paths), 2, "replicate successfully with good checksum");
 
     $info = $mogc->file_info($key);
@@ -239,9 +239,10 @@ use Digest::MD5 qw/md5_hex/;
     is($info->{checksum}, "MISSING", "checksum is missing");
     full_fsck($tmptrack);
 
-    do {
+    try_for(30, sub {
         $info = $mogc->file_info($key);
-    } while ($info->{checksum} eq "MISSING" && sleep(0.1));
+        $info->{checksum} ne "MISSING";
+    });
     is($info->{checksum}, "MD5:".md5_hex("lazy"), 'checksum is set after fsck');
 
     @fsck_log = $sto->fsck_log_rows;
@@ -265,17 +266,20 @@ use Digest::MD5 qw/md5_hex/;
 
     full_fsck($tmptrack);
 
-    do {
+    try_for(30, sub {
         @fsck_log = $sto->fsck_log_rows;
-    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+        scalar(@fsck_log) != 0;
+    });
 
     is(scalar(@fsck_log), 1, "fsck log has one row");
     is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
     is($fsck_log[0]->{evcode}, "REPL", "repl for mismatched checksum logged");
 
-    do {
+    try_for(30, sub {
         @paths = $mogc->get_paths($key);
-    } while (scalar(@paths) < 2 && sleep(0.1));
+        scalar(@paths) >= 2;
+    });
+
     is(scalar(@paths), 2, "2 paths for key after replication");
     is($ua->get($paths[0])->content, "lazy", "paths[0] is correct");
     is($ua->get($paths[1])->content, "lazy", "paths[1] is correct");
@@ -304,9 +308,10 @@ use Digest::MD5 qw/md5_hex/;
 
     full_fsck($tmptrack);
 
-    do {
+    try_for(30, sub {
         @fsck_log = $sto->fsck_log_rows;
-    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+        scalar(@fsck_log) != 0;
+    });
 
     is(scalar(@fsck_log), 1, "fsck log has one row");
     is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
@@ -329,19 +334,17 @@ use Digest::MD5 qw/md5_hex/;
     print $fh "HAZY";
     ok(close($fh), "closed replacement file (lazycksum => HAZY)");
 
-    while ($sto->get_checksum($info->{fid})) {
-        sleep(0.5);
-        print "waiting...\n";
-    }
+    try_for(30, sub { ! $sto->get_checksum($info->{fid}); });
     is($sto->get_checksum($info->{fid}), undef, "old checksum is gone");
 }
 
 # completely corrupted files with no checksum row
 {
     my $key = 'lazycksum';
-    do {
+    try_for(30, sub {
         @paths = $mogc->get_paths($key);
-    } while (scalar(@paths) < 2 && sleep(0.1));
+        scalar(@paths) >= 2;
+    });
     is(scalar(@paths), 2, "replicated succesfully");
 
     my $info = $mogc->file_info($key);
@@ -365,9 +368,10 @@ use Digest::MD5 qw/md5_hex/;
 
     full_fsck($tmptrack);
 
-    do {
+    try_for(30, sub {
         @fsck_log = $sto->fsck_log_rows;
-    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+        scalar(@fsck_log) != 0;
+    });
 
     is(scalar(@fsck_log), 1, "fsck log has one row");
     is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
@@ -391,9 +395,11 @@ use Digest::MD5 qw/md5_hex/;
     ok($tmptrack->mogadm("settings", "set", "fsck_checksum", "MD5"), "enable fsck_checksum=MD5");
     wait_for_monitor($be);
     full_fsck($tmptrack);
-    do {
+
+    try_for(30, sub {
         @fsck_log = $sto->fsck_log_rows;
-    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+        scalar(@fsck_log) != 0;
+    });
     is(scalar(@fsck_log), 1, "fsck log has one row");
     is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
     is($fsck_log[0]->{evcode}, "MSUM", "MSUM logged");
@@ -421,11 +427,10 @@ use MogileFS::Config;
     is($settings->{fsck_checksum}, 'off', "fsck_checksum server setting visible");
     full_fsck($tmptrack);
     my $nr;
-    foreach my $i (0..100) {
+    try_for(1000, sub {
         $nr = $sto->file_queue_length(FSCK_QUEUE);
-        last if ($nr eq '0');
-        sleep 0.1;
-    }
+        $nr eq '0';
+    });
     is($nr, '0', "fsck finished");
     @fsck_log = $sto->fsck_log_rows;
     is(scalar(@fsck_log), 0, "fsck log is empty with fsck_checksum=off");
@@ -440,9 +445,10 @@ use MogileFS::Config;
     ok(! defined($settings->{fsck_checksum}), "fsck_checksum=class server setting hidden (default)");
     full_fsck($tmptrack);
 
-    do {
+    try_for(30, sub {
         @fsck_log = $sto->fsck_log_rows;
-    } while (scalar(@fsck_log) == 0 && sleep(0.1));
+        scalar(@fsck_log) != 0;
+    });
 
     is(scalar(@fsck_log), 1, "fsck log has one row");
     is($fsck_log[0]->{fid}, $info->{fid}, "fid matches in fsck log");
