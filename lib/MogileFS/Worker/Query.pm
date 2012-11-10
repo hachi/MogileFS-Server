@@ -346,6 +346,12 @@ sub sort_devs_by_freespace {
     return @list;
 }
 
+sub valid_key {
+    my ($key) = @_;
+
+    return defined($key) && length($key);
+}
+
 sub cmd_create_close {
     my MogileFS::Worker::Query $self = shift;
     my $args = shift;
@@ -399,7 +405,7 @@ sub cmd_create_close {
 
     # if a temp file is closed without a provided-key, that means to
     # delete it.
-    unless (defined $key && length($key)) {
+    unless (valid_key($key)) {
         $failed->();
         return $self->ok_line;
     }
@@ -486,7 +492,8 @@ sub cmd_updateclass {
         or return $self->err_line('domain_not_found');
 
     my $dmid  = $args->{dmid};
-    my $key   = $args->{key}        or return $self->err_line("no_key");
+    my $key   = $args->{key};
+    valid_key($key) or return $self->err_line("no_key");
     my $class = $args->{class}      or return $self->err_line("no_class");
 
     my $classid = eval { Mgd::class_factory()->get_by_name($dmid, $class)->id }
@@ -521,7 +528,9 @@ sub cmd_delete {
 
     # validate parameters
     my $dmid = $args->{dmid};
-    my $key = $args->{key} or return $self->err_line("no_key");
+    my $key = $args->{key};
+
+    valid_key($key) or return $self->err_line("no_key");
 
     # is this fid still owned by this key?
     my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
@@ -551,7 +560,7 @@ sub cmd_file_debug {
         # If not, require dmid/dkey and pick up the fid from there.
         $args->{dmid} = $self->check_domain($args)
             or return $self->err_line('domain_not_found');
-        return $self->err_line("no_key") unless $args->{key};
+        return $self->err_line("no_key") unless valid_key($args->{key});
         
         # now invoke the plugin, abort if it tells us to
         my $rv = MogileFS::run_global_hook('cmd_file_debug', $args);
@@ -625,7 +634,9 @@ sub cmd_file_info {
 
     # validate parameters
     my $dmid = $args->{dmid};
-    my $key = $args->{key} or return $self->err_line("no_key");
+    my $key = $args->{key};
+
+    valid_key($key) or return $self->err_line("no_key");
 
     my $fid;
     Mgd::get_store()->slaves_ok(sub {
@@ -745,7 +756,9 @@ sub cmd_rename {
     my $dmid = $self->check_domain($args)
         or return $self->err_line('domain_not_found');
     my ($fkey, $tkey) = ($args->{from_key}, $args->{to_key});
-    return $self->err_line("no_key") unless $fkey && $tkey;
+    unless (valid_key($fkey) && valid_key($tkey)) {
+        return $self->err_line("no_key");
+    }
 
     my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $fkey)
         or return  $self->err_line("unknown_key");
@@ -1081,7 +1094,9 @@ sub cmd_get_paths {
 
     # validate parameters
     my $dmid = $args->{dmid};
-    my $key = $args->{key} or return $self->err_line("no_key");
+    my $key = $args->{key};
+
+    valid_key($key) or return $self->err_line("no_key");
 
     # We default to returning two possible paths.
     # but the client may ask for more if they want.
@@ -1258,7 +1273,9 @@ sub cmd_edit_file {
 
     # validate parameters
     my $dmid = $args->{dmid};
-    my $key = $args->{key} or return $self->err_line("no_key");
+    my $key = $args->{key};
+
+    valid_key($key) or return $self->err_line("no_key");
 
     # get DB handle
     my $fid;

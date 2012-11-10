@@ -392,4 +392,31 @@ foreach my $t (qw(file file_on file_to_delete)) {
     is($info->{fid}, $opts->{fid}, "explicit fid is correctly set");
 }
 
+{
+    my $fh = $mogc->new_file("0", "1copy");
+    ok((print $fh "zero\n"), "wrote to file");
+    ok(close($fh), "closed file");
+
+    my $info = $mogc->file_info("0");
+    is("HASH", ref($info), "file_info returned a hash");
+    is("0", $info->{key}, "key matches 0");
+    is("1copy", $info->{class}, "class matches for 0 key");
+
+    my @paths = $mogc->get_paths("0");
+    is(1, scalar(@paths), "path returned for 0");
+
+    $mogc->rename("0", "zero");
+    is($info->{fid}, $mogc->file_info("zero")->{fid}, "rename from 0");
+    $mogc->rename("zero", "0");
+    is($info->{fid}, $mogc->file_info("0")->{fid}, "rename to 0");
+    $mogc->update_class("0", "2copies");
+    is("2copies", $mogc->file_info("0")->{class}, "class updated for 0 key");
+
+    my $debug = $mogc->file_debug(key => "0");
+    is($debug->{fid_fid}, $info->{fid}, "FID from debug matches");
+    is($debug->{fid_dkey}, "0", "key from debug matches");
+
+    ok($mogc->delete("0"), "delete 0 works");
+}
+
 done_testing();
