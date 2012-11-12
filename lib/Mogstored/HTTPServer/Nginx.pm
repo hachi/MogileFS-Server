@@ -56,7 +56,6 @@ sub start {
     foreach my $devid (@devdirs) {
     	my $devseg = qq{
         location /$devid {
-            root $self->{docroot};
             client_body_temp_path $self->{docroot}/$devid/.tmp;
             dav_methods put delete;
             dav_access user:rw group:rw all:r;
@@ -82,11 +81,11 @@ http {
 	error_log /dev/null crit;
     server {
         listen $bind_ip:$portnum;
+        root $self->{docroot};
         charset utf-8;
 	$devsection
 	location / {
 	    autoindex on;
-	    root $self->{docroot};
         }
     }
 }
