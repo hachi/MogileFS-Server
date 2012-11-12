@@ -76,7 +76,6 @@ http {
     default_type application/octet-stream;
     sendfile on;
     keepalive_timeout 0;
-    tcp_nodelay on;
     client_max_body_size $client_max_body_size;
     server_tokens off;
 	access_log off;
@@ -88,10 +87,6 @@ http {
 	location / {
 	    autoindex on;
 	    root $self->{docroot};
-        }
-        error_page 500 502 503 504 /50x.html;
-        location /50x.html {
-            root html;
         }
     }
 }
