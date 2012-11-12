@@ -26,6 +26,7 @@ sub start {
         }
     }
 
+    my $prefixDir = $self->{docroot} . '/.tmp';
     $nginxpidfile = $self->{docroot} . "/nginx.pid";
 
     my $nginxpid = _getpid();
@@ -68,6 +69,7 @@ sub start {
     print $fh qq{
 pid $nginxpidfile;
 worker_processes 15;
+error_log /dev/null crit;
 events {
     worker_connections 1024;
 }
@@ -78,21 +80,26 @@ http {
     client_max_body_size $client_max_body_size;
     server_tokens off;
 	access_log off;
-	error_log /dev/null crit;
     server {
         listen $bind_ip:$portnum;
         root $self->{docroot};
         charset utf-8;
 	$devsection
+        location /.tmp {
+            deny all;
+        }
 	location / {
 	    autoindex on;
         }
     }
 }
 };
-
    close $fh;
-   system $exe, "-c", $filename;
+
+    # create prefix directory and start server
+    mkdir $prefixDir;
+    mkdir $prefixDir.'/logs';
+    system $exe, '-p', $prefixDir, "-c", $filename;
 
    return 1;
 }
