@@ -33,7 +33,7 @@ sub start {
     if ($nginxpid) {
         my $killed = kill 15,$nginxpid;
         if ($killed > 0) {
-    	    print "Killed nginx on PID # $nginxpid";
+            print "Killed nginx on PID # $nginxpid";
         }
     }
 
@@ -54,53 +54,54 @@ sub start {
     my $devsection = '';
 
     foreach my $devid (@devdirs) {
-    	my $devseg = qq{
-        location /$devid {
-            client_body_temp_path $self->{docroot}/$devid/.tmp;
-            dav_methods put delete;
-            dav_access user:rw group:rw all:r;
-            create_full_put_path on;
-        }
-	};
-	$devsection = $devsection . $devseg;
+        my $devseg = qq{
+            location /$devid {
+                client_body_temp_path $self->{docroot}/$devid/.tmp;
+                dav_methods put delete;
+                dav_access user:rw group:rw all:r;
+                create_full_put_path on;
+            }
+        };
+        $devsection .= $devseg;
     }
-    
+
     print $fh qq{
-pid $nginxpidfile;
-worker_processes 15;
-error_log /dev/null crit;
-events {
-    worker_connections 1024;
-}
-http {
-    default_type application/octet-stream;
-    sendfile on;
-    keepalive_timeout 0;
-    client_max_body_size $client_max_body_size;
-    server_tokens off;
-	access_log off;
-    server {
-        listen $bind_ip:$portnum;
-        root $self->{docroot};
-        charset utf-8;
-	$devsection
-        location /.tmp {
-            deny all;
+        pid $nginxpidfile;
+        worker_processes 15;
+        error_log /dev/null crit;
+        events {
+            worker_connections 1024;
         }
-	location / {
-	    autoindex on;
+        http {
+            default_type application/octet-stream;
+            sendfile on;
+            keepalive_timeout 0;
+            client_max_body_size $client_max_body_size;
+            server_tokens off;
+            access_log off;
+            server {
+                listen $bind_ip:$portnum;
+                root $self->{docroot};
+                charset utf-8;
+
+                $devsection
+                location /.tmp {
+                    deny all;
+                }
+                location / {
+                    autoindex on;
+                }
+            }
         }
-    }
-}
-};
-   close $fh;
+    };
+    close $fh;
 
     # create prefix directory and start server
     mkdir $prefixDir;
     mkdir $prefixDir.'/logs';
-    system $exe, '-p', $prefixDir, "-c", $filename;
+    system $exe, '-p', $prefixDir, '-c', $filename;
 
-   return 1;
+    return 1;
 }
 
 sub _disks {
@@ -111,12 +112,12 @@ sub _disks {
 
 sub _getpid {
     my ($nginxpidfile) = @_;
-  local $/ = undef;
-  open FILE, $nginxpidfile or return;
-  binmode FILE;
-  my $string = <FILE>;
-  close FILE;
-  return $string;
+    local $/ = undef;
+    open FILE, $nginxpidfile or return;
+    binmode FILE;
+    my $string = <FILE>;
+    close FILE;
+    return $string;
 }
 
 sub DESTROY {
