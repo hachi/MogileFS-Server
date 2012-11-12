@@ -1,11 +1,10 @@
 package Mogstored::HTTPServer::Nginx;
+
 use strict;
 use base 'Mogstored::HTTPServer';
 use File::Temp ();
-my $nginxpidfile;
 
 sub start {
-
     my $self = shift;
     my $exe = $self->{bin};
 
@@ -27,9 +26,9 @@ sub start {
     }
 
     my $prefixDir = $self->{docroot} . '/.tmp';
-    $nginxpidfile = $self->{docroot} . "/nginx.pid";
+    my $nginxpidfile = $prefixDir . '/nginx.pid';
 
-    my $nginxpid = _getpid();
+    my $nginxpid = _getpid($nginxpidfile);
     # TODO: Support reloading of nginx instead?
     if ($nginxpid) {
         my $killed = kill 15,$nginxpid;
@@ -111,6 +110,7 @@ sub _disks {
 }
 
 sub _getpid {
+    my ($nginxpidfile) = @_;
   local $/ = undef;
   open FILE, $nginxpidfile or return;
   binmode FILE;
