@@ -25,15 +25,45 @@ sub start {
         }
     }
 
-    my $prefixDir = $self->{docroot} . '/.tmp';
-    my $nginxpidfile = $prefixDir . '/nginx.pid';
+    # get meta-data about nginx binary
+    my $nginxMeta = `$exe -V 2>&1`;
+    my @version = (0,0,0);
+    if($nginxMeta =~ /nginx\/(\d+)\.(\d+)\.(\d+)/sog) {
+        @version = ($1,$2,$3);
+    }
 
-    my $nginxpid = _getpid($nginxpidfile);
-    # TODO: Support reloading of nginx instead?
-    if ($nginxpid) {
-        my $killed = kill 15,$nginxpid;
-        if ($killed > 0) {
-            print "Killed nginx on PID # $nginxpid";
+    # determine if nginx can be run in non-daemon mode, supported in $version >= 1.0.9 (non-daemon provides better shutdown/crash support)
+    # See: http://nginx.org/en/docs/faq/daemon_master_process_off.html
+    my $nondaemon = $version[0] > 1 || ($version[0] == 1 && $version[1] > 0) || ($version[0] == 1 && $version[1] == 0 && $version[2] >= 9);
+
+    # create tmp directory
+    my $tmpDir = $self->{docroot} . '/.tmp';
+    mkdir $tmpDir;
+
+    my $pidFile = $tmpDir . '/nginx.pid';
+
+    # fork if nginx supports non-daemon mode
+    if($nondaemon) {
+        my $pid = fork();
+        die "Can't fork: $!" unless defined $pid;
+
+        if ($pid) {
+            $self->{pid} = $pid;
+            Mogstored->on_pid_death($pid => sub {
+                die "nginx died";
+            });
+            return;
+        }
+    }
+    # otherwise, try killing previous instance of nginx
+    else {
+        my $nginxpid = _getpid($pidFile);
+        # TODO: Support reloading of nginx instead?
+        if ($nginxpid) {
+            my $killed = kill 15,$nginxpid;
+            if ($killed > 0) {
+                print "Killed nginx on PID # $nginxpid";
+            }
         }
     }
 
@@ -66,7 +96,7 @@ sub start {
     }
 
     print $fh qq{
-        pid $nginxpidfile;
+        pid $pidFile;
         worker_processes 15;
         error_log /dev/null crit;
         events {
@@ -96,13 +126,15 @@ sub start {
     };
     close $fh;
 
-    # create prefix directory and start server
-    mkdir $prefixDir;
-    mkdir $prefixDir.'/logs';
-    my $retval = system $exe, '-p', $prefixDir, '-c', $filename;
-
-    # throw an error if nginx failed to start
-    die "nginx failed to start\n" if($retval != 0);
+    # start nginx
+    if($nondaemon) {
+        exec $exe, '-g', 'daemon off;', '-c', $filename;
+        exit;
+    }
+    else {
+        my $retval = system $exe, '-c', $filename;
+        die "nginx failed to start\n" if($retval != 0);
+    }
 
     return 1;
 }
