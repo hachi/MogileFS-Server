@@ -39,6 +39,7 @@ sub start {
     # create tmp directory
     my $tmpDir = $self->{docroot} . '/.tmp';
     mkdir $tmpDir;
+    mkdir $tmpDir.'/logs';
 
     my $pidFile = $tmpDir . '/nginx.pid';
 
@@ -95,6 +96,21 @@ sub start {
         $devsection .= $devseg;
     }
 
+    # determine which temp_path directives are required to isolate this instance of nginx
+    my $tempPath = "client_body_temp_path $tmpDir/client_body_temp;\n";
+    unless($nginxMeta =~ /--without-http_fastcgi_module/sog) {
+        $tempPath .= "fastcgi_temp_path $tmpDir/fastcgi_temp;\n";
+    }
+    unless($nginxMeta =~ /--without-http_proxy_module/sog) {
+        $tempPath .= "proxy_temp_path $tmpDir/proxy_temp;\n";
+    }
+    unless($nginxMeta =~ /--without-http_uwsgi_module/sog) {
+        $tempPath .= "uwsgi_temp_path $tmpDir/uwsgi_temp;\n";
+    }
+    unless($nginxMeta =~ /--without-http_scgi_module/sog) {
+        $tempPath .= "scgi_temp_path $tmpDir/scgi_temp;\n";
+    }
+
     print $fh qq{
         pid $pidFile;
         worker_processes 15;
@@ -122,17 +138,21 @@ sub start {
                     autoindex on;
                 }
             }
+
+            $tempPath
         }
+
+        lock_file $tmpDir/lock_file;
     };
     close $fh;
 
     # start nginx
     if($nondaemon) {
-        exec $exe, '-g', 'daemon off;', '-c', $filename;
+        exec $exe, '-p', $tmpDir, '-g', 'daemon off;', '-c', $filename;
         exit;
     }
     else {
-        my $retval = system $exe, '-c', $filename;
+        my $retval = system $exe, '-p', $tmpDir, '-c', $filename;
         die "nginx failed to start\n" if($retval != 0);
     }
 
