@@ -99,7 +99,10 @@ sub start {
     # create prefix directory and start server
     mkdir $prefixDir;
     mkdir $prefixDir.'/logs';
-    system $exe, '-p', $prefixDir, '-c', $filename;
+    my $retval = system $exe, '-p', $prefixDir, '-c', $filename;
+
+    # throw an error if nginx failed to start
+    die "nginx failed to start\n" if($retval != 0);
 
     return 1;
 }
