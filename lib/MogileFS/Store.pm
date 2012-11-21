@@ -1240,15 +1240,23 @@ sub delete_class {
     $self->condthrow;
 }
 
+# called from a queryworker process, will trigger delete_fidid_enqueued
+# in the delete worker
 sub delete_fidid {
+    my ($self, $fidid) = @_;
+    eval { $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid); };
+    $self->condthrow;
+    $self->enqueue_for_delete2($fidid, 0);
+    $self->condthrow;
+}
+
+# Only called from delete workers (after delete_fidid),
+# this reduces client-visible latency from the queryworker
+sub delete_fidid_enqueued {
     my ($self, $fidid) = @_;
     eval { $self->delete_checksum($fidid); };
     $self->condthrow;
-    eval { $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid); };
-    $self->condthrow;
     eval { $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid); };
-    $self->condthrow;
-    $self->enqueue_for_delete2($fidid, 0);
     $self->condthrow;
 }
 

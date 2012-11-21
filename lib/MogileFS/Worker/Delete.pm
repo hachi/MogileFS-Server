@@ -163,6 +163,8 @@ sub process_deletes2 {
             next;
         }
 
+        $sto->delete_fidid_enqueued($fidid);
+
         my @devids = $fid->devids;
         my %devids = map { $_ => 1 } @devids;
 

@@ -735,18 +735,6 @@ sub mark_fidid_unreachable {
     };
 }
 
-sub delete_fidid {
-    my ($self, $fidid) = @_;
-    $self->delete_checksum($fidid);
-    $self->condthrow;
-    $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid);
-    $self->condthrow;
-    $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid);
-    $self->condthrow;
-    $self->enqueue_for_delete2($fidid, 0);
-    $self->condthrow;
-}
-
 sub replace_into_file {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fidid dmid key length classid devcount)], @_);
