@@ -252,6 +252,8 @@ for (1..10) {
         return 1;
     }), "replicated to 2 paths");
 
+    ok($mogc->update_class('file1copy', 'default'), "updated class to default");
+
     ok($mogc->delete("file1copy"), "deleted updateclass testfile file1copy")
         or die "Error: " . $mogc->errstr;
 }

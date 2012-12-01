@@ -496,8 +496,9 @@ sub cmd_updateclass {
     valid_key($key) or return $self->err_line("no_key");
     my $class = $args->{class}      or return $self->err_line("no_class");
 
-    my $classid = eval { Mgd::class_factory()->get_by_name($dmid, $class)->id }
+    my $classobj = Mgd::class_factory()->get_by_name($dmid, $class)
         or return $self->err_line('class_not_found');
+    my $classid = $classobj->id;
 
     my $fid = MogileFS::FID->new_from_dmid_and_key($dmid, $key)
         or return $self->err_line('invalid_key');
