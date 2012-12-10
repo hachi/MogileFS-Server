@@ -106,9 +106,21 @@ sub check_fid {
     my ($self, $fid) = @_;
 
     my $fix = sub {
+        # we cached devids without locking for the fast path,
+        # ensure we get an up-to-date list in the slow path.
+        $fid->forget_cached_devids;
+
+        my $sto = Mgd::get_store();
+        unless ($sto->should_begin_replicating_fidid($fid->id)) {
+            error("Fsck stalled for fid $fid: failed to acquire lock");
+            return STALLED;
+        }
+
         my $fixed = eval { $self->fix_fid($fid) };
+        my $err = $@;
+        $sto->note_done_replicating($fid->id);
         if (! defined $fixed) {
-            error("Fsck stalled for fid $fid: $@");
+            error("Fsck stalled for fid $fid: $err");
             return STALLED;
         }
         $fid->fsck_log(EV_CANT_FIX) if ! $fixed;
