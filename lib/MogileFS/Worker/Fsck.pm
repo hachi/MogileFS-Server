@@ -59,11 +59,12 @@ sub work {
         my @fids = ();
         while (my $todo = shift @{$queue_todo}) {
             my $fid = MogileFS::FID->new($todo->{fid});
-            unless ($fid->exists) {
+            if ($fid->exists) {
+                push(@fids, $fid);
+            } else {
                 # FID stopped existing before being checked.
                 $sto->delete_fid_from_file_to_queue($fid->id, FSCK_QUEUE);
             }
-            push(@fids, $fid);
         }
         return unless @fids;
 
@@ -114,6 +115,13 @@ sub check_fid {
         unless ($sto->should_begin_replicating_fidid($fid->id)) {
             error("Fsck stalled for fid $fid: failed to acquire lock");
             return STALLED;
+        }
+
+        unless ($fid->exists) {
+            # FID stopped existing while doing (or waiting on)
+            # the fast check, give up on this fid
+            $sto->note_done_replicating($fid->id);
+            return HANDLED;
         }
 
         my $fixed = eval { $self->fix_fid($fid) };
