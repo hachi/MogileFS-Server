@@ -29,6 +29,7 @@ use constant EV_BAD_COUNT        => "BCNT";
 use constant EV_BAD_CHECKSUM     => "BSUM";
 use constant EV_NO_CHECKSUM      => "NSUM";
 use constant EV_MULTI_CHECKSUM   => "MSUM";
+use constant EV_BAD_HASHTYPE     => "BALG";
 
 use POSIX ();
 
@@ -333,7 +334,7 @@ sub fix_fid {
     # in case the devcount or similar was fixed.
     $fid->want_reload;
 
-    $self->fix_checksums($fid, $checksums) if $alg && $alg ne "off";
+    $self->fix_checksums($fid, $alg, $checksums) if $alg && $alg ne "off";
 
     # Note: this will reload devids, if they called 'note_on_device'
     # or 'forget_about_device'
@@ -403,7 +404,7 @@ sub all_checksums_bad {
 }
 
 sub fix_checksums {
-    my ($self, $fid, $checksums) = @_;
+    my ($self, $fid, $alg, $checksums) = @_;
     my $cur_checksum = $fid->checksum;
     my @all_checksums = keys(%$checksums);
 
@@ -411,7 +412,14 @@ sub fix_checksums {
         my $disk_checksum = $all_checksums[0];
         if ($cur_checksum) {
             if ($cur_checksum->{checksum} ne $disk_checksum) {
-                $fid->fsck_log(EV_BAD_CHECKSUM);
+                my $expect = $cur_checksum->info;
+                my $actual = "$alg:" . unpack("H*", $disk_checksum);
+                error("$cur_checksum does not match disk: $actual");
+                if ($alg ne $cur_checksum->hashname) {
+                    $fid->fsck_log(EV_BAD_HASHTYPE);
+                } else {
+                    $fid->fsck_log(EV_BAD_CHECKSUM);
+                }
             }
         } else { # fresh row to checksum
             my $hashtype = $fid->class->hashtype;

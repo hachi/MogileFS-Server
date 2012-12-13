@@ -75,6 +75,7 @@ t/20-filepaths.t
 t/30-rebalance.t
 t/40-httpfile.t
 t/50-checksum.t
+t/51-checksum_class_change.t
 t/60-fsck.t
 t/70-reaper.t
 t/checksum.t

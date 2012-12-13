@@ -469,7 +469,11 @@ sub replicate {
         }
 
         my $worker = MogileFS::ProcManager->is_child or die;
-        my $digest = Digest->new($cls->hashname) if $cls->hashtype;
+        my $digest;
+        my $fid_checksum = $fid->checksum;
+        $digest = Digest->new($fid_checksum->hashname) if $fid_checksum;
+        $digest ||= Digest->new($cls->hashname) if $cls->hashtype;
+
         my $rv = http_copy(
                            sdevid       => $sdevid,
                            ddevid       => $ddevid,
@@ -698,7 +702,7 @@ sub http_copy {
     if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
         if ($1 >= 200 && $1 <= 299) {
             if ($digest) {
-                my $alg = $rfid->class->hashname;
+                my $alg = ($fid_checksum && $fid_checksum->hashname) || $rfid->class->hashname;
 
                 if ($ddev->{reject_bad_md5} && ($alg eq "MD5")) {
                     # dest device would've rejected us with a error,
