@@ -73,6 +73,14 @@ sub reaper_inject_limit {
 # forever.   $delay is the current delay we were scheduled at
 sub reap_dev {
     my ($self, $devid, $delay) = @_;
+
+    # ensure the master DB is up, retry in REAP_INTERVAL if down
+    unless ($self->validate_dbh) {
+        $delay = REAP_INTERVAL;
+        Danga::Socket->AddTimer($delay, sub { $self->reap_dev($devid, $delay) });
+        return;
+    }
+
     my $limit = $self->reaper_inject_limit;
 
     # just in case a user mistakenly nuked a devid from the device table:
