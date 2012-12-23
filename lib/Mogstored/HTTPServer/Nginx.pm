@@ -125,10 +125,10 @@ sub start {
             client_max_body_size $client_max_body_size;
             server_tokens off;
             access_log off;
+            charset utf-8;
             server {
                 listen $bind_ip:$portnum;
                 root $self->{docroot};
-                charset utf-8;
 
                 $devsection
                 location /.tmp {
