@@ -111,10 +111,13 @@ sub start {
         $tempPath .= "scgi_temp_path $tmpDir/scgi_temp;\n";
     }
 
+    my ($user) = $> == 1 ? "user root root;" : "";
+
     print $fh qq{
         pid $pidFile;
         worker_processes 15;
         error_log /dev/null crit;
+        $user
         events {
             worker_connections 1024;
         }
