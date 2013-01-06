@@ -239,13 +239,13 @@ for (1..10) {
 
     is scalar($mogc->get_paths("file1copy")), 1, 'File is on 1 device';
 
-    $mogc->update_class('2copies');
+    ok($mogc->update_class('file1copy', '2copies'), "updated class to 2 copies");
 
     # wait for it to replicate
     ok(try_for(10, sub {
         my @urls = $mogc->get_paths("file1copy");
         my $nloc = @urls;
-        if ($nloc < 1) {
+        if ($nloc < 2) {
             diag("no_content still only on $nloc devices");
             return 0;
         }
