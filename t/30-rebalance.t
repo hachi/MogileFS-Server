@@ -267,13 +267,4 @@ sleep 3;
 # - fiddle mbused/mbfree for devices and test the percentages
 # - test move limits (count, size, etc)
 
-sub try_for {
-    my ($tries, $code) = @_;
-    for (1..$tries) {
-        return 1 if $code->();
-        sleep 1;
-    }
-    return 0;
-}
-
 done_testing();
