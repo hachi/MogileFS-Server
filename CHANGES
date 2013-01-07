@@ -1,3 +1,29 @@
+2013-01-06: Release version 2.66
+
+   * add a hook to cmd_updateclass (Daniel Frett <daniel.frett@ccci.org>)
+
+   * support updating the class to the default class which has an id of 0 (Daniel Frett <daniel.frett@ccci.org>)
+
+   * reaper: validate DB connection before reaping (Eric Wong <normalperson@yhbt.net>)
+     Fixes occasional crash in reaper process.
+
+   * improve handling of classes which change hash algorithm (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: skip non-existent FIDs properly (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: use replicate lock when fixing FID (Eric Wong <normalperson@yhbt.net>)
+
+   * query: allow "0" key on all commands which take keys (Eric Wong <normalperson@yhbt.net>)
+
+   * prevent reqid mismatches (and queryworker death) (Eric Wong <normalperson@yhbt.net>)
+     Fixes crash case with specific error types.
+
+   * fix use_dest_devs for rebalance (Pyry Hakulinen <pyry@automattic.com>)
+     Fixes "use_dest_devs" argument during rebalance.
+
+   * Fix "skip_devcount" during rebalance (Pyry Hakulinen <pyry@automattic.com>)
+     Now actually skips updating devcount column during rebalance.
+
 2012-08-13: Release version 2.65
 
    * Postgres advisory lock instead of table-based lock (Robin H. Johnson <robbat2@gentoo.org>)
