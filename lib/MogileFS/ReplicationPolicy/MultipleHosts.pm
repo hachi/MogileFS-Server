@@ -97,12 +97,8 @@ sub replicate_to {
 
     return TEMP_NO_ANSWER if $already_on >= $min && @ideal == 0;
 
-    # Do this little dance to only weight-shuffle the top end of empty devices
-    # to save CPU.
-    @ideal = weighted_list(map { [$_, 100 * $_->percent_free] }
-        splice(@ideal, 0, 20));
-    @desp  = weighted_list(map { [$_, 100 * $_->percent_free] } 
-        splice(@desp, 0, 20));
+    @ideal = $self->sort_devices(\@ideal, $fid);
+    @desp  = $self->sort_devices(\@desp, $fid);
 
     return MogileFS::ReplicationRequest->new(
                                              ideal => \@ideal,
@@ -119,6 +115,16 @@ sub unique_hosts {
         $host{$dev->hostid}++;
     }
     return scalar keys %host;
+}
+
+sub sort_devices {
+    my ($self, $devs) = @_;
+
+    # Do this little dance to only weight-shuffle the top end of empty devices
+    # to save CPU.
+
+    return weighted_list(map { [$_, 100 * $_->percent_free] }
+        splice(@{ $devs }, 0, 20));
 }
 
 1;
