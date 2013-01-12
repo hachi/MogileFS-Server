@@ -4,6 +4,12 @@ use strict;
 use base 'Mogstored::HTTPServer';
 use File::Temp ();
 
+# returns an version number suitable for numeric comparison
+sub ngx_version {
+    my ($major, $minor, $point) = @_;
+    return ($major << 16) + ($minor << 8) + $point;
+}
+
 sub start {
     my $self = shift;
     my $exe = $self->{bin};
@@ -104,11 +110,21 @@ sub start {
     unless($nginxMeta =~ /--without-http_proxy_module/sog) {
         $tempPath .= "proxy_temp_path $tmpDir/proxy_temp;\n";
     }
-    unless($nginxMeta =~ /--without-http_uwsgi_module/sog) {
-        $tempPath .= "uwsgi_temp_path $tmpDir/uwsgi_temp;\n";
+
+    # Debian squeeze (stable as of 2013/01) is only on nginx 0.7.67
+
+    # uwsgi support appeared in nginx 0.8.40
+    if (ngx_version(@version) >= ngx_version(0, 8, 40)) {
+        unless($nginxMeta =~ /--without-http_uwsgi_module/sog) {
+            $tempPath .= "uwsgi_temp_path $tmpDir/uwsgi_temp;\n";
+        }
     }
-    unless($nginxMeta =~ /--without-http_scgi_module/sog) {
-        $tempPath .= "scgi_temp_path $tmpDir/scgi_temp;\n";
+
+    # scgi support appeared in nginx 0.8.42
+    if (ngx_version(@version) >= ngx_version(0, 8, 42)) {
+        unless($nginxMeta =~ /--without-http_scgi_module/sog) {
+            $tempPath .= "scgi_temp_path $tmpDir/scgi_temp;\n";
+        }
     }
 
     my ($user) = $> == 1 ? "user root root;" : "";
