@@ -33,14 +33,14 @@ sub start {
 
     # get meta-data about nginx binary
     my $nginxMeta = `$exe -V 2>&1`;
-    my @version = (0,0,0);
+    my $ngxVersion = ngx_version(0,0,0);
     if($nginxMeta =~ /nginx\/(\d+)\.(\d+)\.(\d+)/sog) {
-        @version = ($1,$2,$3);
+        $ngxVersion = ngx_version($1,$2,$3);
     }
 
     # determine if nginx can be run in non-daemon mode, supported in $version >= 1.0.9 (non-daemon provides better shutdown/crash support)
     # See: http://nginx.org/en/docs/faq/daemon_master_process_off.html
-    my $nondaemon = $version[0] > 1 || ($version[0] == 1 && $version[1] > 0) || ($version[0] == 1 && $version[1] == 0 && $version[2] >= 9);
+    my $nondaemon = $ngxVersion >= ngx_version(1, 0, 9);
 
     # create tmp directory
     my $tmpDir = $self->{docroot} . '/.tmp';
@@ -114,14 +114,14 @@ sub start {
     # Debian squeeze (stable as of 2013/01) is only on nginx 0.7.67
 
     # uwsgi support appeared in nginx 0.8.40
-    if (ngx_version(@version) >= ngx_version(0, 8, 40)) {
+    if ($ngxVersion >= ngx_version(0, 8, 40)) {
         unless($nginxMeta =~ /--without-http_uwsgi_module/sog) {
             $tempPath .= "uwsgi_temp_path $tmpDir/uwsgi_temp;\n";
         }
     }
 
     # scgi support appeared in nginx 0.8.42
-    if (ngx_version(@version) >= ngx_version(0, 8, 42)) {
+    if ($ngxVersion >= ngx_version(0, 8, 42)) {
         unless($nginxMeta =~ /--without-http_scgi_module/sog) {
             $tempPath .= "scgi_temp_path $tmpDir/scgi_temp;\n";
         }
