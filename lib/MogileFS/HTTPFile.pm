@@ -13,6 +13,8 @@ my $user_agent;
 my %size_check_retry_after; # host => $hirestime.
 my %size_check_failcount;   # host => $count.
 
+my %sidechannel_nexterr;    # host => next error log time
+
 # create a new MogileFS::HTTPFile instance from a URL.  not called
 # "new" because I don't want to imply that it's creating anything.
 sub at {
@@ -158,9 +160,22 @@ sub digest_mgmt {
 
     # assuming the storage node can checksum at >=2MB/s, low expectations here
     my $response_timeout = $self->size / (2 * 1024 * 1024);
+    my $host = $self->{host};
 
 retry:
-    $sock = $mogconn->sock($node_timeout) or return;
+    $sock = eval { $mogconn->sock($node_timeout) };
+    if (defined $sock) {
+        delete $sidechannel_nexterr{$host};
+    } else {
+        # avoid flooding logs with identical messages
+        my $err = $@;
+        my $next = $sidechannel_nexterr{$host} || 0;
+        my $now = time();
+        return if $now < $next;
+        $sidechannel_nexterr{$host} = $now + 300;
+        return undeferr("sidechannel failure on $alg $uri: $err");
+    }
+
     $rv = send($sock, $req, 0);
     if ($! || $rv != $reqlen) {
         my $err = $!;
