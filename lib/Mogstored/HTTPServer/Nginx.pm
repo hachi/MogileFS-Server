@@ -127,7 +127,7 @@ sub start {
         }
     }
 
-    my ($user) = $> == 1 ? "user root root;" : "";
+    my $user = $> == 0 ? "user root root;" : "";
 
     print $fh qq{
         pid $pidFile;
