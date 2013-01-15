@@ -248,14 +248,13 @@ sub cmd_create_open {
 
     $profstart->("find_deviceid");
 
-    my @devices;
-
-    unless (MogileFS::run_global_hook('cmd_create_open_order_devices', [Mgd::device_factory()->get_all], \@devices)) {
-        @devices = sort_devs_by_freespace(Mgd::device_factory()->get_all);
-    }
-
+    my @devices = Mgd::device_factory()->get_all;
     if ($size) {
         @devices = grep { ($_->mb_free * 1024*1024) > $size } @devices;
+    }
+
+    unless (MogileFS::run_global_hook('cmd_create_open_order_devices', [ @devices ], \@devices)) {
+        @devices = sort_devs_by_freespace(@devices);
     }
 
     # find suitable device(s) to put this file on.
