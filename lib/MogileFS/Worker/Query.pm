@@ -1509,7 +1509,7 @@ sub cmd_fsck_start {
     my $final_fid   = $intss->("fsck_fid_at_end");
     if (($checked_fid && $final_fid && $checked_fid >= $final_fid) ||
         (!$final_fid && !$checked_fid)) {
-        $self->_do_fsck_reset or return $self->err_line;
+        $self->_do_fsck_reset or return $self->err_line("db");
     }
 
     # set params for stats:
@@ -1545,27 +1545,34 @@ sub cmd_fsck_reset {
     $sto->set_server_setting("fsck_highest_fid_checked", 
         ($args->{startpos} ? $args->{startpos} : "0"));
 
-    $self->_do_fsck_reset or return $self->err_line;
+    $self->_do_fsck_reset or return $self->err_line("db");
     return $self->ok_line;
 }
 
 sub _do_fsck_reset {
     my MogileFS::Worker::Query $self = shift;
-    my $sto = Mgd::get_store();
-    $sto->set_server_setting("fsck_start_time",       undef);
-    $sto->set_server_setting("fsck_stop_time",        undef);
-    $sto->set_server_setting("fsck_fids_checked",     0);
-    $sto->set_server_setting("fsck_fid_at_end",       $sto->max_fidid);
+    eval {
+        my $sto = Mgd::get_store();
+        $sto->set_server_setting("fsck_start_time",       undef);
+        $sto->set_server_setting("fsck_stop_time",        undef);
+        $sto->set_server_setting("fsck_fids_checked",     0);
+        $sto->set_server_setting("fsck_fid_at_end",       $sto->max_fidid);
 
-    # clear existing event counts summaries.
-    my $ss = $sto->server_settings;
-    foreach my $k (keys %$ss) {
-        next unless $k =~ /^fsck_sum_evcount_/;
-        $sto->set_server_setting($k, undef);
+        # clear existing event counts summaries.
+        my $ss = $sto->server_settings;
+        foreach my $k (keys %$ss) {
+            next unless $k =~ /^fsck_sum_evcount_/;
+            $sto->set_server_setting($k, undef);
+        }
+        my $logid = $sto->max_fsck_logid;
+        $sto->set_server_setting("fsck_start_maxlogid", $logid);
+        $sto->set_server_setting("fsck_logid_processed", $logid);
+    };
+    if ($@) {
+        error("DB error in _do_fsck_reset: $@");
+        return 0;
     }
-    my $logid = $sto->max_fsck_logid;
-    $sto->set_server_setting("fsck_start_maxlogid", $logid);
-    $sto->set_server_setting("fsck_logid_processed", $logid);
+    return 1;
 }
 
 sub cmd_fsck_clearlog {
