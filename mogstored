@@ -97,7 +97,13 @@ my $httpsrv       = $httpsrv_class->new(
                                         maxconns => $max_conns,
                                         bin      => $serverbin,
                                         );
-$httpsrv->start;
+
+# Configure Perlbal HTTP listener after daemonization since it can create a
+# kqueue on *BSD.  kqueue descriptors are automatically invalidated on fork(),
+# making them unusable after daemonize.  For non-Perlbal, starting the
+# server before daemonization improves error reporting as daemonization
+# redirects stdout/stderr to /dev/null.
+$httpsrv->start if $server ne "perlbal";
 
 if ($opt_daemonize) {
     $httpsrv->pre_daemonize;
@@ -105,6 +111,9 @@ if ($opt_daemonize) {
 } else {
     print "Running.\n";
 }
+
+# It is now safe for Perlbal to create a kqueue
+$httpsrv->start if $server eq "perlbal";
 
 $httpsrv->post_daemonize;
 
