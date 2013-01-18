@@ -537,33 +537,6 @@ sub _drop_db {
 # Data-access things we override
 # --------------------------------------------------------------------------
 
-# return new classid on success (non-zero integer), die on failure
-# throw 'dup' on duplicate name
-# TODO: add locks around entire table
-sub create_class {
-    my ($self, $dmid, $classname) = @_;
-    my $dbh = $self->dbh;
-
-    # get the max class id in this domain
-    my $maxid = $dbh->selectrow_array
-        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
-
-    # now insert the new class
-    my $rv = eval {
-        $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                 undef, $dmid, $maxid + 1, $classname, 2);
-    };
-    if ($@ || $dbh->err) {
-        # first is error code for duplicates
-        if ($self->was_duplicate_error) {
-            throw("dup");
-        }
-    }
-    return $maxid + 1 if $rv;
-    $self->condthrow;
-    die;
-}
-
 # returns 1 on success, 0 on duplicate key error, dies on exception
 # TODO: need a test to hit the duplicate name error condition
 sub rename_file {
