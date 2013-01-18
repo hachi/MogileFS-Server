@@ -881,32 +881,36 @@ sub class_has_files {
 
 # return new classid on success (non-zero integer), die on failure
 # throw 'dup' on duplicate name
-# override this if you want a less racy version.
 sub create_class {
     my ($self, $dmid, $classname) = @_;
     my $dbh = $self->dbh;
 
-    # get the max class id in this domain
-    my $maxid = $dbh->selectrow_array
-        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
+    my ($clsid, $rv);
 
-    my $clsid = $maxid + 1;
-    if ($classname eq 'default') {
-        $clsid = 0;
-    }
-
-    # now insert the new class
-    my $rv = eval {
-        $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                 undef, $dmid, $clsid, $classname, 2);
+    eval {
+        $dbh->begin_work;
+        if ($classname eq 'default') {
+            $clsid = 0;
+        } else {
+            # get the max class id in this domain
+            my $maxid = $dbh->selectrow_array
+                ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
+            $clsid = $maxid + 1;
+        }
+        # now insert the new class
+        $rv = $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
+                       undef, $dmid, $clsid, $classname, 2);
+        $dbh->commit if $rv;
     };
     if ($@ || $dbh->err) {
         if ($self->was_duplicate_error) {
+            # ensure we're not inside a transaction
+            if ($dbh->{AutoCommit} == 0) { eval { $dbh->rollback }; }
             throw("dup");
         }
     }
+    $self->condthrow; # this will rollback on errors
     return $clsid if $rv;
-    $self->condthrow;
     die;
 }
 
