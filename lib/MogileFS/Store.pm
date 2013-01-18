@@ -853,9 +853,27 @@ sub delete_host {
 # return true if deleted, 0 if didn't exist, exception if error
 sub delete_domain {
     my ($self, $dmid) = @_;
-    throw("has_files")   if $self->domain_has_files($dmid);
-    throw("has_classes") if $self->domain_has_classes($dmid);
-    return $self->dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
+    my ($err, $rv);
+    my $dbh = $self->dbh;
+    eval {
+        $dbh->begin_work;
+        if ($self->domain_has_files($dmid)) {
+            $err = "has_files";
+        } elsif ($self->domain_has_classes($dmid)) {
+            $err = "has_classes";
+        } else {
+            $rv = $dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
+
+            # remove the "default" class if one was created (for mindevcount)
+            # this is currently the only way to delete the "default" class
+            $dbh->do("DELETE FROM class WHERE dmid = ? AND classid = 0", undef, $dmid);
+            $dbh->commit;
+        }
+	$dbh->rollback if $err;
+    };
+    $self->condthrow; # will rollback on errors
+    throw($err) if $err;
+    return $rv;
 }
 
 sub domain_has_files {
@@ -867,9 +885,11 @@ sub domain_has_files {
 
 sub domain_has_classes {
     my ($self, $dmid) = @_;
-    my $has_a_class = $self->dbh->selectrow_array('SELECT classid FROM class WHERE dmid = ? LIMIT 1',
+    # queryworker does not permit removing default class, so domain_has_classes
+    # should not register the default class
+    my $has_a_class = $self->dbh->selectrow_array('SELECT classid FROM class WHERE dmid = ? AND classid != 0 LIMIT 1',
         undef, $dmid);
-    return $has_a_class ? 1 : 0;
+    return defined($has_a_class);
 }
 
 sub class_has_files {

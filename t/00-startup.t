@@ -112,6 +112,29 @@ ok($tmptrack->mogadm("domain", "add", "todie"), "created todie domain");
 ok($tmptrack->mogadm("domain", "delete", "todie"), "delete todie domain");
 ok(!$tmptrack->mogadm("domain", "delete", "todie"), "didn't delete todie domain again");
 
+# ensure "default" class is removed when its domain is removed
+{
+    use Data::Dumper;
+    my $before = Dumper($sto->get_all_classes);
+    ok($tmptrack->mogadm("domain", "add", "def"), "created def domain");
+
+    my $dmid = $sto->get_domainid_by_name("def");
+    ok(defined($dmid), "def dmid retrieved");
+
+    isnt($sto->domain_has_classes($dmid), "domain_has_classes does not show default class");
+    ok($tmptrack->mogadm("class", "modify", "def", "default", "--mindevcount=3"), "modified default to have mindevcount=3");
+
+    my $classid = $sto->get_classid_by_name($dmid, "default");
+    is($classid, 0, "default class has classid=0");
+    isnt($sto->domain_has_classes($dmid), "domain_has_classes does not show default class");
+    ok($tmptrack->mogadm("domain", "delete", "def"), "remove def domain");
+    is($sto->get_domainid_by_name("def"), undef, "def nonexistent");
+    is($sto->get_classid_by_name($dmid, "default"), undef, "def/default class nonexistent");
+
+    my $after = Dumper($sto->get_all_classes);
+    is($after, $before, "class listing is unchanged");
+}
+
 ok($tmptrack->mogadm("domain", "add", "hasclass"), "created hasclass domain");
 ok($tmptrack->mogadm("class", "add", "hasclass", "nodel"), "created nodel class");
 ok(!$tmptrack->mogadm("domain", "delete", "hasclass"), "didn't delete hasclass domain");
