@@ -155,8 +155,8 @@ sub work {
     my $reap_check;
     $reap_check = sub {
         # get db and note we're starting a run
+        $self->parent_ping;
         debug("Reaper running; looking for dead devices");
-        $self->still_alive;
 
         foreach my $dev (grep { $_->dstate->is_perm_dead }
                          Mgd::device_factory()->get_all)

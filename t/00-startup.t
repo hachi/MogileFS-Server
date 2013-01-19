@@ -440,4 +440,17 @@ foreach my $t (qw(file file_on file_to_delete)) {
     ok($mogc->delete("0"), "delete 0 works");
 }
 
+# ensure all workers can be stopped/started
+{
+    my $c = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001', Timeout => 3);
+    my @jobs = qw(fsck queryworker delete replicate reaper monitor job_master);
+
+    foreach my $j (@jobs) {
+      ok(want($c, 0, $j), "shut down all $j");
+    }
+    foreach my $j (@jobs) {
+      ok(want($c, 1, $j), "start 1 $j");
+    }
+}
+
 done_testing();
