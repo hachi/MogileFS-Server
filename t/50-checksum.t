@@ -68,28 +68,6 @@ sub wait_for_monitor {
     $be->{timeout} = $was;
 }
 
-sub stop_replicate {
-    my ($admin) = @_;
-    syswrite($admin, "!want 0 replicate\r\n"); # disable replication
-    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "disabling replicate");
-
-    my $count;
-    try_for(30, sub {
-        $count = -1;
-        syswrite($admin, "!jobs\r\n");
-        MogileFS::Util::wait_for_readability(fileno($admin), 10);
-        while (1) {
-            my $line = <$admin>;
-            if ($line =~ /\Areplicate count (\d+)/) {
-                $count = $1;
-            }
-            last if $line eq ".\r\n";
-        }
-        $count == 0;
-    });
-    is($count, 0, "replicate count is zero");
-}
-
 sub full_fsck {
     my $tmptrack = shift;
 
@@ -165,7 +143,7 @@ use Digest::MD5 qw/md5_hex/;
 {
     my $key = 'savecksum';
 
-    stop_replicate($admin);
+    want($admin, 0, "replicate");
 
     %opts = ( domain => "testdom", class => "2copies", key => $key );
     $rv = $be->do_request("create_open", \%opts);
@@ -190,8 +168,7 @@ use Digest::MD5 qw/md5_hex/;
     $info = $mogc->file_info($key);
     is($info->{checksum}, "MISSING", 'checksum is MISSING after delete');
 
-    syswrite($admin, "!want 1 replicate\n"); # disable replication
-    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "enabled replicate");
+    want($admin, 1, "replicate");
 
     # wait for replicate to recreate checksum
     try_for(30, sub {
@@ -229,7 +206,7 @@ use Digest::MD5 qw/md5_hex/;
 {
     my $key = 'lazycksum';
 
-    stop_replicate($admin);
+    want($admin, 0, "replicate");
 
     my $fh = $mogc->new_file($key, "2copies");
     print $fh "lazy";
@@ -237,8 +214,7 @@ use Digest::MD5 qw/md5_hex/;
     my $info = $mogc->file_info($key);
     is($info->{checksum}, 'MISSING', 'checksum is MISSING');
 
-    syswrite($admin, "!want 1 replicate\n"); # disable replication
-    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "enabled replicate");
+    want($admin, 1, "replicate");
 
     try_for(30, sub {
         @paths = $mogc->get_paths($key);

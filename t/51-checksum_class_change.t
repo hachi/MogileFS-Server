@@ -68,30 +68,8 @@ sub wait_for_monitor {
     $be->{timeout} = $was;
 }
 
-sub stop_replicate {
-    my ($admin) = @_;
-    syswrite($admin, "!want 0 replicate\r\n"); # disable replication
-    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "disabling replicate");
-
-    my $count;
-    try_for(30, sub {
-        $count = -1;
-        syswrite($admin, "!jobs\r\n");
-        MogileFS::Util::wait_for_readability(fileno($admin), 10);
-        while (1) {
-            my $line = <$admin>;
-            if ($line =~ /\Areplicate count (\d+)/) {
-                $count = $1;
-            }
-            last if $line eq ".\r\n";
-        }
-        $count == 0;
-    });
-    is($count, 0, "replicate count is zero");
-}
-
 wait_for_monitor($be);
-stop_replicate($admin);
+want($admin, 0, "replicate");
 
 my ($req, $rv, %opts, @paths, @fsck_log);
 my $ua = LWP::UserAgent->new;
@@ -129,8 +107,7 @@ my $key = "foo";
 
 # replicate should work even if we have, but don't need a checksum anymore
 {
-    syswrite($admin, "!want 1 replicate\n");
-    ok(<$admin> =~ /Now desiring/ && <$admin> eq ".\r\n", "enabled replicate");
+    want($admin, 1, "replicate");
 
     # wait for replicate to recreate checksum
     try_for(30, sub {
@@ -138,7 +115,7 @@ my $key = "foo";
         scalar(@paths) != 1;
     });
     is(scalar(@paths), 2, "replicated successfully");
-    stop_replicate($admin);
+    want($admin, 0, "replicate");
 }
 
 # switch to SHA-1 checksums in "changer" class
