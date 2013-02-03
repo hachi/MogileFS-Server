@@ -1,3 +1,36 @@
+2013-02-02: Release version 2.67
+
+   * Serialize tempfile reaping (dormando <dormando@rydia.net>)
+
+   * reaper: ensure worker can be stopped via "!want" (Eric Wong <normalperson@yhbt.net>)
+
+   * domain removal also removes its default class (Eric Wong <normalperson@yhbt.net>)
+
+   * store: wrap create_class in a transaction to avoid races (Eric Wong <normalperson@yhbt.net>)
+
+   * mogstored: fix kqueue usage with daemonization (Eric Wong <normalperson@yhbt.net>)
+
+   * Filter the devices before we do an expensive sort. (Dave Lambley <davel@state51.co.uk>)
+
+   * httpfile: avoid killing worker on down sidechannel (Eric Wong <normalperson@yhbt.net>)
+
+   * move checksum and tempfile delete to delete worker (Eric Wong <normalperson@yhbt.net>)
+
+   * sqlite: use immediate transactions to prevent busy errors (Eric Wong <normalperson@yhbt.net>)
+
+   * disable Nagle's algorithm for accepted clients (Eric Wong <normalperson@yhbt.net>)
+
+   * ProcManager: favor using recently-used queryworkers (Eric Wong <normalperson@yhbt.net>)
+
+   * Do both sorts in one method, to save on shared initialisation. (Dave Lambley <davel@state51.co.uk>)
+
+   * Pull out device sorting into it's own method for overriding. (Dave Lambley <davel@state51.co.uk>)
+
+   * Reseed the random number generator after forking. (Dave Lambley <davel@state51.co.uk>)
+
+   * support nginx server type in mogstored command line options (Daniel Frett <daniel.frett@ccci.org>)
+     (also Gernot Vormayr <notti@gbcc.at>, others)
+
 2013-01-06: Release version 2.66
 
    * add a hook to cmd_updateclass (Daniel Frett <daniel.frett@ccci.org>)

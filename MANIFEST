@@ -55,6 +55,7 @@ lib/Mogstored/ChildProcess/IOStat.pm
 lib/Mogstored/FIDStatter.pm
 lib/Mogstored/HTTPServer.pm
 lib/Mogstored/HTTPServer/Apache.pm
+lib/Mogstored/HTTPServer/Nginx.pm
 lib/Mogstored/HTTPServer/Lighttpd.pm
 lib/Mogstored/HTTPServer/Perlbal.pm
 lib/Mogstored/HTTPServer/None.pm
