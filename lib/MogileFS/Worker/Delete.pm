@@ -40,7 +40,13 @@ sub work {
         # call our workers, and have them do things
         #    RETVAL = 0; I think I am done working for now
         #    RETVAL = 1; I have more work to do
-        my $tempres = $self->process_tempfiles;
+        my $lock = 'mgfs:tempfiles';
+        # This isn't something we need to wait for: just need to ensure one is.
+        my $tempres;
+        if (Mgd::get_store()->get_lock($lock, 0)) {
+            $tempres = $self->process_tempfiles;
+            Mgd::get_store()->release_lock($lock);
+        }
         my $delres;
         if (time() > $old_queue_check) {
             $self->reenqueue_delayed_deletes;
