@@ -524,6 +524,37 @@ sub replicate {
                         "replication policy ran out of suggestions for us replicating fid $fidid");
 }
 
+# Returns a hashref with the following:
+# {
+#   code => HTTP status code integer,
+#   keep => boolean, whether to keep the connection after reading
+#   len =>  value of the Content-Length header (integer)
+# }
+sub read_headers {
+    my ($sock) = @_;
+    my %rv = ();
+    # FIXME: this can block.  needs to timeout.
+    my $line = <$sock>;
+    return unless defined $line;
+    $line =~ m!\AHTTP/(\d+\.\d+)\s+(\d+)! or return;
+    $rv{keep} = $1 >= 1.1;
+    $rv{code} = $2;
+
+    while (1) {
+        $line = <$sock>;
+        return unless defined $line;
+        last if $line =~ /\A\r?\n\z/;
+        if ($line =~ /\AConnection:\s*keep-alive\s*\z/is) {
+            $rv{keep} = 1;
+        } elsif ($line =~ /\AConnection:\s*close\s*\z/is) {
+            $rv{keep} = 0;
+        } elsif ($line =~ /\AContent-Length:\s*(\d+)\s*\z/is) {
+            $rv{len} = $1;
+        }
+    }
+    return \%rv;
+}
+
 # copies a file from one Perlbal to another utilizing HTTP
 sub http_copy {
     my %opts = @_;
@@ -540,7 +571,9 @@ sub http_copy {
     $fid = MogileFS::FID->new($fid) unless ref($fid);
     my $fidid = $fid->id;
     my $expected_clen = $fid->length;
+    my $clen;
     my $content_md5 = '';
+    my ($sconn, $dconn);
     my $fid_checksum = $fid->checksum;
     if ($fid_checksum && $fid_checksum->hashname eq "MD5") {
         # some HTTP servers may be able to verify Content-MD5 on PUT
@@ -552,22 +585,25 @@ sub http_copy {
 
     $intercopy_cb ||= sub {};
 
+    my $err_common = sub {
+        my ($err, $msg) = @_;
+        $$errref = $err if $errref;
+        $sconn->close($err) if $sconn;
+        $dconn->close($err) if $dconn;
+        return error($msg);
+    };
+
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error_unreachable = sub {
-        $$errref = "src_error" if $errref;
-        return error("Fid $fidid unreachable while replicating: $_[0]");
+        return $err_common->("src_error", "Fid $fidid unreachable while replicating: $_[0]");
     };
 
     my $dest_error = sub {
-        $$errref = "dest_error" if $errref;
-        error($_[0]);
-        return 0;
+        return $err_common->("dest_error", $_[0]);
     };
 
     my $src_error = sub {
-        $$errref = "src_error" if $errref;
-        error($_[0]);
-        return 0;
+        return $err_common->("src_error", $_[0]);
     };
 
     # get some information we'll need
@@ -595,12 +631,11 @@ sub http_copy {
         return 0;
     }
 
+    my $put = "PUT $dpath HTTP/1.0\r\nConnection: keep-alive\r\n" .
+              "Content-length: $expected_clen$content_md5\r\n\r\n";
+
     # need by webdav servers, like lighttpd...
     $ddev->vivify_directories($d_dfid->url);
-
-    # setup our pipe error handler, in case we get closed on
-    my $pipe_closed = 0;
-    local $SIG{PIPE} = sub { $pipe_closed = 1; };
 
     # call a hook for odd casing completely different source data
     # for specific files.
@@ -608,82 +643,107 @@ sub http_copy {
     MogileFS::run_global_hook('replicate_alternate_source',
                               $fid, \$shostip, \$sport, \$spath, \$shttphost);
 
+    my $durl = "http://$dhostip:$dport$dpath";
+    my $surl = "http://$shostip:$sport$spath";
     # okay, now get the file
-    my $sock = IO::Socket::INET->new(PeerAddr => $shostip, PeerPort => $sport, Timeout => 2)
+    my %sopts = ( ip => $shostip, port => $sport );
+
+    my $get = "GET $spath HTTP/1.0\r\nConnection: keep-alive\r\n";
+    # plugin set a custom host.
+    $get .= "Host: $shttphost\r\n" if $shttphost;
+
+    my $data = '';
+    my ($sock, $dsock);
+    my ($wcount, $bytes_to_read, $written, $remain);
+    my ($stries, $dtries) = (0, 0);
+
+retry:
+    $sconn->close("retrying") if $sconn;
+    $dconn->close("retrying") if $dconn;
+    $dconn = undef;
+    $stries++;
+    $sconn = $shost->http_conn_get(\%sopts)
         or return $src_error->("Unable to create source socket to $shostip:$sport for $spath");
-    unless ($shttphost) {
-        $sock->write("GET $spath HTTP/1.0\r\n\r\n");
-    } else {
-        # plugin set a custom host.
-        $sock->write("GET $spath HTTP/1.0\r\nHost: $shttphost\r\n\r\n");
+    $sock = $sconn->sock;
+    unless ($sock->write("$get\r\n")) {
+        goto retry if $sconn->retryable && $stries == 1;
+        return $src_error->("Pipe closed retrieving $spath from $shostip:$sport");
     }
-    return error("Pipe closed retrieving $spath from $shostip:$sport")
-        if $pipe_closed;
 
     # we just want a content length
-    my $clen;
-    # FIXME: this can block.  needs to timeout.
-    while (defined (my $line = <$sock>)) {
-        $line =~ s/[\s\r\n]+$//;
-        last unless length $line;
-        if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-            # make sure we get a good response
-            return $error_unreachable->("Error: Resource http://$shostip:$sport$spath failed: HTTP $1")
-                unless $1 >= 200 && $1 <= 299;
-        }
-        next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
-        $clen = $1;
+    my $sres = read_headers($sock);
+    unless ($sres) {
+        goto retry if $sconn->retryable && $stries == 1;
+        return $error_unreachable->("Error: Resource $surl failed to return an HTTP response");
     }
+    unless ($sres->{code} >= 200 && $sres->{code} <= 299) {
+        return $error_unreachable->("Error: Resource $surl failed: HTTP $sres->{code}");
+    }
+    $clen = $sres->{len};
+
     return $error_unreachable->("File $spath has unexpected content-length of $clen, not $expected_clen")
         if $clen != $expected_clen;
 
     # open target for put
-    my $dsock = IO::Socket::INET->new(PeerAddr => $dhostip, PeerPort => $dport, Timeout => 2)
+    $dtries++;
+    $dconn = $dhost->http_conn_get
         or return $dest_error->("Unable to create dest socket to $dhostip:$dport for $dpath");
-    $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen$content_md5\r\n\r\n")
-        or return $dest_error->("Unable to write data to $dpath on $dhostip:$dport");
-    return $dest_error->("Pipe closed during write to $dpath on $dhostip:$dport")
-        if $pipe_closed;
+    $dsock = $dconn->sock;
+
+    unless ($dsock->write($put)) {
+        goto retry if $dconn->retryable && $dtries == 1;
+        return $dest_error->("Pipe closed during write to $dpath on $dhostip:$dport");
+    }
 
     # now read data and print while we're reading.
-    my ($data, $written, $remain) = ('', 0, $clen);
-    my $bytes_to_read = 1024*1024;  # read 1MB at a time until there's less than that remaining
+    ($written, $remain) = (0, $clen);
+    $bytes_to_read = 1024*1024;  # read 1MB at a time until there's less than that remaining
     $bytes_to_read = $remain if $remain < $bytes_to_read;
-    my $finished_read = 0;
+    $wcount = 0;
 
-    if ($bytes_to_read) {
-        while (!$pipe_closed && (my $bytes = $sock->read($data, $bytes_to_read))) {
-            # now we've read in $bytes bytes
-            $remain -= $bytes;
-            $bytes_to_read = $remain if $remain < $bytes_to_read;
-            $digest->add($data) if $digest;
-
-            my $data_len = $bytes;
-            my $data_off = 0;
-            while (1) {
-                my $wbytes = syswrite($dsock, $data, $data_len, $data_off);
-                unless (defined $wbytes) {
-                    return $dest_error->("Error: syswrite failed after $written bytes with: $!; failed putting to $dpath");
-                }
-                $written += $wbytes;
-                $intercopy_cb->();
-                last if ($data_len == $wbytes);
-
-                $data_len -= $wbytes;
-                $data_off += $wbytes;
-            }
-
-            die if $bytes_to_read < 0;
-            next if $bytes_to_read;
-            $finished_read = 1;
-            last;
+    while ($bytes_to_read) {
+        my $bytes = $sock->read($data, $bytes_to_read);
+        unless (defined $bytes) {
+            return $src_error->("error reading midway through source: $!");
         }
-    } else {
-        # 0 byte file copy.
-        $finished_read = 1;
+        if ($bytes == 0) {
+            return $src_error->("EOF reading midway through source: $!");
+        }
+
+        # now we've read in $bytes bytes
+        $remain -= $bytes;
+        $bytes_to_read = $remain if $remain < $bytes_to_read;
+        $digest->add($data) if $digest;
+
+        my $data_len = $bytes;
+        my $data_off = 0;
+        while (1) {
+            my $wbytes = syswrite($dsock, $data, $data_len, $data_off);
+            unless (defined $wbytes) {
+                # it can take two writes to determine if a socket is dead
+                # (TCP_NODELAY and TCP_CORK are (and must be) zero here)
+                goto retry if (!$wcount && $dconn->retryable && $dtries == 1);
+                return $dest_error->("Error: syswrite failed after $written bytes with: $!; failed putting to $dpath");
+            }
+            $wcount++;
+            $written += $wbytes;
+            $intercopy_cb->();
+            last if ($data_len == $wbytes);
+
+            $data_len -= $wbytes;
+            $data_off += $wbytes;
+        }
+
+        die if $bytes_to_read < 0;
     }
-    return $dest_error->("closed pipe writing to destination")     if $pipe_closed;
-    return $src_error->("error reading midway through source: $!") unless $finished_read;
+
+    # source connection drained, return to pool
+    if ($sres->{keep}) {
+        $shost->http_conn_put($sconn);
+        $sconn = undef;
+    } else {
+        $sconn->close("http_close");
+    }
 
     # callee will want this digest, too, so clone as "digest" is destructive
     $digest = $digest->clone->digest if $digest;
@@ -697,32 +757,55 @@ sub http_copy {
     }
 
     # now read in the response line (should be first line)
-    my $line = <$dsock>;
-    if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-        if ($1 >= 200 && $1 <= 299) {
-            if ($digest) {
-                my $alg = ($fid_checksum && $fid_checksum->hashname) || $fid->class->hashname;
-
-                if ($ddev->{reject_bad_md5} && ($alg eq "MD5")) {
-                    # dest device would've rejected us with a error,
-                    # no need to reread the file
-                    return 1;
-                }
-                my $durl = "http://$dhostip:$dport$dpath";
-                my $httpfile = MogileFS::HTTPFile->at($durl);
-                my $actual = $httpfile->digest($alg, $intercopy_cb);
-                if ($actual ne $digest) {
-                    my $expect = unpack("H*", $digest);
-                    $actual = unpack("H*", $actual);
-                    return $dest_error->("checksum mismatch on PUT, expected: $expect actual: $digest");
-                }
-            }
-            return 1;
-        }
-        return $dest_error->("Got HTTP status code $1 PUTing to http://$dhostip:$dport$dpath");
-    } else {
-        return $dest_error->("Error: HTTP response line not recognized writing to http://$dhostip:$dport$dpath: $line");
+    my $dres = read_headers($dsock);
+    unless ($dres) {
+        goto retry if (!$wcount && $dconn->retryable && $dtries == 1);
+        return $dest_error->("Error: HTTP response line not recognized writing to $durl");
     }
+
+    # drain the response body if there is one
+    # there may be no dres->{len}/Content-Length if there is no body
+    if ($dres->{len}) {
+        my $r = $dsock->read($data, $dres->{len}); # dres->{len} should be tiny
+        if (defined $r) {
+            if ($r != $dres->{len}) {
+                Mgd::error("Failed to read $r of Content-Length:$dres->{len} bytes for PUT response on $durl");
+                $dres->{keep} = 0;
+            }
+        } else {
+            Mgd::error("Failed to read Content-Length:$dres->{len} bytes for PUT response on $durl ($!)");
+            $dres->{keep} = 0;
+        }
+    }
+
+    # return the connection back to the connection pool
+    if ($dres->{keep}) {
+        $dhost->http_conn_put($dconn);
+        $dconn = undef;
+    } else {
+        $dconn->close("http_close");
+    }
+
+    if ($dres->{code} >= 200 && $dres->{code} <= 299) {
+        if ($digest) {
+            my $alg = ($fid_checksum && $fid_checksum->hashname) || $fid->class->hashname;
+
+            if ($ddev->{reject_bad_md5} && ($alg eq "MD5")) {
+                # dest device would've rejected us with a error,
+                # no need to reread the file
+                return 1;
+            }
+            my $httpfile = MogileFS::HTTPFile->at($durl);
+            my $actual = $httpfile->digest($alg, $intercopy_cb);
+            if ($actual ne $digest) {
+                my $expect = unpack("H*", $digest);
+                $actual = unpack("H*", $actual);
+                return $dest_error->("checksum mismatch on PUT, expected: $expect actual: $digest");
+            }
+        }
+        return 1;
+    }
+    return $dest_error->("Got HTTP status code $dres->{code} PUTing to $durl");
 }
 
 1;
