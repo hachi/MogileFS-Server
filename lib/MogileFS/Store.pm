@@ -1895,8 +1895,8 @@ sub get_keys_like {
 
     # now select out our keys
     return $self->dbh->selectcol_arrayref
-        ("SELECT dkey FROM file WHERE dmid = ? AND dkey $like ? AND dkey > ? " .
-         "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, $after);
+        ("SELECT dkey FROM file WHERE dmid = ? AND dkey $like ? ESCAPE ? AND dkey > ? " .
+         "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, "\\", $after);
 }
 
 sub get_keys_like_operator { return "LIKE"; }

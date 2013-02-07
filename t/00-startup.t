@@ -453,4 +453,27 @@ foreach my $t (qw(file file_on file_to_delete)) {
     }
 }
 
+# list_keys with underscore
+{
+    my $c = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001', Timeout => 3);
+
+    foreach my $k (qw(under_score under.score)) {
+        my $fh = $mogc->new_file($k, '1copy');
+        ok($fh, "got filehandle for $k");
+        ok(close($fh), "created file $k");
+    }
+
+    # we only have one queryworker from the previous test, so no need to
+    # clear cache twice and wait on monitor after "mogadm settings set"
+    foreach my $cslk (qw(on off)) {
+        ok($tmptrack->mogadm("settings", "set", "case_sensitive_list_keys", $cslk), "case_sensitive_list_keys = $cslk");
+        ok($be->do_request("clear_cache", {}), "cleared_cache");
+        my @l = $mogc->list_keys("under_");
+        is_deeply(['under_score', [ 'under_score' ]], \@l, "list_keys handled underscore properly (case-sensitive $cslk)");
+    }
+
+    # restore default
+    $sto->set_server_setting('case_sensitive_list_keys', undef);
+}
+
 done_testing();
