@@ -457,7 +457,7 @@ foreach my $t (qw(file file_on file_to_delete)) {
 {
     my $c = IO::Socket::INET->new(PeerAddr => '127.0.0.1:7001', Timeout => 3);
 
-    foreach my $k (qw(under_score under.score)) {
+    foreach my $k (qw(under_score under.score per%cent back\\slash)) {
         my $fh = $mogc->new_file($k, '1copy');
         ok($fh, "got filehandle for $k");
         ok(close($fh), "created file $k");
@@ -470,6 +470,12 @@ foreach my $t (qw(file file_on file_to_delete)) {
         ok($be->do_request("clear_cache", {}), "cleared_cache");
         my @l = $mogc->list_keys("under_");
         is_deeply(['under_score', [ 'under_score' ]], \@l, "list_keys handled underscore properly (case-sensitive $cslk)");
+
+        @l = $mogc->list_keys("per%");
+        is_deeply(['per%cent', [ 'per%cent' ]], \@l, "list_keys handled % properly (case-sensitive $cslk)");
+
+        @l = $mogc->list_keys("back\\");
+        is_deeply(['back\slash', [ 'back\slash' ]], \@l, "list_keys handled \\ properly (case-sensitive $cslk)");
     }
 
     # restore default

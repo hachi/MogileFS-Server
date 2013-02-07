@@ -1888,6 +1888,10 @@ sub get_keys_like {
     # fix the input... prefix always ends with a % so that it works
     # in a LIKE call, and after is either blank or something
     $prefix = '' unless defined $prefix;
+
+    # escape underscores, % and \
+    $prefix =~ s/([%\\_])/\\$1/g;
+
     $prefix .= '%';
     $after  = '' unless defined $after;
 
