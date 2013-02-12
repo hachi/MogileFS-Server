@@ -90,6 +90,12 @@ sub reap_dev {
         $delay = undef;
     }
 
+    # user resurrected a "dead" device, not supported, really...
+    if (!$dev->dstate->is_perm_dead) {
+        Mgd::log("dev$devid is no longer dead to reaper");
+        return;
+    }
+
     # limit == 0 if we hit the queue size limit, we'll just reschedule
     if ($limit && $dev) {
         my $sto = Mgd::get_store();
