@@ -323,8 +323,8 @@ sub fix_fid {
         }
 
         # wow, we actually found it!
-        $fid->fsck_log(EV_FOUND_FID);
         $fid->note_on_device($good_devs[0]); # at least one good one.
+        $fid->fsck_log(EV_FOUND_FID);
 
         # fall through to check policy (which will most likely be
         # wrong, with only one file_on record...) and re-replicate
