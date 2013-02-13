@@ -12,6 +12,10 @@ use Digest;
 use POSIX qw(O_RDONLY);
 use Mogstored::TaskQueue;
 
+BEGIN {
+    eval { require IO::AIO; };
+}
+
 # TODO: interface to make this tunable
 my %digest_queues;
 
@@ -128,6 +132,9 @@ sub digest {
 
     Perlbal::AIO::aio_open("$path$uri", O_RDONLY, 0, sub {
         my $fh = shift;
+        eval {
+            IO::AIO::fadvise(fileno($fh), 0, 0, IO::AIO::FADV_SEQUENTIAL);
+        };
 
         if ($self->{closed}) {
             CORE::close($fh) if $fh;
