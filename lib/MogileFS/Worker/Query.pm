@@ -250,7 +250,14 @@ sub cmd_create_open {
 
     my @devices = Mgd::device_factory()->get_all;
     if ($size) {
-        @devices = grep { ($_->mb_free * 1024*1024) > $size } @devices;
+        # We first ignore all the devices with an unknown space free.
+        @devices = grep { length($_->mb_free) && ($_->mb_free * 1024*1024) > $size } @devices;
+
+        # If we didn't find any, try all the devices with an unknown space free.
+        # This may happen if mogstored isn't running.
+        if (!@devices) {
+            @devices = grep { !length($_->mb_free) } Mgd::device_factory()->get_all;
+        }
     }
 
     unless (MogileFS::run_global_hook('cmd_create_open_order_devices', [ @devices ], \@devices)) {
