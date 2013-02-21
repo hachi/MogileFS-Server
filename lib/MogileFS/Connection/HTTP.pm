@@ -211,7 +211,7 @@ sub err_response {
     my ($self, $err, $http_res_cb) = @_;
 
     my $res = HTTP::Response->new(500, $err);
-    $err ||= "(unspecifed error)";
+    $err ||= "(unspecified error)";
     my $req = $self->{http_req} || "no HTTP request made";
     Mgd::error("$err: $req");
     $res->header("X-MFS-Error", $err);

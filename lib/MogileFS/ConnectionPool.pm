@@ -114,7 +114,7 @@ sub _conn_new_maybe {
 }
 
 # creates new connection and registers it in our fdmap
-# returns undef if resources (FDs, buffers) aren't available
+# returns error string if resources (FDs, buffers) aren't available
 sub _conn_new {
     my ($self, $ip, $port) = @_;
 
@@ -130,10 +130,7 @@ sub _conn_new {
         # EMFILE/ENFILE should never happen as the capacity for this
         # pool is far under the system defaults.  Just give up on
         # EMFILE/ENFILE like any other error.
-        my $mfs_err = $!;
-        Mgd::log('err', "failed to create socket to $ip:$port ($mfs_err)");
-
-        return $mfs_err;
+        return "failed to create socket to $ip:$port ($!)";
     }
 }
 
