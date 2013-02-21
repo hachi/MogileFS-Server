@@ -123,7 +123,7 @@ sub http_conn_get {
 
     _init_pools();
     my $conn = $http_pool->conn_get($ip, $port);
-    $conn->sock->blocking(1);
+    $conn->sock->blocking(1) if $conn;
     return $conn;
 }
 
