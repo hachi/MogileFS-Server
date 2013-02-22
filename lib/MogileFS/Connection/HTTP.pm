@@ -191,7 +191,7 @@ sub err {
     my $http_res_cb = delete $self->{http_res_cb};
 
     # don't retry if we already got a response header nor if we got a timeout
-    if ($reason !~ /timeout/ && $self->retryable && $http_res_cb && !$self->{http_response}) {
+    if ($self->retryable($reason) && $http_res_cb && !$self->{http_response}) {
         # do not call inflight_expire here, since we need inflight_cb
         # for retrying
 

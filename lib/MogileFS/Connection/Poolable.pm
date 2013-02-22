@@ -57,7 +57,10 @@ sub mark_idle {
 # has ever been marked idle.  The connection pool can never be 100%
 # reliable for detecting dead sockets, and all HTTP requests made by
 # MogileFS are idempotent.
-sub retryable { $_[0]->{mfs_requests} > 0 }
+sub retryable {
+    my ($self, $reason) = @_;
+    return ($reason !~ /timeout/ && $self->{mfs_requests} > 0);
+}
 
 # Sets (or updates) the timeout of the connection
 # timeout_key is "node_timeout" or "conn_timeout"
