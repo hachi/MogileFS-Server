@@ -289,6 +289,26 @@ sim_node_timeout(1);
     has_nothing_queued();
 }
 
+# server is not running
+{
+    my $resp;
+
+    # we want an empty pool to avoid retries
+    my $pool = $idle_pool->{"$host->{hostip}:$host->{http_port}"};
+    is(0, scalar @$pool, "connection pool is empty");
+
+    Danga::Socket->SetPostLoopCallback(sub { ! defined($resp) });
+    $http->close; # $http is unusable after this
+    $host->http("GET", "/fail", undef, sub { $resp = $_[0] });
+    Danga::Socket->EventLoop;
+    ok(! $resp->is_success, "HTTP response is not successful");
+    ok($resp->header("X-MFS-Error"), "X-MFS-Error is set");
+    is(0, scalar @$pool, "connection pool is empty");
+
+    has_nothing_inflight();
+    has_nothing_queued();
+}
+
 done_testing();
 
 sub has_nothing_inflight {
