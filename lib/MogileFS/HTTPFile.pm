@@ -204,15 +204,14 @@ retry:
     } elsif ($rv =~ /^\Q$uri\E \Q$alg\E=([a-f0-9]{32,128})\r\n/) {
         my $hexdigest = $1;
 
-        if ($hexdigest eq FILE_MISSING) {
-            # FIXME, this could be another error like EMFILE/ENFILE
-            return FILE_MISSING;
-        }
         my $checksum = eval {
             MogileFS::Checksum->from_string(0, "$alg:$hexdigest")
         };
         return undeferr("$alg failed for $uri: $@") if $@;
         return $checksum->{checksum};
+    } elsif ($rv =~ /^\Q$uri\E \Q$alg\E=-1\r\n/) {
+        # FIXME, this could be another error like EMFILE/ENFILE
+        return FILE_MISSING;
     } elsif ($rv =~ /^ERROR /) {
         return; # old server, fallback to HTTP
     }

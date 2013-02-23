@@ -126,4 +126,8 @@ ok($size == $file->size, "big file size match $size");
 ok($file->digest_mgmt('MD5', sub {}) eq $expect, "digest_mgmt('MD5') on big file");
 ok($file->digest_http('MD5', sub {}) eq $expect, "digest_http('MD5') on big file");
 
+ok($file->delete, "file deleted");
+is(-1, $file->digest_http('MD5', sub {}), "digest_http detected missing");
+is(-1, $file->digest_mgmt('MD5', sub {}), "digest_mgmt detected missing");
+
 done_testing();
