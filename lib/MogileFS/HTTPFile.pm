@@ -149,6 +149,18 @@ sub digest_mgmt {
     my $rv;
     my $expiry;
 
+    # assuming the storage node can checksum at >=2MB/s, low expectations here
+    my $response_timeout = $self->size / (2 * 1024 * 1024);
+    if ($reason && $reason eq "fsck") {
+        # fsck has low priority in mogstored and is concurrency-limited,
+        # so this may be queued indefinitely behind digest requests for
+        # large files
+        $response_timeout += 3600;
+    } else {
+        # account for disk/network latency:
+        $response_timeout += $node_timeout;
+    }
+
     $reason = defined($reason) ? " $reason" : "";
     my $uri = $self->{uri};
     my $req = "$alg $uri$reason\r\n";
@@ -158,8 +170,6 @@ sub digest_mgmt {
     # after sending a request
     my $retries = 2;
 
-    # assuming the storage node can checksum at >=2MB/s, low expectations here
-    my $response_timeout = $self->size / (2 * 1024 * 1024);
     my $host = $self->{host};
 
 retry:
