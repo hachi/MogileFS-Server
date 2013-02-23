@@ -415,6 +415,10 @@ sub EnqueueCommandRequest {
                            ($client->peer_ip_string || '0.0.0.0') . " $line"
                            ];
     MogileFS::ProcManager->ProcessQueues;
+    if (@PendingQueries) {
+        # Don't like the name. Feel free to change if you find better.
+        $Stats{times_out_of_qworkers}++;
+    }
 }
 
 # puts a worker back in the queue, deleting any outstanding jobs in
@@ -573,11 +577,6 @@ sub ProcessQueues {
         # so we're writing a string of the form:
         #     123-455 10.2.3.123 get_paths foo=bar&blah=bar\r\n
         $worker->write("$worker->{pid}-$worker->{reqid} $clref->[1]\r\n");
-    }
-
-    if (@PendingQueries) {
-        # Don't like the name. Feel free to change if you find better.
-        $Stats{times_out_of_qworkers}++;
     }
 }
 
