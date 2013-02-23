@@ -72,7 +72,7 @@ sub set_timeout {
     if ($timeout_key) {
         my $timeout;
 
-        if ($timeout_key =~ /[a-z_]/) {
+        if ($timeout_key =~ /\A[a-z_]+\z/) {
             $timeout = MogileFS->config($timeout_key) || 2;
         } else {
             $timeout = $timeout_key;
