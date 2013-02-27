@@ -133,7 +133,7 @@ sub digest {
     Perlbal::AIO::aio_open("$path$uri", O_RDONLY, 0, sub {
         my $fh = shift;
         eval {
-            IO::AIO::fadvise(fileno($fh), 0, 0, IO::AIO::FADV_SEQUENTIAL);
+            IO::AIO::fadvise(fileno($fh), 0, 0, IO::AIO::FADV_SEQUENTIAL());
         };
 
         if ($self->{closed}) {
