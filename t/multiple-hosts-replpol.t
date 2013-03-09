@@ -63,6 +63,16 @@ is(rr("min=2 h1[d1=X d2=X] h2[d3=X d4=_]"),
 is(rr("min=3 h1[d1=_ d2=X] h2[d3=X d4=X]"),
    "all_good");
 
+# be happy with one drain copy
+is(rr("min=2 h1[d3=X,drain d5=_] h2[d4=X d6=_]"),
+   "all_good",
+   "we are happy with one copy in a drain device");
+
+# drain copy counts
+is(rr("min=2 h1[d3=X,drain d5=X] h2[d4=X d6=_]"),
+   "too_good",
+   "the extra copy in drain leaves us too satisfied");
+
 sub rr {
     my ($state) = @_;
     my $ostate = $state; # original

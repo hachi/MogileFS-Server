@@ -44,7 +44,7 @@ sub can_delete_from   { $_[0]->{write}     }
 sub can_read_from     { $_[0]->{read}      }
 sub should_get_new_files { $_[0]->{new_files} }
 sub should_get_repl_files { $_[0]->{new_files} }
-sub should_have_files { ! ($_[0]->{drain} || $_[0]->{dead}) }
+sub should_have_files { ! $_[0]->{dead} }
 sub should_monitor    { $_[0]->{monitor}   }
 
 # named inconveniently so it's not taken to mean equalling string
