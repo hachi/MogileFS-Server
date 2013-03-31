@@ -362,6 +362,11 @@ sub dbh {
         return if (defined $flag && $flag == 0);;
     }
 
+    # auto-reconnect is unsafe if we're holding a lock
+    if ($self->{lock_depth}) {
+        die "DB connection recovery unsafe, lock held: $self->{last_lock}";
+    }
+
     eval {
         local $SIG{ALRM} = sub { die "timeout\n" };
         alarm($self->connect_timeout);
