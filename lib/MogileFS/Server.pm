@@ -219,7 +219,6 @@ sub validate_dbh {
     error("Error validating master DB: $@") if $@ && $had_dbh;
     return $dbh;
 }
-sub get_dbh      { return Mgd::get_store()->dbh  }
 
 # the eventual replacement for callers asking for a dbh directly:
 # they'll ask for the current store, which is a database abstraction

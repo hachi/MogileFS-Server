@@ -45,10 +45,6 @@ sub validate_dbh {
     return Mgd::validate_dbh();
 }
 
-sub get_dbh {
-    return Mgd::get_dbh();
-}
-
 sub monitor_has_run {
     my $self = shift;
     return $self->{monitor_has_run} ? 1 : 0;
