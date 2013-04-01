@@ -347,8 +347,10 @@ sub dbh {
         if ($self->{recheck_done_gen} != $self->{recheck_req_gen}) {
             $self->{dbh} = undef unless $self->{dbh}->ping;
             # Handles a memory leak under Solaris/Postgres.
+            # We may leak a little extra memory if we're holding a lock,
+            # since dropping a connection mid-lock is fatal
             $self->{dbh} = undef if ($self->{max_handles} &&
-                $self->{handles_left}-- < 0);
+                $self->{handles_left}-- < 0 && !$self->{lock_depth});
             $self->{recheck_done_gen} = $self->{recheck_req_gen};
         }
         return $self->{dbh} if $self->{dbh};
