@@ -80,6 +80,7 @@ t/50-checksum.t
 t/51-checksum_class_change.t
 t/60-fsck.t
 t/70-reaper.t
+t/80-job_master.t
 t/checksum.t
 t/fid-stat.t
 t/mogstored-shutdown.t

@@ -446,10 +446,12 @@ foreach my $t (qw(file file_on file_to_delete)) {
     my @jobs = qw(fsck queryworker delete replicate reaper monitor job_master);
 
     foreach my $j (@jobs) {
-      ok(want($c, 0, $j), "shut down all $j");
+        ok(want($c, 0, $j), "shut down all $j");
     }
-    foreach my $j (@jobs) {
-      ok(want($c, 1, $j), "start 1 $j");
+
+    # spawn job_master first to ensure delete/fsck/replicate can start
+    foreach my $j (reverse @jobs) {
+        ok(want($c, 1, $j), "start 1 $j");
     }
 }
 

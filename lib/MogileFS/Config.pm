@@ -62,6 +62,7 @@ our (
     $fsck_jobs,
     $reaper_jobs,
     $monitor_jobs,
+    $job_master,            # boolean
     $max_handles,
     $min_free_space,
     $max_disk_age,
@@ -105,6 +106,7 @@ sub load_config {
                              'repl_use_get_port=i' => \$cmdline{repl_use_get_port},
                              'local_network=s' => \$cmdline{local_network},
                              'mogstored_stream_port' => \$cmdline{mogstored_stream_port},
+                             'job_master!'    => \$cmdline{job_master},
                              );
 
     # warn of old/deprecated options
@@ -154,6 +156,7 @@ sub load_config {
     $replicate_jobs = choose_value( 'replicate_jobs', 1 );
     $fsck_jobs      = choose_value( 'fsck_jobs', 1 );
     $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
+    $job_master     = choose_value( 'job_master', 1 );
     $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );

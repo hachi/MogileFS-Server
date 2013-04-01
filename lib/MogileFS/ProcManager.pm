@@ -38,6 +38,10 @@ my %child  = ();    # pid -> MogileFS::Connection::Worker
 my %todie  = ();    # pid -> 1 (lists pids that we've asked to die)
 my %jobs   = ();    # jobname -> [ min, current ]
 
+# we start job_master after monitor has run, but this avoid undef warning
+# in job_needs_reduction
+$jobs{job_master} = [ 0, 0 ];
+
 our $allkidsup = 0;  # if true, all our kids are running. set to 0 when a kid dies.
 
 my @prefork_cleanup;  # subrefs to run to clean stuff up before we make a new child
@@ -47,6 +51,14 @@ my @prefork_cleanup;  # subrefs to run to clean stuff up before we make a new ch
 my $monitor_good = 0; # ticked after monitor executes once after startup
 
 my $nowish;  # updated approximately once per second
+
+# it's pointless to spawn certain jobs without a job_master
+my $want_job_master;
+my %needs_job_master = (
+    delete => 1,
+    fsck => 1,
+    replicate => 1,
+);
 
 sub push_pre_fork_cleanup {
     my ($class, $code) = @_;
@@ -173,6 +185,10 @@ sub PostEventLoopChecker {
 
         # foreach job, fork enough children
         while (my ($job, $jobstat) = each %jobs) {
+
+            # do not spawn job_master-dependent workers if we have no job_master
+            next if (! $want_job_master && $needs_job_master{$job});
+
             my $need = $jobstat->[0] - $jobstat->[1];
             if ($need > 0) {
                 error("Job $job has only $jobstat->[1], wants $jobstat->[0], making $need.");
@@ -318,6 +334,8 @@ sub request_job_process {
     my ($class, $job, $n) = @_;
     return 0 unless $class->is_valid_job($job);
     return 0 if ($job =~ /^(?:job_master|monitor)$/i && $n > 1); # ghetto special case
+
+    $want_job_master = $n if ($job eq "job_master");
 
     $jobs{$job}->[0] = $n;
     $allkidsup = 0;
@@ -781,6 +799,16 @@ sub note_pending_death {
 # see if we should reduce the number of active children
 sub job_needs_reduction {
     my $job = shift;
+    my $q;
+
+    # drop job_master-dependent workers if there is no job_master and no
+    # previously queued work
+    if (!$want_job_master && $needs_job_master{$job}
+            && $jobs{job_master}->[1] == 0 # check if job_master is really dead
+            && (($q = $pending_work{$job}) && !@$q || !$q)) {
+        return 1;
+    }
+
     return $jobs{$job}->[0] < $jobs{$job}->[1];
 }
 
@@ -815,7 +843,11 @@ sub send_monitor_has_run {
         MogileFS::ProcManager->set_min_workers('replicate'   => MogileFS->config('replicate_jobs'));
         MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
         MogileFS::ProcManager->set_min_workers('fsck'        => MogileFS->config('fsck_jobs'));
-        MogileFS::ProcManager->set_min_workers('job_master'  => 1);
+
+        # only one job_master at most
+        $want_job_master = !!MogileFS->config('job_master');
+        MogileFS::ProcManager->set_min_workers('job_master'  => $want_job_master);
+
         $monitor_good = 1;
         $allkidsup    = 0;
     }
