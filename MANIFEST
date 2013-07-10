@@ -26,6 +26,7 @@ lib/MogileFS/Overview.pm
 lib/MogileFS/ProcManager.pm
 lib/MogileFS/Rebalance.pm
 lib/MogileFS/ReplicationPolicy.pm
+lib/MogileFS/ReplicationPolicy/MultipleDevices.pm
 lib/MogileFS/ReplicationPolicy/MultipleHosts.pm
 lib/MogileFS/ReplicationPolicy/Union.pm
 lib/MogileFS/ReplicationRequest.pm
@@ -82,6 +83,7 @@ t/70-reaper.t
 t/checksum.t
 t/fid-stat.t
 t/mogstored-shutdown.t
+t/multiple-devices-replpol.t
 t/multiple-hosts-replpol.t
 t/replpolicy-parsing.t
 t/replpolicy.t
