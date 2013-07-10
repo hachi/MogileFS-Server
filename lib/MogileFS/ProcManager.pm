@@ -212,7 +212,7 @@ sub make_new_child {
         or return error("Can't block SIGINT for fork: $!");
 
     socketpair(my $parents_ipc, my $childs_ipc, AF_UNIX, SOCK_STREAM, PF_UNSPEC )
-        or die( "Sockpair failed" );
+        or die( "socketpair failed: $!" );
 
     return error("fork failed creating $job: $!")
         unless defined ($pid = fork);
