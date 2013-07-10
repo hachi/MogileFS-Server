@@ -225,7 +225,9 @@ retry:
     } elsif ($rv =~ /^ERROR /) {
         return; # old server, fallback to HTTP
     }
-    return undeferr("mogstored failed to handle ($alg $uri)");
+
+    chomp($rv);
+    return undeferr("mogstored failed to handle ($alg $uri): $rv");
 }
 
 sub digest_http {
