@@ -8,6 +8,7 @@ use base qw{Danga::Socket};
 
 use fields (
             'read_buf',
+            'read_size',   # bigger for monitor
             'job',
             'pid',
             'reqid',
@@ -27,6 +28,7 @@ sub new {
     $self->{job}         = undef;
     $self->{last_alive}  = time();
     $self->{known_state} = {};
+    $self->{read_size}   = 1024;
 
     return $self;
 }
@@ -50,7 +52,7 @@ sub event_read {
     # if we read data from it, it's not blocked on something else.
     $self->note_alive;
 
-    my $bref = $self->read(1024);
+    my $bref = $self->read($self->{read_size});
     return $self->close() unless defined $bref;
     $self->{read_buf} .= $$bref;
 
@@ -73,7 +75,11 @@ sub event_write {
 sub job {
     my MogileFS::Connection::Worker $self = shift;
     return $self->{job} unless @_;
-    return $self->{job} = shift;
+    my $j = shift;
+
+    # monitor may send huge state events (which we send to everyone else)
+    $self->{read_size} = Mgd::UNIX_RCVBUF_SIZE() if ($j eq 'monitor');
+    $self->{job} = $j;
 }
 
 sub wants_todo {

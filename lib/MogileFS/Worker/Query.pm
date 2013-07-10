@@ -59,7 +59,7 @@ sub work {
         }
 
         my $newread;
-        my $rv = sysread($psock, $newread, 1024);
+        my $rv = sysread($psock, $newread, Mgd::UNIX_RCVBUF_SIZE());
         if (!$rv) {
             if (defined $rv) {
                 die "While reading pipe from parent, got EOF.  Parent's gone.  Quitting.\n";

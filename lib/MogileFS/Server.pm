@@ -203,6 +203,21 @@ use strict;
 use warnings;
 use MogileFS::Config;
 use MogileFS::Util qw(error fatal debug); # for others calling Mgd::foo()
+use Socket qw(SOL_SOCKET SO_RCVBUF AF_UNIX SOCK_STREAM PF_UNSPEC);
+BEGIN {
+    # detect the receive buffer size for Unix domain stream sockets,
+    # we assume the size is identical across all Unix domain sockets.
+    socketpair(my $s1, my $s2, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+        or die( "socketpair failed: $!" );
+
+    my $r = getsockopt($s1, SOL_SOCKET, SO_RCVBUF);
+    defined $r or die "getsockopt: $!";
+    $r = unpack('i', $r) if defined $r;
+    $r = (defined $r && $r > 0) ? $r : 8192;
+    close $s1;
+    close $s2;
+    eval 'use constant UNIX_RCVBUF_SIZE => $r';
+}
 
 sub server {
     return MogileFS::Server->server;
