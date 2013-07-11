@@ -17,7 +17,7 @@ use fields (
 
 use Danga::Socket 1.56;
 use MogileFS::Config;
-use MogileFS::Util qw(error debug encode_url_args);
+use MogileFS::Util qw(error debug encode_url_args apply_state_events_list);
 use MogileFS::IOStatWatcher;
 use MogileFS::Server;
 use Digest::MD5 qw(md5_base64);
@@ -195,9 +195,15 @@ sub send_events_to_parent {
     }
     return unless @flat;
     $self->{events} = [];
-    my $events = join(' ', ':monitor_events', @flat);
-    debug("sending state changes $events", 2);
-    $self->send_to_parent($events);
+
+    {
+        # $events can be several MB, so let it go out-of-scope soon:
+        my $events = join(' ', ':monitor_events', @flat);
+        debug("sending state changes $events", 2);
+        $self->send_to_parent($events);
+    }
+
+    apply_state_events_list(@flat);
 }
 
 sub add_event {

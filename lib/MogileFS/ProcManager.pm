@@ -705,10 +705,11 @@ sub HandleChildRequest {
     } elsif ($cmd =~ /^:monitor_events/) {
         # Apply the state locally, so when we fork children they have a
         # pre-parsed factory.
-        # Also replay the event back where it came, so the same mechanism
-        # applies and uses local changes.
+        # We do not replay the events back to where it came, since this
+        # severely impacts startup performance for instances with several
+        # thousand domains, classes, hosts or devices.
         apply_state_events(\$cmd);
-        MogileFS::ProcManager->send_to_all_children($cmd);
+        MogileFS::ProcManager->send_to_all_children($cmd, $child);
 
     } elsif ($cmd eq ":monitor_just_ran") {
         send_monitor_has_run($child);
