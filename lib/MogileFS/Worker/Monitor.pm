@@ -195,9 +195,9 @@ sub send_events_to_parent {
     }
     return unless @flat;
     $self->{events} = [];
-    # TODO: Maybe wasting too much CPU building this debug line every time...
-    debug("sending state changes " . join(' ', ':monitor_events', @flat), 2);
-    $self->send_to_parent(join(' ', ':monitor_events', @flat));
+    my $events = join(' ', ':monitor_events', @flat);
+    debug("sending state changes $events", 2);
+    $self->send_to_parent($events);
 }
 
 sub add_event {
