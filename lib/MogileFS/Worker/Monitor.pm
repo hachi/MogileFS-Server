@@ -575,9 +575,6 @@ sub on_usage_response {
             $self->state_event('host', $dev->hostid, $event);
         }
         $self->{skip_host}{$dev->hostid} = 1;
-        my $timeout = MogileFS->config("node_timeout");
-        my $devid = $dev->id;
-        error("Timeout contacting $hostip dev $devid ($url):  took $failed_after seconds out of $timeout allowed");
     }
     return 0; # failure
 }
