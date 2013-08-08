@@ -1,3 +1,35 @@
+2013-08-07: Release version 2.68
+
+   * optimize monitor worker for large installs (Eric Wong <normalperson@yhbt.net>)
+
+   * allow startup without job_master (and dependent workers) (Eric Wong <normalperson@yhbt.net>)
+
+   * store: do not disconnect for max_handles while locked (Eric Wong <normalperson@yhbt.net>)
+
+   * store: do not auto-reconnect while holding a lock (Eric Wong <normalperson@yhbt.net>)
+
+   * add naive MultipleDevice replication policy (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: log mogstored I/O errors when checksumming (Eric Wong <normalperson@yhbt.net>)
+
+   * ProcManager: log socketpair errors correctly (Eric Wong <normalperson@yhbt.net>)
+
+   * fix "drain" handling used by MultipleHosts replpolicy (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: correct timeouts for sidechannel digest (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: correct FILE_MISSING check in digest_mgmt (Eric Wong <normalperson@yhbt.net>)
+
+   * mogstored: avoid bareword on IO::AIO w/o fadvise (Eric Wong <normalperson@yhbt.net>)
+
+   * ProcManager: only log times_out_of_qworkers for new queries (Eric Wong <normalperson@yhbt.net>)
+
+   * Don't emit warnings if we're lacking the space free of a device.  If we don't find space on devices with known space free, try the unknowns. (Dave Lambley <davel@state51.co.uk>)
+
+   * list_keys: escape in Store, allow [%\\] as prefix (Eric Wong <normalperson@yhbt.net>)
+
+   * list_keys: consistent ESCAPE usage across DB types (Eric Wong <normalperson@yhbt.net>)
+
 2013-02-02: Release version 2.67
 
    * Serialize tempfile reaping (dormando <dormando@rydia.net>)
