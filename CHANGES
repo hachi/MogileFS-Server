@@ -1,3 +1,26 @@
+2013-08-18: Release version 2.70
+
+   * This release features a very large rewrite to the Monitor worker to run
+     checks in parallel. There are no DB schema changes.
+
+   * replicate: use persistent connection from pool if possible (Eric Wong <normalperson@yhbt.net>)
+
+   * replicate: enforce expected Content-Length in http_copy (Eric Wong <normalperson@yhbt.net>)
+
+   * create_open: parallelize directory vivification (Eric Wong <normalperson@yhbt.net>)
+
+   * device: reuse HTTP connections for MKCOL (Eric Wong <normalperson@yhbt.net>)
+
+   * delete worker uses persistent HTTP connections (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: use HTTP connection pool for DELETE (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: use Net::HTTP::NB, remove LWP::UserAgent (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: parallelize size checks for any given FID (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor: refactor/rewrite to use new async API (Eric Wong <normalperson@yhbt.net>)
+
 2013-08-07: Release version 2.68
 
    * optimize monitor worker for large installs (Eric Wong <normalperson@yhbt.net>)
