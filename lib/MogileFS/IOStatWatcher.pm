@@ -97,6 +97,7 @@ sub got_disconnect {
 
 # Support class that does the communication with individual hosts.
 package MogileFS::IOStatWatch::Client;
+use Socket qw(SO_KEEPALIVE);
 
 use strict;
 use warnings;
@@ -117,6 +118,7 @@ sub new {
                                      );
     return unless $sock;
 
+    $sock->sockopt(SO_KEEPALIVE, 1);
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new($sock);
     $self->watch_write(1);
