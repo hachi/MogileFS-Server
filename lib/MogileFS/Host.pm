@@ -162,8 +162,11 @@ sub http {
 # FIXME - make these customizable
 sub _init_pools {
     return if $http_pool;
+    my $opts = {
+        total_capacity => MogileFS->config("conn_pool_size"),
+    };
 
-    $http_pool = MogileFS::ConnectionPool->new("MogileFS::Connection::HTTP");
+    $http_pool = MogileFS::ConnectionPool->new("MogileFS::Connection::HTTP", $opts);
 }
 
 1;

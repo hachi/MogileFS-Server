@@ -68,6 +68,7 @@ our (
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
     $conn_timeout,          # time in seconds to wait for connection to storage node
+    $conn_pool_size,        # size of the HTTP connection pool
     $pidfile,
     $repl_use_get_port,
     $local_network,
@@ -99,6 +100,7 @@ sub load_config {
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
                              'conn_timeout=i' => \$cmdline{conn_timeout},
+                             'conn_pool_size=i' => \$cmdline{conn_pool_size},
                              'max_handles=i'  => \$cmdline{max_handles},
                              'pidfile=s'      => \$cmdline{pidfile},
                              'no_schema_check' => \$cmdline{no_schema_check},
@@ -168,6 +170,7 @@ sub load_config {
     choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
     $conn_timeout   = choose_value( 'conn_timeout', 2 );
+    $conn_pool_size = choose_value( 'conn_pool_size', 20 );
 
     choose_value( 'rebalance_ignore_missing', 0 );
     $repl_use_get_port = choose_value( 'repl_use_get_port', 0 );

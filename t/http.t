@@ -32,10 +32,17 @@ my $host_args = {
     http_get_port => $http_get->sockport,
 };
 my $host = MogileFS::Host->new_from_args($host_args);
+
+# required, defaults to 20 in normal server
+MogileFS::Config->set_config("conn_pool_size", 13);
+
 MogileFS::Host->_init_pools;
+
 my $idle_pool = $MogileFS::Host::http_pool->{idle};
 is("MogileFS::Host", ref($host), "host created");
 MogileFS::Config->set_config("node_timeout", 1);
+
+is(13, $MogileFS::Host::http_pool->{total_capacity}, "conn_pool_size took effect");
 
 # hit the http_get_port
 {
