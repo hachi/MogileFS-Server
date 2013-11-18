@@ -80,6 +80,7 @@ sub event_write {
     # this is needed on *BSD but unnecessary (but harmless) on Linux.
     my $writeq = delete $self->{mfs_writeq};
     if ($writeq) {
+        $self->watch_write(0); # ->write will re-enable if needed
         foreach my $queued (@$writeq) {
             $self->write($queued);
         }
