@@ -1219,10 +1219,13 @@ sub update_device {
 
 sub update_device_usage {
     my $self = shift;
-    my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
+    my %arg = $self->_valid_params([qw(mb_total mb_used devid mb_asof)], @_);
     eval {
-        $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = " . $self->unix_timestamp .
-                       " WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{devid});
+        $self->dbh->do("UPDATE device SET ".
+                       "mb_total = ?, mb_used = ?, mb_asof = ?" .
+                       " WHERE devid = ?",
+                       undef, $arg{mb_total}, $arg{mb_used}, $arg{mb_asof},
+                       $arg{devid});
     };
     $self->condthrow;
 }

@@ -20,6 +20,7 @@ use fields (
             'db_monitor_ran',  # We announce "monitor_just_ran" every time the
                                # device checks are run, but only if the DB has
                                # been checked inbetween.
+            'devs_to_update'   # device table update queue
             );
 
 use Danga::Socket 1.56;
@@ -105,6 +106,7 @@ sub usage_refresh {
         # Fetch the freshlist list of entries, to avoid excessive writes.
         $self->{updateable_devices} = { map { $_->{devid} => $_ }
             Mgd::get_store()->get_all_devices };
+        $self->{devs_to_update} = [];
     } else {
         $self->{updateable_devices} = undef;
     }
@@ -132,11 +134,6 @@ sub usage_refresh {
 
 sub usage_refresh_done {
     my ($self) = @_;
-
-    if ($self->{updateable_devices}) {
-        Mgd::get_store()->release_lock('mgfs:device_update');
-        $self->{updateable_devices} = undef;
-    }
 
     $self->{devutil}->{prev} = $self->{devutil}->{tmp};
     # Set the IOWatcher hosts (once old monitor code has been disabled)
@@ -178,6 +175,16 @@ sub usage_refresh_done {
         if (delete $self->{db_monitor_ran} || $pending_since) {
             $self->send_to_parent(":monitor_just_ran");
         }
+    }
+
+    if ($self->{updateable_devices}) {
+        my $sto = Mgd::get_store();
+        my $updates = delete $self->{devs_to_update};
+        foreach my $upd (@$updates) {
+            $sto->update_device_usage(%$upd);
+        }
+        $sto->release_lock('mgfs:device_update');
+        $self->{updateable_devices} = undef;
     }
 }
 
@@ -410,10 +417,13 @@ sub check_usage_response {
     if ($self->{updateable_devices}) {
         my $devrow = $self->{updateable_devices}->{$devid};
         my $last = ($devrow && $devrow->{mb_asof}) ? $devrow->{mb_asof} : 0;
-        if ($last + UPDATE_DB_EVERY < time()) {
-            Mgd::get_store()->update_device_usage(mb_total => int($total / 1024),
-                                                  mb_used  => int($used / 1024),
-                                                  devid    => $devid);
+        my $now = time();
+        if ($last + UPDATE_DB_EVERY < $now) {
+            my %upd = (mb_total => int($total / 1024),
+                       mb_used  => int($used / 1024),
+                       mb_asof => $now,
+                       devid => $devid);
+            push @{$self->{devs_to_update}}, \%upd;
         }
     }
     return 1;
