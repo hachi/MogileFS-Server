@@ -105,6 +105,7 @@ sub set_timeout {
     my ($self, $timeout_key) = @_;
     my $mfs_pool = $self->{mfs_pool};
 
+    $self->SetPostLoopCallback(undef);
     if ($timeout_key) {
         my $timeout;
 
@@ -144,7 +145,7 @@ sub expired {
     if ($now >= $expire) {
         my $expire_cb = delete $self->{mfs_expire_cb};
         if ($expire_cb && $self->sock) {
-            $expire_cb->($now);
+            $self->SetPostLoopCallback(sub { $expire_cb->($now); 1 });
         }
         return 1;
     }
