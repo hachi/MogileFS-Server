@@ -182,6 +182,7 @@ sub usage_refresh_done {
         my $updates = delete $self->{devs_to_update};
         foreach my $upd (@$updates) {
             $sto->update_device_usage(%$upd);
+            $self->still_alive;
         }
         $sto->release_lock('mgfs:device_update');
         $self->{updateable_devices} = undef;
