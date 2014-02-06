@@ -1230,6 +1230,15 @@ sub update_device_usage {
     $self->condthrow;
 }
 
+# MySQL has an optimized version
+sub update_device_usages {
+    my ($self, $updates, $cb) = @_;
+    foreach my $upd (@$updates) {
+        $self->update_device_usage(%$upd);
+        $cb->();
+    }
+}
+
 # This is unimplemented at the moment as we must verify:
 # - no file_on rows exist
 # - nothing in file_to_queue is going to attempt to use it

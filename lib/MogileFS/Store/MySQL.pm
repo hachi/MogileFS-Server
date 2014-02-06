@@ -444,6 +444,31 @@ sub get_keys_like_operator {
     return $bool ? "LIKE /*! BINARY */" : "LIKE";
 }
 
+sub update_device_usages {
+    my ($self, $updates, $cb) = @_;
+    $cb->();
+    my $chunk = 10000; # in case we hit max_allowed_packet size(!)
+    while (scalar @$updates) {
+        my @cur = splice(@$updates, 0, $chunk);
+        my @set;
+        foreach my $fld (qw(mb_total mb_used mb_asof)) {
+            my $s = "$fld = CASE devid\n";
+            foreach my $upd (@cur) {
+                my $devid = $upd->{devid};
+                defined($devid) or croak("devid not set\n");
+                my $val = $upd->{$fld};
+                defined($val) or croak("$fld not defined for $devid\n");
+                $s .= "WHEN $devid THEN $val\n";
+            }
+            $s .= "ELSE $fld END";
+            push @set, $s;
+        }
+        my $sql = "UPDATE device SET ". join(",\n", @set);
+        $self->dowell($sql);
+        $cb->();
+    }
+}
+
 1;
 
 __END__
