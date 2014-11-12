@@ -1671,14 +1671,6 @@ sub update_host {
     return 1;
 }
 
-sub update_host_property {
-    my ($self, $hostid, $col, $val) = @_;
-    $self->conddup(sub {
-        $self->dbh->do("UPDATE host SET $col=? WHERE hostid=?", undef, $val, $hostid);
-    });
-    return 1;
-}
-
 # return ne hostid, or throw 'dup' on error.
 # NOTE: you need to put them into the initial 'down' state.
 sub create_host {
