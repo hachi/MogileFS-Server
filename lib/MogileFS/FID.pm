@@ -151,12 +151,6 @@ sub enqueue_for_replication {
     Mgd::get_store()->enqueue_for_replication($self->id, $from_devid, $in);
 }
 
-sub mark_unreachable {
-    my $self = shift;
-    # update database table
-    Mgd::get_store()->mark_fidid_unreachable($self->id);
-}
-
 sub delete {
     my $fid = shift;
     my $sto = Mgd::get_store();

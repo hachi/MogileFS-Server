@@ -1252,13 +1252,6 @@ sub delete_device {
     die "Unimplemented; needs further testing";
 }
 
-sub mark_fidid_unreachable {
-    my ($self, $fidid) = @_;
-    die "Your database does not support REPLACE! Reimplement mark_fidid_unreachable!" unless $self->can_replace;
-    $self->dbh->do("REPLACE INTO unreachable_fids VALUES (?, " . $self->unix_timestamp . ")",
-                   undef, $fidid);
-}
-
 sub set_device_weight {
     my ($self, $devid, $weight) = @_;
     eval {

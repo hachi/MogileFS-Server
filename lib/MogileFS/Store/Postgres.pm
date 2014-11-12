@@ -701,20 +701,6 @@ sub create_device {
     return 1;
 }
 
-sub mark_fidid_unreachable {
-    my ($self, $fidid) = @_;
-    my $dbh = $self->dbh;
-
-    eval {
-        $self->insert_or_update(
-            insert => "INSERT INTO unreachable_fids (fid, lastupdate) VALUES (?, ".$self->unix_timestamp.")",
-            insert_vals => [ $fidid ],
-            update => "UPDATE unreachable_fids SET lastupdate = ".$self->unix_timestamp." WHERE field = ?",
-            update_vals => [ $fidid ],
-        );
-    };
-}
-
 sub replace_into_file {
     my $self = shift;
     my %arg  = $self->_valid_params([qw(fidid dmid key length classid devcount)], @_);
