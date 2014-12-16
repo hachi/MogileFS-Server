@@ -174,6 +174,7 @@ sub was_duplicate_error {
     my $errstr = $dbh->errstr;
     return 1 if $errstr =~ /(?:is|are) not unique/i;
     return 1 if $errstr =~ /must be unique/i;
+    return 1 if $errstr =~ /UNIQUE constraint failed/i;
     return 0;
 }
 
