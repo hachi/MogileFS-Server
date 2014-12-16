@@ -1,3 +1,29 @@
+2014-12-15: Release version 2.72
+
+   * Work with DBD::SQLite's latest lock errors (dormando <dormando@rydia.net>)
+
+   * remove update_host_property (Eric Wong <e@80x24.org>)
+
+   * remove users of unreachable_fids table (Eric Wong <e@80x24.org>)
+
+   * monitor: batch MySQL device table updates (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor: defer DB updates until all HTTP requests are done (Eric Wong <normalperson@yhbt.net>)
+
+   * connection/poolable: defer expiry of timed out connections (Eric Wong <e@80x24.org>)
+
+   * connection/poolable: disable watch_write before retrying write (Eric Wong <normalperson@yhbt.net>)
+
+   * connection/poolable: do not write before event_write (Eric Wong <normalperson@yhbt.net>)
+
+   * add conn_pool_size configuration option (Eric Wong <normalperson@yhbt.net>)
+
+   * enable TCP keepalives for iostat watcher sockets (Eric Wong <normalperson@yhbt.net>)
+
+   * host: add "readonly" state to override device "alive" state (Eric Wong <normalperson@yhbt.net>)
+
+   * add LICENSE file to distro (dormando <dormando@rydia.net>)
+
 2013-08-18: Release version 2.70
 
    * This release features a very large rewrite to the Monitor worker to run
