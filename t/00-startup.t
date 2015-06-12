@@ -484,4 +484,6 @@ foreach my $t (qw(file file_on file_to_delete)) {
     $sto->set_server_setting('case_sensitive_list_keys', undef);
 }
 
+ok($tmptrack->mogadm(qw(host mark hostA readonly)), "host state=readonly");
+
 done_testing();
