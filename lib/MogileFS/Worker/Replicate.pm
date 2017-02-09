@@ -172,7 +172,13 @@ sub replicate_using_torepl_table {
                 last;
             }
         }
-        $self->rebalance_devfid($devfid) if $devfid;
+        if ($devfid) {
+            if ($self->rebalance_devfid($devfid)) {
+                # disable exponential backoff below if we rebalanced due to
+                # excessive replication:
+                $todo->{failcount} = 0;
+            }
+        }
     }
 
     # at this point, the rest of the errors require exponential backoff.  define what this means
@@ -184,7 +190,7 @@ sub replicate_using_torepl_table {
     return 1;
 }
 
-# Return 1 on success, 0 on failure.
+# Return 1 on success, 0 on failure or no-op.
 sub rebalance_devfid {
     my ($self, $devfid, $opts) = @_;
     $opts ||= {};
@@ -273,7 +279,7 @@ sub rebalance_devfid {
     }
 
     $unlock->();
-    return 1;
+    return $should_delete;
 }
 
 # replicates $fid to make sure it meets its class' replicate policy.
