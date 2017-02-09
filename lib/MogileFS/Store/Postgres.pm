@@ -294,8 +294,13 @@ sub upgrade_add_device_drain {
 
 sub upgrade_add_host_readonly {
     my $self = shift;
-    unless ($self->column_constraint("host", "status") =~ /\breadonly\b/) {
-        $self->dowell("ALTER TABLE host MODIFY COLUMN status VARCHAR(8) CHECK(status IN ('alive', 'dead', 'down', 'readonly'))");
+    my $cn;
+    unless ($self->column_constraint("host", "status", \$cn) =~ /\breadonly\b/) {
+        $self->dbh->begin_work;
+        $self->dowell("ALTER TABLE host DROP CONSTRAINT $cn");
+        $self->dowell("ALTER TABLE host ADD CONSTRAINT status CHECK(".
+                      "status IN ('alive', 'dead', 'down', 'readonly'))");
+        $self->dbh->commit;
     }
 }
 
@@ -447,12 +452,13 @@ sub column_type {
 }
 
 sub column_constraint {
-    my ($self, $table, $col) = @_;
-    my $sth = $self->dbh->prepare("SELECT column_name,information_schema.check_constraints.check_clause FROM information_schema.constraint_column_usage JOIN information_schema.check_constraints USING(constraint_catalog,constraint_schema,constraint_name) WHERE table_name=? AND column_name=?");
+    my ($self, $table, $col, $cn) = @_;
+    my $sth = $self->dbh->prepare("SELECT column_name,information_schema.check_constraints.check_clause,constraint_name FROM information_schema.constraint_column_usage JOIN information_schema.check_constraints USING(constraint_catalog,constraint_schema,constraint_name) WHERE table_name=? AND column_name=?");
     $sth->execute($table,$col);
     while (my $rec = $sth->fetchrow_hashref) {
         if ($rec->{column_name} eq $col) {
             $sth->finish;
+            $$cn = $rec->{constraint_name} if $cn;
             return $rec->{check_clause};
         }
     }
