@@ -108,6 +108,9 @@ sub check_fid {
     my ($self, $fid) = @_;
 
     my $fix = sub {
+        my ($reason, $recheck) = @_;
+        my $fixed;
+
         # we cached devids without locking for the fast path,
         # ensure we get an up-to-date list in the slow path.
         $fid->forget_cached_devids;
@@ -125,7 +128,16 @@ sub check_fid {
             return HANDLED;
         }
 
-        my $fixed = eval { $self->fix_fid($fid) };
+        # we may have a lockless check which failed, retry the check
+        # with the lock and see if it succeeds here:
+        if ($recheck) {
+            $fixed = $recheck->();
+            if (!$fixed) {
+                $fid->fsck_log($reason);
+            }
+        }
+
+        $fixed ||= eval { $self->fix_fid($fid) };
         my $err = $@;
         $sto->note_done_replicating($fid->id);
         if (! defined $fixed) {
@@ -141,20 +153,18 @@ sub check_fid {
 
     # first obvious fucked-up case:  no devids even presumed to exist.
     unless ($fid->devids) {
-        # first, log this weird condition.
-        $fid->fsck_log(EV_NO_PATHS);
-
-        # weird, schedule a fix (which will do a search over all
+        # weird, recheck with a lock and then log it if it fails
+        # and attempt a fix (which will do a search over all
         # devices as a last-ditch effort to locate it)
-        return $fix->();
+        return $fix->(EV_NO_PATHS, sub { $fid->devids });
     }
 
     # first, see if the assumed devids meet the replication policy for
     # the fid's class.
     unless ($fid->devids_meet_policy) {
-        # log a policy violation
-        $fid->fsck_log(EV_POLICY_VIOLATION);
-        return $fix->();
+        # recheck for policy violation under a lock, logging the violation
+        # if we failed.
+        return $fix->(EV_POLICY_VIOLATION, sub { $fid->devids_meet_policy });
     }
 
     # This is a simple fixup case
