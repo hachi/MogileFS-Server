@@ -397,18 +397,11 @@ sub _conn_drop_idle {
     my ($self) = @_;
     my $idle = $self->{idle};
 
-    # using "each" on the hash since it preserves the internal iterator
-    # of the hash across invocations of this sub.  This should preserve
-    # the balance of idle connections in a big pool with many hosts.
-    # Thus we loop twice to ensure we scan the entire idle connection
-    # pool if needed
-    foreach (1..2) {
-        while (my (undef, $val) = each %$idle) {
-            my $conn = shift @$val or next;
+    foreach my $val (values %$idle) {
+        my $conn = shift @$val or next;
 
-            $conn->close("idle_expire") if $conn->sock;
-            return;
-        }
+        $conn->close("idle_expire") if $conn->sock;
+        return;
     }
 
     confess("BUG: unable to drop an idle connection");
