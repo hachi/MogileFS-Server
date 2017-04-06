@@ -7,6 +7,7 @@ package MogileFS::Connection::Client;
 use strict;
 use Danga::Socket ();
 use base qw{Danga::Socket};
+use IO::Handle;
 
 use fields qw{read_buf};
 
@@ -14,6 +15,7 @@ sub new {
     my $self = shift;
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new( @_ );
+    IO::Handle::blocking($self->{sock}, 0);
     $self->watch_read(1);
     return $self;
 }
