@@ -211,8 +211,8 @@ sub handle_admin_command {
         MogileFS::ProcManager->SendHelp($self, $args);
     }
 
-    $self->write(join("\r\n", @out) . "\r\n") if @out;
-    $self->write(".\r\n");
+    push @out, '.', '';
+    $self->write(join("\r\n", @out));
     return;
 }
 
