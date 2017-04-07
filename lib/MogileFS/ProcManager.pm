@@ -147,12 +147,14 @@ sub PostEventLoopChecker {
     my $lastspawntime = 0; # time we last ran spawn_children sub
 
     return sub {
+        MogileFS::Connection::Client->ProcessPipelined;
         # run only once per second
         $nowish = time();
         return 1 unless $nowish > $lastspawntime;
         $lastspawntime = $nowish;
 
         MogileFS::ProcManager->WatchDog;
+        MogileFS::Connection::Client->WriterWatchDog;
 
         # see if anybody has died, but don't hang up on doing so
         while(my $pid = waitpid -1, WNOHANG) {
@@ -370,6 +372,7 @@ sub SetAsChild {
     # we just forked from our parent process, also using Danga::Socket,
     # so we need to lose all that state and start afresh.
     Danga::Socket->Reset;
+    MogileFS::Connection::Client->Reset;
 }
 
 # called when a child has died.  a child is someone doing a job for us,

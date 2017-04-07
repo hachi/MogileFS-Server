@@ -8,30 +8,98 @@ use strict;
 use Danga::Socket ();
 use base qw{Danga::Socket};
 use IO::Handle;
+use Time::HiRes qw(clock_gettime CLOCK_MONOTONIC);
+use MogileFS::Util qw(error);
 
-use fields qw{read_buf};
+use fields qw{read_buf pipelined};
+
+my %SLOW_WRITERS = ();
+my $EXPTIME = 120;
+my $PIPELINE = [];
+
+sub Reset {
+    %SLOW_WRITERS = ();
+    $PIPELINE = [];
+}
+
+sub WriterWatchDog {
+    my $dmap = Danga::Socket->DescriptorMap;
+    my $old = clock_gettime(CLOCK_MONOTONIC) - $EXPTIME;
+    foreach my $fd (keys %SLOW_WRITERS) {
+        my $last_write = $SLOW_WRITERS{$fd};
+        next if $last_write > $old;
+
+        if (my $ds = $dmap->{$fd}) {
+            error('write timeout expired: '.$ds->as_string);
+            $ds->close;
+        } else {
+            error("fd=$fd not known to Danga::Socket(!?), ignoring");
+        }
+        delete $SLOW_WRITERS{$fd};
+    }
+}
+
+sub ProcessPipelined {
+    my $run = $PIPELINE;
+    $PIPELINE = [];
+    foreach my MogileFS::Connection::Client $clref (@$run) {
+        $clref->{pipelined} = undef;
+        $clref->process_request or $clref->watch_read(1);
+    }
+}
 
 sub new {
     my $self = shift;
     $self = fields::new($self) unless ref $self;
     $self->SUPER::new( @_ );
     IO::Handle::blocking($self->{sock}, 0);
+    delete $SLOW_WRITERS{$self->{fd}};
     $self->watch_read(1);
     return $self;
 }
 
 # Client
+
+sub process_request {
+    my MogileFS::Connection::Client $self = shift;
+
+    while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
+        next unless length $1;
+        $self->handle_request($1);
+        return 1;
+    }
+    0;
+}
+
 sub event_read {
     my MogileFS::Connection::Client $self = shift;
 
     my $bref = $self->read(1024);
     return $self->close unless defined $bref;
     $self->{read_buf} .= $$bref;
+    $self->process_request;
+}
 
-    while ($self->{read_buf} =~ s/^(.*?)\r?\n//) {
-        next unless length $1;
-        $self->handle_request($1);
+sub write {
+    my MogileFS::Connection::Client $self = shift;
+    my $done = $self->SUPER::write(@_);
+    my $fd = $self->{fd};
+    if ($done) {
+        if (defined $fd) {
+            delete $SLOW_WRITERS{$fd};
+            unless ($self->{pipelined}) {
+                $self->{pipelined} = 1;
+                push @$PIPELINE, $self;
+            }
+        }
+    } else {
+        # stop reading if we can't write, otherwise we'll OOM
+        if (defined $fd) {
+            $SLOW_WRITERS{$fd} = clock_gettime(CLOCK_MONOTONIC);
+            $self->watch_read(0);
+        }
     }
+    $done;
 }
 
 sub handle_request {
@@ -48,6 +116,7 @@ sub handle_request {
         return $self->handle_admin_command($cmd, $args);
     }
 
+    $self->watch_read(0);
     MogileFS::ProcManager->EnqueueCommandRequest($line, $self);
 }
 
