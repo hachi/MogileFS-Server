@@ -77,7 +77,9 @@ sub event_read {
     my $bref = $self->read(1024);
     return $self->close unless defined $bref;
     $self->{read_buf} .= $$bref;
-    $self->process_request;
+    if ($self->process_request) {
+        $self->watch_read(0);
+    }
 }
 
 sub write {
@@ -116,7 +118,6 @@ sub handle_request {
         return $self->handle_admin_command($cmd, $args);
     }
 
-    $self->watch_read(0);
     MogileFS::ProcManager->EnqueueCommandRequest($line, $self);
 }
 
