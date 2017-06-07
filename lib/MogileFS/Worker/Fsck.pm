@@ -221,7 +221,12 @@ sub parallel_check_sizes {
         $df->size_on_disk(sub {
             my ($size) = @_;
             $done++;
-            $good++ if $cb->($df, $size);
+            if ($cb->($df, $size)) {
+                $good++;
+            } else {
+                # use another timer to force PostLoopCallback to run
+                Danga::Socket->AddTimer(0, sub { $self->still_alive });
+            }
         });
     }
 
