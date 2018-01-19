@@ -1,3 +1,29 @@
+2018-01-18: Release version 2.73
+
+   * fsck: avoid infinite wait on dead devices (Eric Wong <e@80x24.org>)
+
+   * client: always disable watch_read after a command (Eric Wong <e@80x24.org>)
+
+   * client: use single write for admin commands (Eric Wong <e@80x24.org>)
+
+   * tracker: client fairness, backpressure, and expiry (Eric Wong <e@80x24.org>)
+
+   * client connection should always be nonblocking (Eric Wong <e@80x24.org>)
+
+   * ConnectionPool: avoid undefined behavior for hash iteration (Eric Wong <e@80x24.org>)
+
+   * replicate: avoid buffered IO on reads (Eric Wong <e@80x24.org>)
+
+   * enable DB upgrade for host readonly state (Eric Wong <e@80x24.org>)
+
+   * replicate: reduce backoff for too_happy FIDs (Eric Wong <e@80x24.org>)
+
+   * fsck: this avoid redundant fsck log entries (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: do not log FOND if note_on_device croaks (Eric Wong <normalperson@yhbt.net>)
+
+   * reaper: detect resurrection of "dead" devices (Eric Wong <normalperson@yhbt.net>)
+
 2014-12-15: Release version 2.72
 
    * Work with DBD::SQLite's latest lock errors (dormando <dormando@rydia.net>)
