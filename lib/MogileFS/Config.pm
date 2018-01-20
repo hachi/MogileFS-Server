@@ -20,6 +20,8 @@ use constant REBAL_QUEUE => 2;
 use constant DEVICE_SUMMARY_CACHE_TIMEOUT => 15;
 
 my %conf;
+my %server_settings;
+my $has_cached_settings = 0;
 sub set_config {
     shift if @_ == 3;
     my ($k, $v) = @_;
@@ -27,7 +29,7 @@ sub set_config {
     # if a child, propagate to parent
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->send_to_parent(":set_config_from_child $k $v");
-    } else {
+    } elsif (defined $v) {
         MogileFS::ProcManager->send_to_all_children(":set_config_from_parent $k $v");
     }
 
@@ -41,6 +43,7 @@ sub set_config_no_broadcast {
 }
 
 set_config('default_mindevcount', 2);
+set_config('min_fidid', 0);
 
 our (
     %cmdline,
@@ -59,11 +62,13 @@ our (
     $fsck_jobs,
     $reaper_jobs,
     $monitor_jobs,
+    $job_master,            # boolean
     $max_handles,
     $min_free_space,
     $max_disk_age,
     $node_timeout,          # time in seconds to wait for storage node responses
     $conn_timeout,          # time in seconds to wait for connection to storage node
+    $conn_pool_size,        # size of the HTTP connection pool
     $pidfile,
     $repl_use_get_port,
     $local_network,
@@ -95,6 +100,7 @@ sub load_config {
                              'default_mindevcount=i' => \$cmdline{default_mindevcount},
                              'node_timeout=i' => \$cmdline{node_timeout},
                              'conn_timeout=i' => \$cmdline{conn_timeout},
+                             'conn_pool_size=i' => \$cmdline{conn_pool_size},
                              'max_handles=i'  => \$cmdline{max_handles},
                              'pidfile=s'      => \$cmdline{pidfile},
                              'no_schema_check' => \$cmdline{no_schema_check},
@@ -102,6 +108,7 @@ sub load_config {
                              'repl_use_get_port=i' => \$cmdline{repl_use_get_port},
                              'local_network=s' => \$cmdline{local_network},
                              'mogstored_stream_port' => \$cmdline{mogstored_stream_port},
+                             'job_master!'    => \$cmdline{job_master},
                              );
 
     # warn of old/deprecated options
@@ -151,6 +158,7 @@ sub load_config {
     $replicate_jobs = choose_value( 'replicate_jobs', 1 );
     $fsck_jobs      = choose_value( 'fsck_jobs', 1 );
     $reaper_jobs    = choose_value( 'reaper_jobs', 1 );
+    $job_master     = choose_value( 'job_master', 1 );
     $monitor_jobs   = choose_value( 'monitor_jobs', 1 );
     $min_free_space = choose_value( 'min_free_space', 100 );
     $max_disk_age   = choose_value( 'max_disk_age', 5 );
@@ -162,6 +170,7 @@ sub load_config {
     choose_value( 'default_mindevcount', 2 );
     $node_timeout   = choose_value( 'node_timeout', 2 );
     $conn_timeout   = choose_value( 'conn_timeout', 2 );
+    $conn_pool_size = choose_value( 'conn_pool_size', 20 );
 
     choose_value( 'rebalance_ignore_missing', 0 );
     $repl_use_get_port = choose_value( 'repl_use_get_port', 0 );
@@ -235,6 +244,17 @@ Details: [sto=$sto, err=$@]
     }
 
     $sto->pre_daemonize_checks;
+
+    # If MySQL gets restarted InnoDB may reset its auto_increment counter. If
+    # the first few fids have been deleted, the "reset to max on duplicate"
+    # code won't fire immediately.
+    # Instead, we also trigger it if a configured "min_fidid" is higher than
+    # what we got from innodb.
+    # For bonus points: This value should be periodically updated, in case the
+    # trackers don't go down as often as the database.
+    my $min_fidid = $sto->max_fidid;
+    $min_fidid = 0 unless $min_fidid;
+    set_config('min_fidid', $min_fidid);
 }
 
 # set_server_setting( key, value )
@@ -256,9 +276,23 @@ sub server_setting {
     return Mgd::get_store()->server_setting($key);
 }
 
+sub cache_server_setting {
+    my ($class, $key, $val) = @_;
+    $has_cached_settings++ unless $has_cached_settings;
+    if (! defined $val) {
+        delete $server_settings{$key}
+            if exists $server_settings{$key};
+    }
+    $server_settings{$key} = $val;
+}
+
 sub server_setting_cached {
-    my ($class, $key, $timeout) = @_;
-    return Mgd::get_store()->server_setting_cached($key, $timeout);
+    my ($class, $key, $fallback) = @_;
+    $fallback = 1 unless (defined $fallback);
+    if (!$has_cached_settings && $fallback) {
+        return MogileFS::Config->server_setting($key);
+    }
+    return $server_settings{$key};
 }
 
 my $memc;
@@ -266,15 +300,18 @@ my $last_memc_server_fetch = 0;
 my $have_memc_module = eval "use Cache::Memcached; 1;";
 sub memcache_client {
     return undef unless $have_memc_module;
-    $memc ||= Cache::Memcached->new;
 
     # only reload the server list every 30 seconds
     my $now = time();
     return $memc if $last_memc_server_fetch > $now - 30;
 
-    my @servers = split(/\s*,\s*/, MogileFS::Config->server_setting("memcache_servers") || "");
-    $memc->set_servers(\@servers);
+    my @servers = grep(/:\d+$/, split(/\s*,\s*/, MogileFS::Config->server_setting_cached("memcache_servers") || ""));
     $last_memc_server_fetch = $now;
+
+    return ($memc = undef) unless @servers;
+
+    $memc ||= Cache::Memcached->new;
+    $memc->set_servers(\@servers);
 
     return $memc;
 }
@@ -286,6 +323,7 @@ sub hostname {
 
 sub server_setting_is_readable {
     my ($class, $key) = @_;
+    return 1 if $key eq 'fsck_checksum';
     return 0 if $key =~ /^fsck_/;
     return 1;
 }
@@ -333,25 +371,29 @@ sub server_setting_is_writable {
 
     # let slave settings go through unmodified, for now.
     if ($key =~ /^slave_/) { return $del_if_blank };
-    if ($key eq "enable_rebalance") { return $bool };
+    if ($key eq "skip_devcount") { return $bool };
+    if ($key eq "skip_mkcol") { return $bool };
+    if ($key eq "case_sensitive_list_keys") { return $bool };
     if ($key eq "memcache_servers") { return $any  };
+    if ($key eq "memcache_ttl") { return $num };
     if ($key eq "internal_queue_limit") { return $num };
 
     # ReplicationPolicy::MultipleNetworks
     if ($key eq 'network_zones') { return $any };
     if ($key =~ /^zone_/) { return $valid_netmask_list };
 
-    if ($key eq "rebalance_policy") { return sub {
-        my $v = shift;
-        return undef unless $v;
-        # TODO: actually load the provided class and test if it loads?
-        die "Doesn't match acceptable format" unless
-            $v =~ /^[\w:\-]+$/;
-        return $v;
-    }}
-
     # should probably restrict to (\d+)
     if ($key =~ /^queue_/) { return $any };
+
+    if ($key eq "fsck_checksum") {
+        return sub {
+            my $v = shift;
+            return "off" if $v eq "off";
+            return undef if $v eq "class";
+            return $v if MogileFS::Checksum->valid_alg($v);
+            die "Not a valid checksum algorithm";
+        }
+    }
 
     return 0;
 }

@@ -1,6 +1,7 @@
 package MogileFS::DevFID;
 use strict;
 use warnings;
+use MogileFS::Server;
 use overload '""' => \&as_string;
 use Carp qw(croak);
 
@@ -25,7 +26,7 @@ sub as_string {
 
 sub device {
     my $self = shift;
-    return $self->{dev} ||= MogileFS::Device->of_devid($self->{devid});
+    return $self->{dev} ||= Mgd::device_factory()->get_by_id($self->{devid});
 }
 
 sub fid {
@@ -51,20 +52,45 @@ sub get_url {
 }
 
 sub vivify_directories {
-    my $self = shift;
+    my ($self, $cb) = @_;
     my $url = $self->url;
-    MogileFS::Device->vivify_directories($url);
+    $self->device()->vivify_directories($url, $cb);
 }
 
 # returns 0 on missing,
 # undef on connectivity error,
 # else size of file on disk (after HTTP HEAD or mogstored stat)
+# invokes $cb on the size if $cb is supplied (and Danga::Socket->EventLoop runs)
 sub size_on_disk {
-    my $self = shift;
+    my ($self, $cb) = @_;
+
+    if ($self->device->should_read_from) {
+        my $url = $self->get_url;
+        my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
+
+        # check that it has size (>0) and is reachable (not undef)
+        return $httpfile->size($cb);
+    } else {
+        # monitor says we cannot read from this device, so do not try
+
+        Danga::Socket->AddTimer(0, sub { $cb->(undef) }) if $cb;
+        return undef;
+    }
+}
+
+# returns -1 on missing,
+# undef on connectivity error,
+# else checksum of file on disk (after HTTP GET or mogstored read)
+sub checksum_on_disk {
+    my ($self, $alg, $ping_cb, $reason) = @_;
+
+    return undef unless $self->device->should_read_from;
+
     my $url = $self->get_url;
+    my $httpfile = $self->{_httpfile_get} ||= MogileFS::HTTPFile->at($url);
 
     # check that it has size (>0) and is reachable (not undef)
-    return MogileFS::HTTPFile->at($url)->size;
+    return $httpfile->digest($alg, $ping_cb, $reason);
 }
 
 # returns true if size seen matches fid's length
@@ -105,7 +131,6 @@ sub _make_full_url {
     # get some information we'll need
     my $dev  = $self->device   or return undef;
     my $host = $dev->host      or return undef;
-    return undef unless $host->exists;
 
     my $path   = $self->uri_path;
     my $hostip = $host->ip;
@@ -121,6 +146,9 @@ sub add_to_db {
 
     my $sto = Mgd::get_store();
     if ($sto->add_fidid_to_devid($self->{fidid}, $self->{devid})) {
+        if (my $memc = MogileFS::Config->memcache_client) {
+            $memc->delete("mogdevids:$self->{fidid}");
+        }
         return $self->fid->update_devcount(no_lock => $no_lock);
     } else {
         # was already on that device
@@ -148,7 +176,7 @@ sub destroy {
 
     my $sto = Mgd::get_store();
     $sto->remove_fidid_from_devid($self->fidid, $self->devid);
-    $sto->update_devcount($self->fidid);
+    $self->fid->update_devcount(no_lock => 1);
 }
 
 1;

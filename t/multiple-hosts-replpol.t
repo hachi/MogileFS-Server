@@ -10,8 +10,6 @@ use MogileFS::Util qw(error_code);
 use MogileFS::ReplicationPolicy::MultipleHosts;
 use MogileFS::Test;
 
-plan tests => 13;
-
 # already good.
 is(rr("min=2  h1[d1=X d2=_] h2[d3=X d4=_]"),
    "all_good", "all good");
@@ -65,13 +63,25 @@ is(rr("min=2 h1[d1=X d2=X] h2[d3=X d4=_]"),
 is(rr("min=3 h1[d1=_ d2=X] h2[d3=X d4=X]"),
    "all_good");
 
+# be happy with one drain copy
+is(rr("min=2 h1[d3=X,drain d5=_] h2[d4=X d6=_]"),
+   "all_good",
+   "we are happy with one copy in a drain device");
+
+# drain copy counts
+is(rr("min=2 h1[d3=X,drain d5=X] h2[d4=X d6=_]"),
+   "too_good",
+   "the extra copy in drain leaves us too satisfied");
+
 sub rr {
     my ($state) = @_;
     my $ostate = $state; # original
 
-    MogileFS::Host->t_wipe_singletons;
-    MogileFS::Device->t_wipe_singletons;
+    MogileFS::Factory::Host->t_wipe;
+    MogileFS::Factory::Device->t_wipe;
     MogileFS::Config->set_config_no_broadcast("min_free_space", 100);
+    my $hfac = MogileFS::Factory::Host->get_factory;
+    my $dfac = MogileFS::Factory::Device->get_factory;
 
     my $min = 2;
     if ($state =~ s/^\bmin=(\d+)\b//) {
@@ -90,17 +100,19 @@ sub rr {
         $opts ||= "";
         die "dup host $n" if $hosts->{$n};
 
-        my $h = $hosts->{$n} = MogileFS::Host->of_hostid($n);
-        $h->t_init($opts || "alive");
+        my $h = $hosts->{$n} = $hfac->set({ hostid => $n,
+            status => ($opts || "alive"), observed_state => "reachable",
+            hostname => $n });
 
         foreach my $ddecl (split(/\s+/, $devstr)) {
             $ddecl =~ /^d(\d+)=([_X])(?:,(\w+))?$/
                 or $parse_error->();
             my ($dn, $on_not, $status) = ($1, $2, $3);
             die "dup device $dn" if $devs->{$dn};
-            my $d = $devs->{$dn} = MogileFS::Device->of_devid($dn);
-            $status ||= "alive";
-            $d->t_init($h->id, $status);
+            my $d = $devs->{$dn} = $dfac->set({ devid => $dn,
+                hostid => $h->id, observed_state => "writeable",
+                status => ($status || "alive"), mb_total => 1000,
+                mb_used => 100, });
             if ($on_not eq "X" && $d->dstate->should_have_files) {
                 push @$on_devs, $d;
             }
@@ -120,3 +132,4 @@ sub rr {
     return $rr->t_as_string;
 }
 
+done_testing();

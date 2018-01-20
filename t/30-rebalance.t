@@ -12,9 +12,7 @@ use MogileFS::Test;
 find_mogclient_or_skip();
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 40;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -78,18 +76,13 @@ ok($tmptrack->mogadm("host", "add", "hostC", "--ip=$hostC_ip", "--status=alive")
 ok($tmptrack->mogadm("device", "add", "hostC", 5), "created dev5 on hostC");
 ok($tmptrack->mogadm("device", "add", "hostC", 6), "created dev6 on hostC");
 
-ok($tmptrack->mogadm("device", "mark", "hostA", 1, "alive"), "dev1 alive");
-ok($tmptrack->mogadm("device", "mark", "hostA", 2, "alive"), "dev2 alive");
-ok($tmptrack->mogadm("device", "mark", "hostB", 3, "alive"), "dev3 alive");
-ok($tmptrack->mogadm("device", "mark", "hostB", 4, "alive"), "dev4 alive");
-ok($tmptrack->mogadm("device", "mark", "hostC", 5, "alive"), "dev5 alive");
-ok($tmptrack->mogadm("device", "mark", "hostC", 6, "alive"), "dev6 alive");
-
 # wait for monitor
 {
     my $was = $be->{timeout};  # can't use local on phash :(
     $be->{timeout} = 10;
-    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+    ok($be->do_request("clear_cache", {}), "waited for monitor")
+        or die "Failed to wait for monitor";
+    ok($be->do_request("clear_cache", {}), "waited for monitor")
         or die "Failed to wait for monitor";
     $be->{timeout} = $was;
 }
@@ -108,17 +101,22 @@ for my $n (1..$n_files) {
 pass("Created a ton of files");
 
 # wait for replication to go down
+# We need to wait for BOTH queues to be empty before we continue to rebalance.
+# If there is anything left w/ a devid that we rebalance away from, there would
+# be a failure when the HTTP delete happens simultaenously to the replication.
+# This will manifest as subtest 48 failing often...
 {
     my $iters = 30;
-    my $to_repl_rows;
+    my ($to_repl_rows, $to_queue_rows);
     while ($iters) {
         $iters--;
         $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_replicate");
-        last if ! $to_repl_rows;
-        diag("Files to replicate: $to_repl_rows");
+        $to_queue_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue");
+        last if $to_repl_rows eq 0 && $to_queue_rows eq 0;
+        diag("Files to replicate: file_to_replicate=$to_repl_rows file_to_queue=$to_queue_rows");
         sleep 1;
     }
-    die "Failed to replicate all $n_files files" if $to_repl_rows;
+    die "Failed to replicate all $n_files files" if $to_repl_rows || $to_queue_rows;
     pass("Replicated all $n_files files");
 }
 
@@ -127,15 +125,21 @@ use MogileFS::Device;
 use MogileFS::Host;
 use MogileFS::Config;
 use MogileFS::Rebalance;
+use MogileFS::Factory::Host;
+use MogileFS::Factory::Device;
 use Data::Dumper qw/Dumper/;
 
-my @devs = MogileFS::Device->devices;
-my @hosts = MogileFS::Host->hosts;
+my $dfac = MogileFS::Factory::Device->get_factory;
+my $hfac = MogileFS::Factory::Host->get_factory;
+
+map { $hfac->set($_) } $sto->get_all_hosts;
+map { $dfac->set($_) } $sto->get_all_devices;
+my @devs = $dfac->get_all;
 
 ### Hacks to make tests work :/
 $MogileFS::Config::skipconfig = 1;
 MogileFS::Config->load_config;
-for my $h (@hosts) {
+for my $h ($hfac->get_all) {
     print "hostid: ", $h->id, " name: ", $h->hostname, "\n";
     $h->{observed_state} = "reachable";
 }
@@ -182,6 +186,14 @@ if ($@) {
 #print Dumper($saved_state), "\n";
 #print Dumper($devfids2), "\n";
 
+# ensure all devices are still marked alive.
+ok($tmptrack->mogadm("device", "mark", "hostA", 1, "alive"), "dev1 alive");
+ok($tmptrack->mogadm("device", "mark", "hostA", 2, "alive"), "dev2 alive");
+ok($tmptrack->mogadm("device", "mark", "hostB", 3, "alive"), "dev3 alive");
+ok($tmptrack->mogadm("device", "mark", "hostB", 4, "alive"), "dev4 alive");
+ok($tmptrack->mogadm("device", "mark", "hostC", 5, "alive"), "dev5 alive");
+ok($tmptrack->mogadm("device", "mark", "hostC", 6, "alive"), "dev6 alive");
+
 use MogileFS::Admin;
 my $moga = MogileFS::Admin->new(
                                  domain => "testdom",
@@ -190,6 +202,21 @@ my $moga = MogileFS::Admin->new(
 
 ok(! defined $moga->rebalance_stop);
 my $res;
+
+# Quickly test the "no dupes" policy.
+# ensures that source devices are properly filtered.
+my $rebal_pol_dupes = "from_devices=1";
+ok($res = $moga->rebalance_set_policy($rebal_pol_dupes));
+if (! defined $res) {
+    print "Admin error: ", $moga->errstr, "\n";
+}
+ok($res = $moga->rebalance_test);
+{
+    for my $dev (sort split /,/, $res->{ddevs}) {
+        ok($dev != 1);
+    }
+}
+
 ok($res = $moga->rebalance_set_policy($rebal_pol));
 if (! defined $res) {
     print "Admin error: ", $moga->errstr, "\n";
@@ -209,19 +236,23 @@ if ($res) {
 #    print "Start results: ", Dumper($res), "\n\n";
 }
 
-sleep 5;
+# This sleep should be replaced with a "rebalance status" check to confirm
+# it's been started. Otherwise there's up to two seconds where JobMaster might
+# not have seen the start request yet. Lowered the sleep from 5 to 3.
+sleep 3;
 
 {
     my $iters = 30;
-    my $to_repl_rows;
+    my ($to_repl_rows, $to_queue_rows);
     while ($iters) {
         $iters--;
-        $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue");
-        last if ! $to_repl_rows;
-        diag("Files to rebalance: $to_repl_rows");
+        $to_repl_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_replicate");
+        $to_queue_rows = $dbh->selectrow_array("SELECT COUNT(*) FROM file_to_queue");
+        last if $to_repl_rows eq 0 && $to_queue_rows eq 0;
+        diag("Files to rebalance: file_to_replicate=$to_repl_rows file_to_queue=$to_queue_rows");
         sleep 1;
     }
-    die "Failed to rebalance all files" if $to_repl_rows;
+    die "Failed to rebalance all files" if $to_repl_rows || $to_queue_rows;
     pass("Replicated all files");
 }
 
@@ -236,11 +267,4 @@ sleep 5;
 # - fiddle mbused/mbfree for devices and test the percentages
 # - test move limits (count, size, etc)
 
-sub try_for {
-    my ($tries, $code) = @_;
-    for (1..$tries) {
-        return 1 if $code->();
-        sleep 1;
-    }
-    return 0;
-}
+done_testing();

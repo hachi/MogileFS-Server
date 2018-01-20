@@ -1,6 +1,7 @@
 package MogileFS::Connection::Mogstored;
 use strict;
 use IO::Socket::INET;
+use Socket qw(SO_KEEPALIVE);
 
 sub new {
     my ($class, $ip, $port) = @_;
@@ -15,13 +16,10 @@ sub new {
 sub sock {
     my ($self, $timeout) = @_;
     return $self->{sock} if $self->{sock};
-    return $self->{sock} = IO::Socket::INET->new(PeerAddr => $self->{ip},
-                                                 PeerPort => $self->{port},
-                                                 Timeout  => $timeout);
-}
-
-sub sock_if_connected {
-    my $self = shift;
+    $self->{sock} = IO::Socket::INET->new(PeerAddr => $self->{ip},
+                                          PeerPort => $self->{port},
+                                          Timeout  => $timeout) or die "Could not connect to mogstored on ".$self->{ip}.":".$self->{port};
+    $self->{sock}->sockopt(SO_KEEPALIVE, 1);
     return $self->{sock};
 }
 

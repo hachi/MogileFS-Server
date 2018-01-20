@@ -82,21 +82,22 @@ sub check_slave {
 
     return 0 unless $self->{slave};
 
-    my $next_check = \$self->{slave_next_check};
+    my $next_check = \$self->{slave}->{next_check};
 
     if ($$next_check > time()) {
         return 1;
     }
 
-    my $master_status = eval { $self->dbh->selectrow_hashref("SHOW MASTER STATUS") };
-    warn "Error thrown: '$@' while trying to get master status." if $@;
+    #my $slave_status = eval { $self->{slave}->dbh->selectrow_hashref("SHOW SLAVE STATUS") };
+    #warn "Error thrown: '$@' while trying to get slave status." if $@;
 
-    my $slave_status = eval { $self->{slave}->dbh->selectrow_hashref("SHOW SLAVE STATUS") };
-    warn "Error thrown: '$@' while trying to get slave status." if $@;
-
-    # compare contrast, return 0 if not okay.
-    # Master: File Position
-    # Slave: 
+    # TODO: Check show slave status *unless* a server setting is present to
+    # tell us to ignore it (like in a multi-DC setup).
+    eval { $self->{slave}->dbh };
+    if ($@) {
+        warn "Error while checking slave: $@";
+        return 0;
+    }
 
     # call time() again here because SQL blocks.
     $$next_check = time() + 5;
@@ -125,6 +126,18 @@ sub release_lock {
     my $rv = $self->dbh->selectrow_array("SELECT RELEASE_LOCK(?)", undef, $lockname);
     $self->{lock_depth} = 0;
     return $rv;
+}
+
+sub lock_queue {
+    my ($self, $type) = @_;
+    my $lock = $self->get_lock('mfsd:' . $type, 30);
+    return $lock ? 1 : 0;
+}
+
+sub unlock_queue {
+    my ($self, $type) = @_;
+    my $lock = $self->release_lock('mfsd:' . $type);
+    return $lock ? 1 : 0;
 }
 
 # clears everything from the fsck_log table
@@ -191,9 +204,11 @@ sub new_temp {
     my $port = $args{dbport} || 3306;
     my $user = $args{dbuser} || 'root';
     my $pass = $args{dbpass} || '';
+    my $rootuser = $args{dbrootuser} || $args{dbuser} || 'root';
+    my $rootpass = $args{dbrootpass} || $args{dbpass} || '';
     my $sto =
     MogileFS::Store->new_from_dsn_user_pass("DBI:mysql:database=$dbname;host=$host;port=$port",
-        $user, $pass);
+        $rootuser, $rootpass);
 
     my $dbh = $sto->dbh;
     _create_mysql_db($dbh, $dbname);
@@ -201,10 +216,22 @@ sub new_temp {
     # allow MyISAM in the test suite.
     $ENV{USE_UNSAFE_MYSQL} = 1 unless defined $ENV{USE_UNSAFE_MYSQL};
 
-    system("$FindBin::Bin/../mogdbsetup", "--yes", "--dbname=$dbname",
-        "--dbhost=$host", "--dbport=$port", "--dbrootuser=$user",
-        "--dbrootpass=$pass", "--dbuser=$user", "--dbpass=$pass")
-        and die "Failed to run mogdbsetup ($FindBin::Bin/../mogdbsetup).";
+    my @args = ("$FindBin::Bin/../mogdbsetup", "--yes", 
+        "--dbname=$dbname", "--type=MySQL",
+        "--dbhost=$host", "--dbport=$port", 
+        "--dbrootuser=$rootuser", 
+        "--dbuser=$user", );
+    push @args, "--dbpass=$pass" unless $pass eq ''; 
+    push @args, "--dbrootpass=$rootpass" unless $rootpass eq '';
+    system(@args) 
+        and die "Failed to run mogdbsetup (".join(' ',map { "'".$_."'" } @args).").";
+
+    if($user ne $rootuser) {
+        $sto = MogileFS::Store->new_from_dsn_user_pass(
+                "DBI:mysql:database=$dbname;host=$host;port=$port",
+                $user, $pass);
+        $dbh = $sto->dbh;
+    }
 
     $dbh->do("use $dbname");
     return $sto;
@@ -257,7 +284,7 @@ sub create_table {
     # don't alter an existing table up to InnoDB from MyISAM...
     # could be costly.  but on new tables, no problem...
     unless ($existed) {
-        $dbh->do("ALTER TABLE $table TYPE=InnoDB");
+        $dbh->do("ALTER TABLE $table ENGINE=InnoDB");
         warn "DBI reported an error of: '" . $dbh->errstr . "' when trying to " .
             "alter table type of $table to InnoDB\n" if $dbh->err;
     }
@@ -298,19 +325,6 @@ sub update_devcount_atomic {
     # Don't release the lock if we never got it.
     $self->release_lock($lockname) if $lock;
     return 1;
-}
-
-sub should_begin_replicating_fidid {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    return 1 if $self->get_lock($lockname, 1);
-    return 0;
-}
-
-sub note_done_replicating {
-    my ($self, $fidid) = @_;
-    my $lockname = "mgfs:fid:$fidid:replicate";
-    $self->release_lock($lockname);
 }
 
 sub upgrade_add_host_getport {
@@ -373,6 +387,22 @@ sub upgrade_add_file_to_queue_arg {
     }
 }
 
+sub upgrade_modify_device_size {
+    my $self = shift;
+    for my $col ('mb_total', 'mb_used') {
+        if ($self->column_type("device", $col) =~ m/mediumint/i) {
+            $self->dowell("ALTER TABLE device MODIFY COLUMN $col INT UNSIGNED");
+        }
+    }
+}
+
+sub upgrade_add_host_readonly {
+    my $self = shift;
+    unless ($self->column_type("host", "status") =~ /\breadonly\b/) {
+        $self->dowell("ALTER TABLE host MODIFY COLUMN status ENUM('alive', 'dead', 'down', 'readonly')");
+    }
+}
+
 sub pre_daemonize_checks {
     my $self = shift;
     # Jay Buffington, from the mailing lists, writes:
@@ -406,6 +436,37 @@ sub pre_daemonize_checks {
         die "MySQL self-tests failed.  Your DBD::mysql might've been built against an old DBI version.\n";
     }
 
+    return $self->SUPER::pre_daemonize_checks();
+}
+
+sub get_keys_like_operator {
+    my $bool = MogileFS::Config->server_setting_cached('case_sensitive_list_keys');
+    return $bool ? "LIKE /*! BINARY */" : "LIKE";
+}
+
+sub update_device_usages {
+    my ($self, $updates, $cb) = @_;
+    $cb->();
+    my $chunk = 10000; # in case we hit max_allowed_packet size(!)
+    while (scalar @$updates) {
+        my @cur = splice(@$updates, 0, $chunk);
+        my @set;
+        foreach my $fld (qw(mb_total mb_used mb_asof)) {
+            my $s = "$fld = CASE devid\n";
+            foreach my $upd (@cur) {
+                my $devid = $upd->{devid};
+                defined($devid) or croak("devid not set\n");
+                my $val = $upd->{$fld};
+                defined($val) or croak("$fld not defined for $devid\n");
+                $s .= "WHEN $devid THEN $val\n";
+            }
+            $s .= "ELSE $fld END";
+            push @set, $s;
+        }
+        my $sql = "UPDATE device SET ". join(",\n", @set);
+        $self->dowell($sql);
+        $cb->();
+    }
 }
 
 1;

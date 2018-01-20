@@ -2,7 +2,7 @@
 
 name:      MogileFS-Server
 summary:   MogileFS-Server - MogileFS Server daemons and utilities.
-version:   2.36
+version:   2.46
 release:   2%{?dist}
 vendor:    Alan Kasindorf <dormando@rydia.net>
 packager:  Jonathan Steinert <hachi@cpan.org>
@@ -10,7 +10,7 @@ license:   Artistic
 group:     Applications/CPAN
 buildroot: %{_tmppath}/%{name}-%{version}-%(id -u -n)
 buildarch: noarch
-source:    mogilefs-server-%{version}.tar.gz
+source:    MogileFS-Server-%{version}.tar.gz
 autoreq:   no
 requires:  MogileFS-Server-mogilefsd = %{version}-%{release}
 requires:  MogileFS-Server-mogstored = %{version}-%{release}
@@ -26,10 +26,10 @@ This is a dummy package which depends on all the others so you can install them 
 
 %prep
 rm -rf "%{buildroot}"
-%setup -n mogilefs-server-%{version}
+%setup -n MogileFS-Server-%{version}
 
 %build
-%{__perl} Makefile.PL INSTALLDIRS="vendor" PREFIX=%{buildroot}%{_prefix}
+%{__perl} Makefile.PL INSTALLDIRS="vendor" PREFIX=%{buildroot}%{_prefix} INSTALL_BASE=
 make all
 make test
 
@@ -37,10 +37,6 @@ make test
 make pure_install
 
 [ -x /usr/lib/rpm/brp-compress ] && /usr/lib/rpm/brp-compress
-
-# remove mogdeps and related files
-rm -rf %{buildroot}/%{perl_vendorlib}/mogdeps
-rm -f %{buildroot}/usr/share/man/man3/mogdeps::*
 
 # remove special files
 find %{buildroot} \(                    \

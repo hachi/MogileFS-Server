@@ -16,14 +16,14 @@ $exefiles = ["mogstored"] if exists $ENV{DANGABUILD_MOGSTOREDONLY};
 $exefiles = ["mogilefsd"] if exists $ENV{DANGABUILD_MOGILEFSDONLY};
 
 WriteMakefile(
-    NAME                    => 'mogilefs-server',
+    NAME                    => 'MogileFS::Server',
     VERSION_FROM            => 'lib/MogileFS/Server.pm',
     AUTHOR                  => 'Brad Fitzpatrick <brad@danga.com>',
     ABSTRACT_FROM           => 'lib/MogileFS/Server.pm',
     EXE_FILES               => $exefiles,
     PREREQ_PM               => {
         'Danga::Socket'    => '1.56',
-        'Perlbal'          => '1.76',
+        'Perlbal'          => '1.79',
         'Sys::Syslog'      => 0,
         'Sys::Syscall'     => '0.22',
         'Getopt::Long'     => 0,
@@ -33,17 +33,17 @@ WriteMakefile(
         'IO::AIO'         => 0,
         'MogileFS::Client' => 0,
         DBI                => 0,
+        'Test::More'        => 0.88,    # 0.88 for done_testing() support
     },
     META_MERGE              => {
         no_index => {
-            directory => 'lib/mogdeps',
             package   => ['ProcessHandle', 'TrackerHandle', 'MogstoredHandle',
             'MogPath', 'Mgd'],
         },
           resources => {
-            homepage    =>      'http://danga.com/mogilefs/',
-            bugtracker  =>      'http://rt.cpan.org/Public/Dist/Display.html?Name=mogilefs-server',
-            repository  =>      'http://code.sixapart.com/svn/mogilefs/',
+            homepage    =>      'http://www.mogilefs.org',
+            bugtracker  =>      'http://code.google.com/p/mogilefs/issues/list',
+            repository  =>      'git://github.com/mogilefs/MogileFS-Server.git',
             MailingList =>      'http://groups.google.com/group/mogile',
         },
 

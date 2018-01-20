@@ -4,13 +4,12 @@ package MogileFS::Worker::Delete;
 use strict;
 use base 'MogileFS::Worker';
 use MogileFS::Util qw(error);
+use MogileFS::Server;
 
 # we select 1000 but only do a random 100 of them, to allow
 # for stateless parallelism
 use constant LIMIT => 1000;
 use constant PER_BATCH => 100;
-
-# TODO: use LWP and persistent connections to do deletes.  less local ports used.
 
 sub new {
     my ($class, $psock) = @_;
@@ -31,18 +30,21 @@ sub work {
     my $old_queue_check   = 0; # next time to check the old queue.
     my $old_queue_backoff = 0; # backoff index
 
-    # wait for one pass of the monitor
-    $self->wait_for_monitor;
-
     while (1) {
         $self->send_to_parent("worker_bored 50 delete");
         $self->read_from_parent(1);
-        $self->validate_dbh;
+        next unless $self->validate_dbh;
 
         # call our workers, and have them do things
         #    RETVAL = 0; I think I am done working for now
         #    RETVAL = 1; I have more work to do
-        my $tempres = $self->process_tempfiles;
+        my $lock = 'mgfs:tempfiles';
+        # This isn't something we need to wait for: just need to ensure one is.
+        my $tempres;
+        if (Mgd::get_store()->get_lock($lock, 0)) {
+            $tempres = $self->process_tempfiles;
+            Mgd::get_store()->release_lock($lock);
+        }
         my $delres;
         if (time() > $old_queue_check) {
             $self->reenqueue_delayed_deletes;
@@ -69,6 +71,29 @@ sub work {
         }
     }
 
+}
+
+# deletes a given DevFID from the storage device
+# returns true on success, false on failure
+sub delete_devfid {
+    my ($self, $dfid) = @_;
+
+    # send delete request
+    error("Sending delete for " . $dfid->url) if $Mgd::DEBUG >= 2;
+
+    my $res;
+    $dfid->device->host->http("DELETE", $dfid->uri_path, undef, sub { ($res) = @_ });
+    Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+    Danga::Socket->EventLoop;
+
+    my $httpcode = $res->code;
+
+    # effectively means all went well
+    return 1 if (($httpcode >= 200 && $httpcode <= 299) || $httpcode == 404);
+
+    my $status = $res->status_line;
+    error("Error: unlink failure: " . $dfid->url . ": HTTP code $status");
+    return 0;
 }
 
 sub process_tempfiles {
@@ -153,19 +178,28 @@ sub process_deletes2 {
 
     while (my $todo = shift @$queue_todo) {
         $self->still_alive;
-        $self->read_from_parent;
 
         # load all the devids related to this fid, and delete.
         my $fid    = MogileFS::FID->new($todo->{fid});
         my $fidid  = $fid->id;
+
+        # if it's currently being replicated, wait for replication to finish
+        # before deleting to avoid stale files
+        if (! $sto->should_begin_replicating_fidid($fidid)) {
+            $sto->reschedule_file_to_delete2_relative($fidid, 1);
+            next;
+        }
+
+        $sto->delete_fidid_enqueued($fidid);
+
         my @devids = $fid->devids;
         my %devids = map { $_ => 1 } @devids;
 
 
         for my $devid (@devids) {
-            my $dev = $devid ? MogileFS::Device->of_devid($devid) : undef;
+            my $dev = $devid ? Mgd::device_factory()->get_by_id($devid) : undef;
             error("deleting fid $fidid, on devid ".($devid || 'NULL')."...") if $Mgd::DEBUG >= 2;
-            unless ($dev && $dev->exists) {
+            unless ($dev) {
                 next;
             }
             if ($dev->dstate->is_perm_dead) {
@@ -199,53 +233,23 @@ sub process_deletes2 {
                 next;
             }
 
-            my $urlparts = MogileFS::Util::url_parts($path);
-
-            # hit up the server and delete it
-            # TODO: (optimization) use MogileFS->get_observed_state and don't 
-            # try to delete things known to be down/etc
-            my $sock = IO::Socket::INET->new(PeerAddr => $urlparts->[0],
-                                             PeerPort => $urlparts->[1],
-                                             Timeout => 2);
-            # this used to mark the device as down for the whole tracker.
-            # if the device is actually down, we can struggle until the
-            # monitor job figures it out... otherwise an occasional timeout
-            # due to high load will prevent delete from working at all.
-            unless ($sock) {
-                $sto->reschedule_file_to_delete2_relative($fidid,
-                    60 * 60 * (1 + $todo->{failcount}));
-                next;
-            }
-
-            # send delete request
-            error("Sending delete for $path") if $Mgd::DEBUG >= 2;
-
-            $sock->write("DELETE $urlparts->[2] HTTP/1.0\r\n\r\n");
-            my $response = <$sock>;
-            if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-                if (($1 >= 200 && $1 <= 299) || $1 == 404) {
-                    # effectively means all went well
-                    $sto->remove_fidid_from_devid($fidid, $devid);
-                    delete $devids{$devid};
-                } else {
-                    # remote file system error?  mark node as down
-                    my $httpcode = $1;
-                    error("Error: unlink failure: $path: HTTP code $httpcode");
-
-                    $sto->reschedule_file_to_delete2_relative($fidid,
-                        60 * 30 * (1 + $todo->{failcount}));
-                    next;
-                }
+            if ($self->delete_devfid($dfid)) {
+                # effectively means all went well
+                $sto->remove_fidid_from_devid($fidid, $devid);
+                delete $devids{$devid};
             } else {
-                error("Error: unknown response line deleting $path: $response");
+                # remote file system error?  connect failure? retry in 30min
+                $sto->reschedule_file_to_delete2_relative($fidid,
+                    60 * 30 * (1 + $todo->{failcount}));
+                next;
             }
         }
 
         # fid has no pants.
         unless (keys %devids) {
             $sto->delete_fid_from_file_to_delete2($fidid);
-            next;
         }
+        $sto->note_done_replicating($fidid);
     }
 
     # did work.
@@ -270,7 +274,6 @@ sub process_deletes {
         last if ++$done > PER_BATCH;
 
         $self->still_alive;
-        $self->read_from_parent;
         my ($fid, $devid) = @$dm;
         error("deleting fid $fid, on devid ".($devid || 'NULL')."...") if $Mgd::DEBUG >= 2;
 
@@ -312,8 +315,8 @@ sub process_deletes {
         # CASE: devid is marked dead or doesn't exist: consider it deleted on this devid.
         # (Note: we're tolerant of '0' as a devid, due to old buggy version which
         # would sometimes put that in there)
-        my $dev = $devid ? MogileFS::Device->of_devid($devid) : undef;
-        unless ($dev && $dev->exists) {
+        my $dev = $devid ? Mgd::device_factory()->get_by_id($devid) : undef;
+        unless ($dev) {
             $done_with_devid->("devid_doesnt_exist");
             next;
         }
@@ -345,38 +348,11 @@ sub process_deletes {
             next;
         }
 
-        my $urlparts = MogileFS::Util::url_parts($path);
-
-        # hit up the server and delete it
-        # TODO: (optimization) use MogileFS->get_observed_state and don't try to delete things known to be down/etc
-        my $sock = IO::Socket::INET->new(PeerAddr => $urlparts->[0],
-                                         PeerPort => $urlparts->[1],
-                                         Timeout => 2);
-        unless ($sock) {
-            # timeout or something, mark this device as down for now and move on
-            $self->broadcast_host_unreachable($dev->hostid);
-            $reschedule_fid->(60 * 60 * 2, "no_sock_to_hostid");
-            next;
-        }
-
-        # send delete request
-        error("Sending delete for $path") if $Mgd::DEBUG >= 2;
-
-        $sock->write("DELETE $urlparts->[2] HTTP/1.0\r\n\r\n");
-        my $response = <$sock>;
-        if ($response =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-            if (($1 >= 200 && $1 <= 299) || $1 == 404) {
-                # effectively means all went well
-                $done_with_devid->("deleted");
-            } else {
-                # remote file system error?  mark node as down
-                my $httpcode = $1;
-                error("Error: unlink failure: $path: HTTP code $httpcode");
-                $reschedule_fid->(60 * 30, "http_code_$httpcode");
-                next;
-            }
+        if ($self->delete_devfid($dfid)) {
+            $done_with_devid->("deleted");
         } else {
-            error("Error: unknown response line deleting $path: $response");
+            # remote file system error?  connect failure? retry in 30min
+            $reschedule_fid->(60 * 30, "http_failure");
         }
     }
 

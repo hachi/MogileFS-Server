@@ -2,7 +2,7 @@ package MogileFS::Server;
 use strict;
 use warnings;
 use vars qw($VERSION);
-$VERSION = "2.37";
+$VERSION = "2.73";
 
 =head1 NAME
 
@@ -15,25 +15,6 @@ MogileFS::Server - MogileFS (distributed filesystem) server
 
 =cut
 
-# based on where we found this file (a pure-perl module),
-# add the mogdeps/ subdirectory of that base to our @INC search
-# path, where all the misc Mogile dependencies are installed.
-BEGIN {
-    my $libpath;
-    if (! $ENV{MOGILE_NO_BUILTIN_DEPS} &&
-        ($libpath = $INC{"MogileFS/Server.pm"}) &&
-        $libpath =~ s!MogileFS/Server.pm$!!)
-    {
-        my $dep_dir = "${libpath}mogdeps";
-        push @INC, $dep_dir;
-        unless (($ENV{PERL5LIB} || "") =~ /$dep_dir/) {
-            $ENV{PERL5LIB} = join(":",
-                                  split(/:/, $ENV{PERL5LIB} || ""),
-                                  $dep_dir);
-        }
-    }
-}
-
 use IO::Socket;
 use Symbol;
 use POSIX;
@@ -44,12 +25,10 @@ use File::Path ();
 use Sys::Syslog ();
 use Time::HiRes ();
 use Net::Netmask;
-use LWP::UserAgent;
 use List::Util;
-use Socket ();
+use Socket qw(SO_KEEPALIVE IPPROTO_TCP TCP_NODELAY);
 
 use MogileFS::Util qw(daemonize);
-use MogileFS::Sys;
 use MogileFS::Config;
 
 use MogileFS::ProcManager;
@@ -64,16 +43,20 @@ use MogileFS::Worker::Monitor;
 use MogileFS::Worker::Fsck;
 use MogileFS::Worker::JobMaster;
 
-use MogileFS::HTTPFile;
-use MogileFS::Class;
-use MogileFS::Device;
-use MogileFS::Host;
-use MogileFS::FID;
+use MogileFS::Factory::Domain;
+use MogileFS::Factory::Class;
+use MogileFS::Factory::Host;
+use MogileFS::Factory::Device;
 use MogileFS::Domain;
+use MogileFS::Class;
+use MogileFS::Host;
+use MogileFS::Device;
+
+use MogileFS::HTTPFile;
+use MogileFS::FID;
 use MogileFS::DevFID;
 
 use MogileFS::Store;
-use MogileFS::Store::MySQL;  # FIXME: don't load this until after reading their config, but before fork.
 
 use MogileFS::ReplicationPolicy::MultipleHosts;
 
@@ -99,13 +82,7 @@ sub run {
     MogileFS::Config->check_database;
     daemonize() if MogileFS->config("daemonize");
 
-    MogileFS::ProcManager->set_min_workers('queryworker' => MogileFS->config('query_jobs'));
-    MogileFS::ProcManager->set_min_workers('delete'      => MogileFS->config('delete_jobs'));
-    MogileFS::ProcManager->set_min_workers('replicate'   => MogileFS->config('replicate_jobs'));
-    MogileFS::ProcManager->set_min_workers('reaper'      => MogileFS->config('reaper_jobs'));
-    MogileFS::ProcManager->set_min_workers('monitor'     => MogileFS->config('monitor_jobs'));
-    MogileFS::ProcManager->set_min_workers('fsck'        => MogileFS->config('fsck_jobs'));
-    MogileFS::ProcManager->set_min_workers('job_master'  => 1);
+    MogileFS::ProcManager->set_min_workers('monitor'     => 1);
 
     # open up our log
     Sys::Syslog::openlog('mogilefsd', 'pid', 'daemon');
@@ -151,6 +128,8 @@ sub run {
                                            Reuse     => 1,
                                            Listen    => 1024 )
             or die "Error creating socket: $@\n";
+        $server->sockopt(SO_KEEPALIVE, 1);
+        $server->setsockopt(IPPROTO_TCP, TCP_NODELAY, 1);
 
         # save sub to accept a client
         push @servers, $server;
@@ -223,14 +202,37 @@ use strict;
 use warnings;
 use MogileFS::Config;
 use MogileFS::Util qw(error fatal debug); # for others calling Mgd::foo()
+use Socket qw(SOL_SOCKET SO_RCVBUF AF_UNIX SOCK_STREAM PF_UNSPEC);
+BEGIN {
+    # detect the receive buffer size for Unix domain stream sockets,
+    # we assume the size is identical across all Unix domain sockets.
+    socketpair(my $s1, my $s2, AF_UNIX, SOCK_STREAM, PF_UNSPEC)
+        or die( "socketpair failed: $!" );
+
+    my $r = getsockopt($s1, SOL_SOCKET, SO_RCVBUF);
+    defined $r or die "getsockopt: $!";
+    $r = unpack('i', $r) if defined $r;
+    $r = (defined $r && $r > 0) ? $r : 8192;
+    close $s1;
+    close $s2;
+    eval 'use constant UNIX_RCVBUF_SIZE => $r';
+}
 
 sub server {
     return MogileFS::Server->server;
 }
 
 # database checking/connecting
-sub validate_dbh { Mgd::get_store()->recheck_dbh }
-sub get_dbh      { return Mgd::get_store()->dbh  }
+sub validate_dbh { 
+    my $sto = Mgd::get_store();
+    my $had_dbh = $sto->have_dbh;
+    $sto->recheck_dbh();
+    my $dbh;
+    eval { $dbh = $sto->dbh };
+    # Doesn't matter what the failure was; workers should retry later.
+    error("Error validating master DB: $@") if $@ && $had_dbh;
+    return $dbh;
+}
 
 # the eventual replacement for callers asking for a dbh directly:
 # they'll ask for the current store, which is a database abstraction
@@ -258,10 +260,27 @@ sub set_store {
     $store_pid = $$;
 }
 
+sub domain_factory {
+    return MogileFS::Factory::Domain->get_factory;
+}
+
+sub class_factory {
+    return MogileFS::Factory::Class->get_factory;
+}
+
+sub host_factory {
+    return MogileFS::Factory::Host->get_factory;
+}
+
+sub device_factory {
+    return MogileFS::Factory::Device->get_factory;
+}
+
 # log stuff to syslog or the screen
 sub log {
     # simple logging functionality
     if (! $MogileFS::Config::daemonize) {
+        $| = 1;
         # syslog acts like printf so we have to use printf and append a \n
         shift; # ignore the first parameter (info, warn, critical, etc)
         my $mask = shift; # format string

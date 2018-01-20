@@ -8,17 +8,12 @@ use fields (
             );
 
 use List::Util ();
-use MogileFS::Util qw(error every debug);
+use MogileFS::Server;
+use MogileFS::Util qw(error every debug wait_for_readability);
 use MogileFS::Config;
-use MogileFS::Class;
-use MogileFS::RebalancePolicy::DrainDevices;
 use MogileFS::ReplicationRequest qw(rr_upgrade);
-
-# setup the value used in a 'nexttry' field to indicate that this item will never
-# actually be tried again and require some sort of manual intervention.
-use constant ENDOFTIME => 2147483647;
-
-sub end_of_time { ENDOFTIME; }
+use Digest;
+use MIME::Base64 qw(encode_base64);
 
 sub new {
     my ($class, $psock) = @_;
@@ -30,41 +25,23 @@ sub new {
 
 # replicator wants
 sub watchdog_timeout { 90; }
+use constant SOCK_TIMEOUT => 45;
 
 sub work {
     my $self = shift;
 
-    # give the monitor job 15 seconds to give us an update
-    my $warn_after = time() + 15;
-
-    every(2.0, sub {
-        # replication doesn't go well if the monitor job hasn't actively started
-        # marking things as being available
-        unless ($self->monitor_has_run) {
-            error("waiting for monitor job to complete a cycle before beginning replication")
-                if time() > $warn_after;
-            return;
-        }
-
-        $self->validate_dbh;
-        my $dbh = $self->get_dbh or return 0;
-        my $sto = Mgd::get_store();
-
+    every(1.0, sub {
         $self->send_to_parent("worker_bored 100 replicate rebalance");
-        # This is here on account of not being able to block on the parent :(
-        $self->read_from_parent(1);
-        # TODO: might need to sort types or create priority queues in the
-        # parent... would want "replicate" work to happen before rebalance.
+
         my $queue_todo  = $self->queue_todo('replicate');
         my $queue_todo2 = $self->queue_todo('rebalance');
-        unless (@$queue_todo || @$queue_todo2) {
-            $self->parent_ping;
-            return;
-        }
+        return unless (@$queue_todo || @$queue_todo2);
+
+        return unless $self->validate_dbh;
+        my $sto = Mgd::get_store();
 
         while (my $todo = shift @$queue_todo) {
             my $fid = $todo->{fid};
-            $self->still_alive;
             $self->replicate_using_torepl_table($todo);
         }
         while (my $todo = shift @$queue_todo2) {
@@ -81,11 +58,7 @@ sub work {
             # manually re-run rebalance to retry.
             $sto->delete_fid_from_file_to_queue($todo->{fid}, REBAL_QUEUE);
         }
-        # if replicators are otherwise idle, use them to make the world
-        # better, rebalancing things (if enabled), and draining devices (if
-        # any are marked drain)
-        #$self->rebalance_devices;
-        #$self->drain_devices;
+        $_[0]->(0); # don't sleep.
     });
 }
 
@@ -162,7 +135,7 @@ sub replicate_using_torepl_table {
             # special; update to a time that won't happen again,
             # as we've encountered a scenario in which case we're
             # really hosed
-            $sto->reschedule_file_to_replicate_absolute($fid, ENDOFTIME);
+            $sto->reschedule_file_to_replicate_absolute($fid, $sto->end_of_time);
         } elsif ($type eq "offset") {
             $sto->reschedule_file_to_replicate_relative($fid, $delay+0);
         } else {
@@ -191,16 +164,22 @@ sub replicate_using_torepl_table {
         my $devfid;
         # First one we can delete from, we try to rebalance away from.
         for (@devs) {
-            my $dev = MogileFS::Device->of_devid($_);
-            # Not positive 'can_read_from' needs to be here.
+            my $dev = Mgd::device_factory()->get_by_id($_);
+            # Not positive 'should_read_from' needs to be here.
             # We must be able to delete off of this dev so the fid can
             # move.
-            if ($dev->can_delete_from && $dev->can_read_from) {
+            if ($dev->can_delete_from && $dev->should_read_from) {
                 $devfid = MogileFS::DevFID->new($dev, $f);
                 last;
             }
         }
-        $self->rebalance_devfid($devfid) if $devfid;
+        if ($devfid) {
+            if ($self->rebalance_devfid($devfid)) {
+                # disable exponential backoff below if we rebalanced due to
+                # excessive replication:
+                $todo->{failcount} = 0;
+            }
+        }
     }
 
     # at this point, the rest of the errors require exponential backoff.  define what this means
@@ -212,9 +191,10 @@ sub replicate_using_torepl_table {
     return 1;
 }
 
-# Return 1 on success, 0 on failure.
+# Return 1 on success, 0 on failure or no-op.
 sub rebalance_devfid {
     my ($self, $devfid, $opts) = @_;
+    $opts ||= {};
     MogileFS::Util::okay_args($opts, qw(avoid_devids target_devids));
 
     my $fid = $devfid->fid;
@@ -300,7 +280,7 @@ sub rebalance_devfid {
     }
 
     $unlock->();
-    return 1;
+    return $should_delete;
 }
 
 # replicates $fid to make sure it meets its class' replicate policy.
@@ -325,15 +305,14 @@ sub replicate {
 
     my $errref    = delete $opts{'errref'};
     my $no_unlock = delete $opts{'no_unlock'};
-    my $sdevid    = delete $opts{'source_devid'};
+    my $fixed_source = delete $opts{'source_devid'};
     my $mask_devids  = delete $opts{'mask_devids'}  || {};
     my $avoid_devids = delete $opts{'avoid_devids'} || {};
-    my $target_devids = delete $opts{'target_devids'}; # inverse of avoid_devids.
+    my $target_devids = delete $opts{'target_devids'} || []; # inverse of avoid_devids.
     die "unknown_opts" if %opts;
     die unless ref $mask_devids eq "HASH";
 
-    # bool:  if source was explicitly requested by caller
-    my $fixed_source = $sdevid ? 1 : 0;
+    my $sdevid;
 
     my $sto = Mgd::get_store();
     my $unlock = sub {
@@ -370,7 +349,7 @@ sub replicate {
     };
 
     # hashref of devid -> MogileFS::Device
-    my $devs = MogileFS::Device->map
+    my $devs = Mgd::device_factory()->map_by_id
         or die "No device map";
 
     return $retunlock->(0, "failed_getting_lock", "Unable to obtain lock for fid $fidid")
@@ -389,13 +368,13 @@ sub replicate {
     my @on_up_devid;     # subset of @on_devs:  just devs that are readable
 
     foreach my $devid ($fid->devids) {
-        my $d = MogileFS::Device->of_devid($devid)
+        my $d = Mgd::device_factory()->get_by_id($devid)
             or next;
         push @on_devs, $d;
         if ($d->dstate->should_have_files && ! $mask_devids->{$devid}) {
             push @on_devs_tellpol, $d;
         }
-        if ($d->dstate->can_read_from) {
+        if ($d->should_read_from) {
             push @on_up_devid, $devid;
         }
     }
@@ -403,9 +382,8 @@ sub replicate {
     return $retunlock->(0, "no_source",   "Source is no longer available replicating $fidid") if @on_devs == 0;
     return $retunlock->(0, "source_down", "No alive devices available replicating $fidid") if @on_up_devid == 0;
 
-    # if they requested a specific source, that source must be up.
-    if ($sdevid && ! grep { $_ == $sdevid} @on_up_devid) {
-        return $retunlock->(0, "source_down", "Requested replication source device $sdevid not available");
+    if ($fixed_source && ! grep { $_ == $fixed_source } @on_up_devid) {
+        error("Fixed source dev$fixed_source requested for $fidid but not available. Trying other devices");
     }
 
     my %dest_failed;    # devid -> 1 for each devid we were asked to copy to, but failed.
@@ -414,7 +392,7 @@ sub replicate {
     my $copy_err;
 
     my $dest_devs = $devs;
-    if ($target_devids) {
+    if (@$target_devids) {
         $dest_devs = {map { $_ => $devs->{$_} } @$target_devids};
     }
 
@@ -484,24 +462,32 @@ sub replicate {
         }
 
         # find where we're replicating from
-        unless ($fixed_source) {
+        {
             # TODO: use an observed good device+host as source to start.
             my @choices = grep { ! $source_failed{$_} } @on_up_devid;
             return $retunlock->(0, "source_down", "No devices available replicating $fidid") unless @choices;
-            @choices = List::Util::shuffle(@choices);
-            MogileFS::run_global_hook('replicate_order_final_choices', $devs, \@choices);
-            $sdevid = shift @choices;
+            if ($fixed_source && grep { $_ == $fixed_source } @choices) {
+                $sdevid = $fixed_source;
+            } else {
+                @choices = List::Util::shuffle(@choices);
+                MogileFS::run_global_hook('replicate_order_final_choices', $devs, \@choices);
+                $sdevid = shift @choices;
+            }
         }
 
         my $worker = MogileFS::ProcManager->is_child or die;
+        my $digest;
+        my $fid_checksum = $fid->checksum;
+        $digest = Digest->new($fid_checksum->hashname) if $fid_checksum;
+        $digest ||= Digest->new($cls->hashname) if $cls->hashtype;
+
         my $rv = http_copy(
                            sdevid       => $sdevid,
                            ddevid       => $ddevid,
-                           fid          => $fidid,
-                           rfid         => $fid,
-                           expected_len => undef,  # FIXME: get this info to pass along
+                           fid          => $fid,
                            errref       => \$copy_err,
                            callback     => sub { $worker->still_alive; },
+                           digest       => $digest,
                            );
         die "Bogus error code: $copy_err" if !$rv && $copy_err !~ /^(?:src|dest)_error$/;
 
@@ -510,10 +496,8 @@ sub replicate {
             if ($copy_err eq "src_error") {
                 $source_failed{$sdevid} = 1;
 
-                if ($fixed_source) {
-                    # there can't be any more retries, as this source
-                    # is busted and is the only one we wanted.
-                    return $retunlock->(0, "copy_error", "error copying fid $fidid from devid $sdevid during replication");
+                if ($fixed_source && $fixed_source == $sdevid) {
+                    error("Fixed source dev$fixed_source was requested for $fidid but failed: will try other sources");
                 }
 
             } else {
@@ -524,6 +508,9 @@ sub replicate {
 
         my $dfid = MogileFS::DevFID->new($ddevid, $fid);
         $dfid->add_to_db;
+        if ($digest && !$fid->checksum) {
+            $sto->set_checksum($fidid, $cls->hashtype, $digest->digest);
+        }
 
         push @on_devs, $devs->{$ddevid};
         push @on_devs_tellpol, $devs->{$ddevid};
@@ -544,47 +531,106 @@ sub replicate {
                         "replication policy ran out of suggestions for us replicating fid $fidid");
 }
 
+# Returns a hashref with the following:
+# {
+#   code => HTTP status code integer,
+#   keep => boolean, whether to keep the connection after reading
+#   len =>  value of the Content-Length header (integer)
+# }
+# Returns undef on timeout
+sub read_headers {
+    my ($sock, $intercopy_cb) = @_;
+    my $head = '';
+
+    do {
+        wait_for_readability(fileno($sock), SOCK_TIMEOUT) or return;
+        $intercopy_cb->();
+        my $r = sysread($sock, $head, 1024, length($head));
+        if (defined $r) {
+            return if $r == 0; # EOF
+        } elsif ($!{EAGAIN} || $!{EINTR}) {
+            # loop again
+        } else {
+            return;
+        }
+    } until ($head =~ /\r?\n\r?\n/);
+
+    my $data;
+    ($head, $data) = split(/\r?\n\r?\n/, $head, 2);
+    my @head = split(/\r?\n/, $head);
+    $head = shift(@head);
+    $head =~ m!\AHTTP/(\d+\.\d+)\s+(\d+)! or return;
+    my %rv = ( keep => $1 >= 1.1, code => $2 );
+
+    foreach my $line (@head) {
+        if ($line =~ /\AConnection:\s*keep-alive\s*\z/is) {
+            $rv{keep} = 1;
+        } elsif ($line =~ /\AConnection:\s*close\s*\z/is) {
+            $rv{keep} = 0;
+        } elsif ($line =~ /\AContent-Length:\s*(\d+)\s*\z/is) {
+            $rv{len} = $1;
+        }
+    }
+    return (\%rv, $data);
+}
+
 # copies a file from one Perlbal to another utilizing HTTP
 sub http_copy {
     my %opts = @_;
-    my ($sdevid, $ddevid, $fid, $rfid, $expected_clen, $intercopy_cb, $errref) =
+    my ($sdevid, $ddevid, $fid, $intercopy_cb, $errref, $digest) =
         map { delete $opts{$_} } qw(sdevid
                                     ddevid
                                     fid
-                                    rfid
-                                    expected_len
                                     callback
                                     errref
+                                    digest
                                     );
     die if %opts;
 
+    $fid = MogileFS::FID->new($fid) unless ref($fid);
+    my $fidid = $fid->id;
+    my $expected_clen = $fid->length;
+    my $clen;
+    my $content_md5 = '';
+    my ($sconn, $dconn);
+    my $fid_checksum = $fid->checksum;
+    if ($fid_checksum && $fid_checksum->hashname eq "MD5") {
+        # some HTTP servers may be able to verify Content-MD5 on PUT
+        # and reject corrupted requests.  no HTTP server should reject
+        # a request for an unrecognized header
+        my $b64digest = encode_base64($fid_checksum->{checksum}, "");
+        $content_md5 = "\r\nContent-MD5: $b64digest";
+    }
 
     $intercopy_cb ||= sub {};
 
+    my $err_common = sub {
+        my ($err, $msg) = @_;
+        $$errref = $err if $errref;
+        $sconn->close($err) if $sconn;
+        $dconn->close($err) if $dconn;
+        return error($msg);
+    };
+
     # handles setting unreachable magic; $error->(reachability, "message")
     my $error_unreachable = sub {
-        $$errref = "src_error" if $errref;
-        return error("Fid $fid unreachable while replicating: $_[0]");
+        return $err_common->("src_error", "Fid $fidid unreachable while replicating: $_[0]");
     };
 
     my $dest_error = sub {
-        $$errref = "dest_error" if $errref;
-        error($_[0]);
-        return 0;
+        return $err_common->("dest_error", $_[0]);
     };
 
     my $src_error = sub {
-        $$errref = "src_error" if $errref;
-        error($_[0]);
-        return 0;
+        return $err_common->("src_error", $_[0]);
     };
 
     # get some information we'll need
-    my $sdev = MogileFS::Device->of_devid($sdevid);
-    my $ddev = MogileFS::Device->of_devid($ddevid);
+    my $sdev = Mgd::device_factory()->get_by_id($sdevid);
+    my $ddev = Mgd::device_factory()->get_by_id($ddevid);
 
-    return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fid")
-        unless $sdev && $ddev && $sdev->exists && $ddev->exists;
+    return error("Error: unable to get device information: source=$sdevid, destination=$ddevid, fid=$fidid")
+        unless $sdev && $ddev;
 
     my $s_dfid = MogileFS::DevFID->new($sdev, $fid);
     my $d_dfid = MogileFS::DevFID->new($ddev, $fid);
@@ -599,99 +645,201 @@ sub http_copy {
     my ($dhostip, $dport) = ($dhost->ip, $dhost->http_port);
     unless (defined $spath && defined $dpath && defined $shostip && defined $dhostip && $sport && $dport) {
         # show detailed information to find out what's not configured right
-        error("Error: unable to replicate file fid=$fid from device id $sdevid to device id $ddevid");
+        error("Error: unable to replicate file fid=$fidid from device id $sdevid to device id $ddevid");
         error("       http://$shostip:$sport$spath -> http://$dhostip:$dport$dpath");
         return 0;
     }
 
+    my $put = "PUT $dpath HTTP/1.0\r\nConnection: keep-alive\r\n" .
+              "Content-length: $expected_clen$content_md5\r\n\r\n";
+
     # need by webdav servers, like lighttpd...
     $ddev->vivify_directories($d_dfid->url);
-
-    # setup our pipe error handler, in case we get closed on
-    my $pipe_closed = 0;
-    local $SIG{PIPE} = sub { $pipe_closed = 1; };
 
     # call a hook for odd casing completely different source data
     # for specific files.
     my $shttphost;
     MogileFS::run_global_hook('replicate_alternate_source',
-                              $rfid, \$shostip, \$sport, \$spath, \$shttphost);
+                              $fid, \$shostip, \$sport, \$spath, \$shttphost);
 
+    my $durl = "http://$dhostip:$dport$dpath";
+    my $surl = "http://$shostip:$sport$spath";
     # okay, now get the file
-    my $sock = IO::Socket::INET->new(PeerAddr => $shostip, PeerPort => $sport, Timeout => 2)
+    my %sopts = ( ip => $shostip, port => $sport );
+
+    my $get = "GET $spath HTTP/1.0\r\nConnection: keep-alive\r\n";
+    # plugin set a custom host.
+    $get .= "Host: $shttphost\r\n" if $shttphost;
+
+    my ($sock, $dsock);
+    my ($wcount, $bytes_to_read, $written, $remain);
+    my ($stries, $dtries) = (0, 0);
+    my ($sres, $data, $bytes);
+
+retry:
+    $sconn->close("retrying") if $sconn;
+    $dconn->close("retrying") if $dconn;
+    $dconn = undef;
+    $stries++;
+    $sconn = $shost->http_conn_get(\%sopts)
         or return $src_error->("Unable to create source socket to $shostip:$sport for $spath");
-    unless ($shttphost) {
-        $sock->write("GET $spath HTTP/1.0\r\n\r\n");
-    } else {
-        # plugin set a custom host.
-        $sock->write("GET $spath HTTP/1.0\r\nHost: $shttphost\r\n\r\n");
+    $sock = $sconn->sock;
+    unless ($sock->write("$get\r\n")) {
+        goto retry if $sconn->retryable && $stries == 1;
+        return $src_error->("Pipe closed retrieving $spath from $shostip:$sport");
     }
-    return error("Pipe closed retrieving $spath from $shostip:$sport")
-        if $pipe_closed;
 
     # we just want a content length
-    my $clen;
-    # FIXME: this can block.  needs to timeout.
-    while (defined (my $line = <$sock>)) {
-        $line =~ s/[\s\r\n]+$//;
-        last unless length $line;
-        if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-            # make sure we get a good response
-            return $error_unreachable->("Error: Resource http://$shostip:$sport$spath failed: HTTP $1")
-                unless $1 >= 200 && $1 <= 299;
-        }
-        next unless $line =~ /^Content-length:\s*(\d+)\s*$/i;
-        $clen = $1;
+    ($sres, $data) = read_headers($sock, $intercopy_cb);
+    unless ($sres) {
+        goto retry if $sconn->retryable && $stries == 1;
+        return $error_unreachable->("Error: Resource $surl failed to return an HTTP response");
     }
+    unless ($sres->{code} >= 200 && $sres->{code} <= 299) {
+        return $error_unreachable->("Error: Resource $surl failed: HTTP $sres->{code}");
+    }
+    $clen = $sres->{len};
+
     return $error_unreachable->("File $spath has unexpected content-length of $clen, not $expected_clen")
-        if defined $expected_clen && $clen != $expected_clen;
+        if $clen != $expected_clen;
 
     # open target for put
-    my $dsock = IO::Socket::INET->new(PeerAddr => $dhostip, PeerPort => $dport, Timeout => 2)
+    $dtries++;
+    $dconn = $dhost->http_conn_get
         or return $dest_error->("Unable to create dest socket to $dhostip:$dport for $dpath");
-    $dsock->write("PUT $dpath HTTP/1.0\r\nContent-length: $clen\r\n\r\n")
-        or return $dest_error->("Unable to write data to $dpath on $dhostip:$dport");
-    return $dest_error->("Pipe closed during write to $dpath on $dhostip:$dport")
-        if $pipe_closed;
+    $dsock = $dconn->sock;
+
+    unless ($dsock->write($put)) {
+        goto retry if $dconn->retryable && $dtries == 1;
+        return $dest_error->("Pipe closed during write to $dpath on $dhostip:$dport");
+    }
 
     # now read data and print while we're reading.
-    my ($data, $written, $remain) = ('', 0, $clen);
-    my $bytes_to_read = 1024*1024;  # read 1MB at a time until there's less than that remaining
+    $bytes = length($data);
+    ($written, $remain) = (0, $clen);
+    $bytes_to_read = 1024*1024;  # read 1MB at a time until there's less than that remaining
     $bytes_to_read = $remain if $remain < $bytes_to_read;
-    my $finished_read = 0;
+    $wcount = 0;
 
-    if ($bytes_to_read) {
-        while (!$pipe_closed && (my $bytes = $sock->read($data, $bytes_to_read))) {
-            # now we've read in $bytes bytes
-            $remain -= $bytes;
-            $bytes_to_read = $remain if $remain < $bytes_to_read;
-
-            my $wbytes = $dsock->send($data);
-            $written  += $wbytes;
-            return $dest_error->("Error: wrote $wbytes; expected to write $bytes; failed putting to $dpath")
-                unless $wbytes == $bytes;
-            $intercopy_cb->();
-
-            die if $bytes_to_read < 0;
-            next if $bytes_to_read;
-            $finished_read = 1;
-            last;
+    while ($bytes_to_read) {
+        unless (defined $bytes) {
+read_again:
+            $bytes = sysread($sock, $data, $bytes_to_read);
+            unless (defined $bytes) {
+                if ($!{EAGAIN} || $!{EINTR}) {
+                    wait_for_readability(fileno($sock), SOCK_TIMEOUT) and
+                        goto read_again;
+                }
+                return $src_error->("error reading midway through source: $!");
+            }
+            if ($bytes == 0) {
+                return $src_error->("EOF reading midway through source: $!");
+            }
         }
-    } else {
-        # 0 byte file copy.
-        $finished_read = 1;
+
+        # now we've read in $bytes bytes
+        $remain -= $bytes;
+        $bytes_to_read = $remain if $remain < $bytes_to_read;
+        $digest->add($data) if $digest;
+
+        my $data_len = $bytes;
+        $bytes = undef;
+        my $data_off = 0;
+        while (1) {
+            my $wbytes = syswrite($dsock, $data, $data_len, $data_off);
+            unless (defined $wbytes) {
+                # it can take two writes to determine if a socket is dead
+                # (TCP_NODELAY and TCP_CORK are (and must be) zero here)
+                goto retry if (!$wcount && $dconn->retryable && $dtries == 1);
+                return $dest_error->("Error: syswrite failed after $written bytes with: $!; failed putting to $dpath");
+            }
+            $wcount++;
+            $written += $wbytes;
+            $intercopy_cb->();
+            last if ($data_len == $wbytes);
+
+            $data_len -= $wbytes;
+            $data_off += $wbytes;
+        }
+
+        die if $bytes_to_read < 0;
     }
-    return $dest_error->("closed pipe writing to destination")     if $pipe_closed;
-    return $src_error->("error reading midway through source: $!") unless $finished_read;
+
+    # source connection drained, return to pool
+    if ($sres->{keep}) {
+        $shost->http_conn_put($sconn);
+        $sconn = undef;
+    } else {
+        $sconn->close("http_close");
+    }
+
+    # callee will want this digest, too, so clone as "digest" is destructive
+    $digest = $digest->clone->digest if $digest;
+
+    if ($fid_checksum) {
+        if ($digest ne $fid_checksum->{checksum}) {
+            my $expect = $fid_checksum->hexdigest;
+            $digest = unpack("H*", $digest);
+            return $src_error->("checksum mismatch on GET: expected: $expect actual: $digest");
+        }
+    }
 
     # now read in the response line (should be first line)
-    my $line = <$dsock>;
-    if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-        return 1 if $1 >= 200 && $1 <= 299;
-        return $dest_error->("Got HTTP status code $1 PUTing to http://$dhostip:$dport$dpath");
-    } else {
-        return $dest_error->("Error: HTTP response line not recognized writing to http://$dhostip:$dport$dpath: $line");
+    my ($dres, $ddata) = read_headers($dsock, $intercopy_cb);
+    unless ($dres) {
+        goto retry if (!$wcount && $dconn->retryable && $dtries == 1);
+        return $dest_error->("Error: HTTP response line not recognized writing to $durl");
     }
+
+    # drain the response body if there is one
+    # there may be no dres->{len}/Content-Length if there is no body
+    my $dlen = ($dres->{len} || 0) - length($ddata);
+    if ($dlen > 0) {
+        my $r = $dsock->read($data, $dlen); # dres->{len} should be tiny
+        if (defined $r) {
+            if ($r != $dlen) {
+                Mgd::error("Failed to read $r of Content-Length:$dres->{len} bytes for PUT response on $durl");
+                $dres->{keep} = 0;
+            }
+        } else {
+            Mgd::error("Failed to read Content-Length:$dres->{len} bytes for PUT response on $durl ($!)");
+            $dres->{keep} = 0;
+        }
+    } elsif ($dlen < 0) {
+        Mgd::error("strange response Content-Length:$dres->{len} with ".
+                    length($ddata) .
+                    " extra bytes for PUT response on $durl ($!)");
+        $dres->{keep} = 0;
+    }
+
+    # return the connection back to the connection pool
+    if ($dres->{keep}) {
+        $dhost->http_conn_put($dconn);
+        $dconn = undef;
+    } else {
+        $dconn->close("http_close");
+    }
+
+    if ($dres->{code} >= 200 && $dres->{code} <= 299) {
+        if ($digest) {
+            my $alg = ($fid_checksum && $fid_checksum->hashname) || $fid->class->hashname;
+
+            if ($ddev->{reject_bad_md5} && ($alg eq "MD5")) {
+                # dest device would've rejected us with a error,
+                # no need to reread the file
+                return 1;
+            }
+            my $httpfile = MogileFS::HTTPFile->at($durl);
+            my $actual = $httpfile->digest($alg, $intercopy_cb);
+            if ($actual ne $digest) {
+                my $expect = unpack("H*", $digest);
+                $actual = unpack("H*", $actual);
+                return $dest_error->("checksum mismatch on PUT, expected: $expect actual: $digest");
+            }
+        }
+        return 1;
+    }
+    return $dest_error->("Got HTTP status code $dres->{code} PUTing to $durl");
 }
 
 1;

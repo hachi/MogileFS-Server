@@ -11,7 +11,7 @@ use fields ('psock',              # socket for parent/child communications
             'queue_todo',         # aref of hrefs of work sent from parent
             );
 
-use MogileFS::Util qw(error eurl decode_url_args);
+use MogileFS::Util qw(error eurl decode_url_args apply_state_events);
 use MogileFS::Server;
 
 use vars (
@@ -26,7 +26,7 @@ sub new {
     $self->{psock}            = $psock;
     $self->{readbuf}          = '';
     $self->{last_bcast_state} = {};
-    $self->{monitor_has_run}  = 0;
+    $self->{monitor_has_run}  = MogileFS::ProcManager->is_monitor_good;
     $self->{last_ping}        = 0;
     $self->{last_wake}        = {};
     $self->{queue_depth}      = {};
@@ -41,12 +41,13 @@ sub psock_fd {
     return fileno($self->{psock});
 }
 
-sub validate_dbh {
-    return Mgd::validate_dbh();
+sub psock {
+    my $self = shift;
+    return $self->{psock};
 }
 
-sub get_dbh {
-    return Mgd::get_dbh();
+sub validate_dbh {
+    return Mgd::validate_dbh();
 }
 
 sub monitor_has_run {
@@ -62,9 +63,8 @@ sub forget_that_monitor_has_run {
 sub wait_for_monitor {
     my $self = shift;
     while (! $self->monitor_has_run) {
-        $self->read_from_parent;
+        $self->read_from_parent(1);
         $self->still_alive;
-        sleep 1;
     }
 }
 
@@ -74,7 +74,7 @@ sub wait_for_monitor {
 sub still_alive {
     my $self = shift;
     my $now = time();
-    if ($now > $self->{last_ping}) {
+    if ($now > $self->{last_ping} + ($self->watchdog_timeout / 4)) {
         $self->send_to_parent(":still_alive");  # a no-op, just for the watchdog
         $self->{last_ping} = $now;
     }
@@ -134,8 +134,9 @@ sub read_from_parent {
     # while things are immediately available,
     # (or optionally sleep a bit)
     while (MogileFS::Util::wait_for_readability(fileno($psock), $timeout)) {
+        $timeout = 0; # only wait on the timeout for the first read.
         my $buf;
-        my $rv = sysread($psock, $buf, 1024);
+        my $rv = sysread($psock, $buf, Mgd::UNIX_RCVBUF_SIZE());
         if (!$rv) {
             if (defined $rv) {
                 die "While reading pipe from parent, got EOF.  Parent's gone.  Quitting.\n";
@@ -187,45 +188,6 @@ sub parent_ping {
     }
 }
 
-sub broadcast_device_writeable {
-    $_[0]->_broadcast_state("device", $_[1], "writeable");
-}
-sub broadcast_device_readable {
-    $_[0]->_broadcast_state("device", $_[1], "readable");
-}
-sub broadcast_device_unreachable {
-    $_[0]->_broadcast_state("device", $_[1], "unreachable");
-}
-sub broadcast_host_reachable {
-    $_[0]->_broadcast_state("host", $_[1], "reachable");
-}
-sub broadcast_host_unreachable {
-    $_[0]->_broadcast_state("host", $_[1], "unreachable");
-}
-
-sub _broadcast_state {
-    my ($self, $what, $whatid, $state) = @_;
-    if ($what eq "host") {
-        MogileFS::Host->of_hostid($whatid)->set_observed_state($state);
-    } elsif ($what eq "device") {
-        MogileFS::Device->of_devid($whatid)->set_observed_state($state);
-    }
-    my $key = "$what-$whatid";
-    my $laststate = $self->{last_bcast_state}{$key};
-    my $now = time();
-    # broadcast on initial discovery, state change, and every 10 seconds
-    if (!$laststate || $laststate->[1] ne $state || $laststate->[0] < $now - 10) {
-        $self->send_to_parent(":state_change $what $whatid $state");
-        $self->{last_bcast_state}{$key} = [$now, $state];
-    }
-}
-
-sub invalidate_meta {
-    my ($self, $what) = @_;
-    return if $Mgd::INVALIDATE_NO_PROPOGATE;  # anti recursion
-    $self->send_to_parent(":invalidate_meta $what");
-}
-
 # tries to parse generic (not job-specific) commands sent from parent
 # to child.  returns 1 on success, or 0 if command given isn't generic,
 # and child should parse.
@@ -233,16 +195,6 @@ sub invalidate_meta {
 sub process_generic_command {
     my ($self, $lineref) = @_;
     return 0 unless $$lineref =~ /^:/;  # all generic commands start with colon
-
-    if ($$lineref =~ /^:state_change (\w+) (\d+) (\w+)/) {
-        my ($what, $whatid, $state) = ($1, $2, $3);
-        if ($what eq "host") {
-            MogileFS::Host->of_hostid($whatid)->set_observed_state($state);
-        } elsif ($what eq "device") {
-            MogileFS::Device->of_devid($whatid)->set_observed_state($state);
-        }
-        return 1;
-    }
 
     if ($$lineref =~ /^:shutdown/) {
         $$got_live_vs_die = 1 if $got_live_vs_die;
@@ -254,11 +206,8 @@ sub process_generic_command {
         return 1;
     }
 
-    if ($$lineref =~ /^:invalidate_meta_once (\w+)/) {
-        local $Mgd::INVALIDATE_NO_PROPOGATE = 1;
-        # where $1 is one of {"domain", "device", "host", "class"}
-        my $class = "MogileFS::" . ucfirst(lc($1));
-        $class->invalidate_cache;
+    if ($$lineref =~ /^:monitor_events/) {
+        apply_state_events($lineref);
         return 1;
     }
 
@@ -275,18 +224,6 @@ sub process_generic_command {
     if ($$lineref =~ /^:set_config_from_parent (\S+) (.+)/) {
         # the 'no_broadcast' API keeps us from looping forever.
         MogileFS::Config->set_config_no_broadcast($1, $2);
-        return 1;
-    }
-
-    # :set_dev_utilization dev# 45.2 dev# 45.2 dev# 45.2 dev# 45.2 dev 45.2\n
-    # (dev#, utilz%)+
-    if (my ($devid, $util) = $$lineref =~ /^:set_dev_utilization (.+)/) {
-        my %pairs = split(/\s+/, $1);
-        local $MogileFS::Device::util_no_broadcast = 1;
-        while (my ($devid, $util) = each %pairs) {
-            my $dev = eval { MogileFS::Device->of_devid($devid) } or next;
-            $dev->set_observed_utilization($util);
-        }
         return 1;
     }
 

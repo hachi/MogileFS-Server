@@ -1,5 +1,6 @@
 package MogileFS::ReplicationRequest;
 use strict;
+use MogileFS::Server;
 require Exporter;
 our @ISA = qw(Exporter);
 our @EXPORT_OK = qw(rr_upgrade ALL_GOOD TOO_GOOD TEMP_NO_ANSWER);
@@ -26,7 +27,7 @@ sub rr_upgrade {
 # for ideal replications
 sub replicate_to {
     my ($class, @devs) = @_;
-    @devs = map { ref $_ ? $_ : MogileFS::Device->of_devid($_) } @devs;
+    @devs = map { ref $_ ? $_ : Mgd::device_factory()->get_by_id($_) } @devs;
     return bless {
         ideal_next => \@devs,
     }, $class;

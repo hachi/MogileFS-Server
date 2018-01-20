@@ -3,6 +3,8 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use List::Util ();
+use MogileFS::Server ();
+
 # Note: The filters aren't written for maximum speed, as they're not likely
 # in the slow path. They're supposed to be readable/extensible. Please don't
 # cram them down unless you have to.
@@ -51,8 +53,15 @@ my %default_state = (
     sdev_current => 0,
     sdev_lastfid => 0,
     sdev_limit => 0,
+    limit => 0,
     fids_queued => 0,
     bytes_queued => 0,
+    time_started => 0,
+    time_finished => 0,
+    time_stopped => 0,
+    time_latest_run => 0,
+    time_latest_empty_run => 0,
+    empty_runs => 0,
 );
 
 sub new {
@@ -83,7 +92,25 @@ sub init {
     # If we don't have an initial source device list, discover them.
     # Used to filter destination devices later.
     $state{source_devs} = $self->filter_source_devices($devs);
+    $state{time_started} = time();
     $self->{state} = \%state;
+}
+
+sub stop {
+    my $self = shift;
+    my $p    = $self->{policy};
+    my $s    = $self->{state};
+    my $sdev = $self->{sdev_current};
+    unless ($p->{leave_in_drain_mode}) {
+        Mgd::get_store()->set_device_state($sdev, 'alive') if $sdev;
+    }
+    $s->{time_stopped} = time();
+}
+
+sub finish {
+    my $self = shift;
+    my $s    = $self->{state};
+    $s->{time_finished} = time();
 }
 
 # Resume from saved as_string state.
@@ -141,6 +168,7 @@ sub _parse_settings {
     # the constraint also serves as a set of defaults.
     %parsed = %{$constraint} if ($constraint);
 
+    return unless $settings;
     # parse out from a string: key=value key=value
     for my $tuple (split /\s/, $settings) {
         my ($key, $value) = split /=/, $tuple;
@@ -189,7 +217,7 @@ sub next_fids_to_rebalance {
     # If we're not working against a source device, discover one
     my $sdev = $self->_find_source_device($state->{source_devs});
     return undef unless $sdev;
-    $sdev = MogileFS::Device->of_devid($sdev);
+    $sdev = Mgd::device_factory()->get_by_id($sdev);
     my $filtered_destdevs = $self->filter_dest_devices($devs);
 
     croak("rebalance cannot find suitable destination devices")
@@ -218,6 +246,12 @@ sub next_fids_to_rebalance {
         $state->{fids_queued}++;
         $state->{bytes_queued} += $fid->length;
         push(@devfids, [$fid->id, $sdev->id, $destdevs]);
+    }
+
+    $state->{time_latest_run} = time;
+    unless (@devfids) {
+        $state->{empty_runs}++;
+        $state->{time_latest_empty_run} = time;
     }
 
     # return block of fiddev combos.
@@ -275,7 +309,7 @@ sub _choose_dest_devs {
     my @shuffled_devs = List::Util::shuffle(@$filtered_devs);
     return \@shuffled_devs if ($p->{use_dest_devs} eq 'all');
 
-    return splice @shuffled_devs, 0, $p->{use_dest_devs};
+    return [splice @shuffled_devs, 0, $p->{use_dest_devs}];
 }
 
 # Iterate through all possible constraints until we have a final list.
@@ -287,7 +321,7 @@ sub filter_source_devices {
  
     my @sdevs = ();
     for my $dev (@$devs) {
-        next unless $dev->exists && $dev->can_delete_from;
+        next unless $dev->can_delete_from;
         my $id = $dev->id;
         if (@{$policy->{from_devices}}) {
             next unless grep { $_ == $id } @{$policy->{from_devices}};
@@ -339,7 +373,7 @@ sub _finish_source_device {
     # Unless the user wants a device to never get new files again (sticking in
     # drain mode), return to alive.
     unless ($policy->{leave_in_drain_mode}) {
-        MogileFS::Device->of_devid($sdev)->set_state('alive');
+        Mgd::get_store()->set_device_state($sdev, 'alive');
     }
     push @{$state->{completed_devs}}, $sdev;
 }
@@ -370,7 +404,7 @@ sub _find_source_device {
             }
         }
         # Must mark device in "drain" mode while we work on it.
-        MogileFS::Device->of_devid($sdev)->set_state('drain');
+        Mgd::get_store()->set_device_state($sdev, 'drain');
         $state->{sdev_limit} = $limit;
     }
 
@@ -406,12 +440,13 @@ sub filter_dest_devices {
 
     # skip anything we would source from.
     # FIXME: ends up not skipping stuff out of completed_devs? :/
-    my %sdevs = map { $_ => 1 } @{$state->{source_devs}};
-    my @devs  = grep { ! $sdevs{$_} } @$devs;
+    my %sdevs = map { $_ => 1 } @{$state->{source_devs}},
+        @{$state->{completed_devs}}, $state->{sdev_current};
+    my @devs  = grep { ! $sdevs{$_->id} } @$devs;
 
     my @ddevs = ();
     for my $dev (@devs) {
-        next unless $dev->exists && $dev->should_get_new_files;
+        next unless $dev->should_get_new_files;
         my $id = $dev->id;
         my $hostid = $dev->hostid;
 

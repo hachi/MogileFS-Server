@@ -7,9 +7,10 @@ use DBI;
 use FindBin qw($Bin);
 use IO::Socket::INET;
 use MogileFS::Server;
+use LWP::UserAgent;
 use base 'Exporter';
 
-our @EXPORT = qw(&find_mogclient_or_skip &temp_store &create_mogstored &create_temp_tracker);
+our @EXPORT = qw(&find_mogclient_or_skip &temp_store &create_mogstored &create_temp_tracker &try_for &want);
 
 sub find_mogclient_or_skip {
 
@@ -33,7 +34,7 @@ sub find_mogclient_or_skip {
     }
 
     unless (eval { TrackerHandle::_mogadm_exe() }) {
-        warn "Can't find mogadm utility.\n";
+        warn "Can't find mogadm utility $@\n";
         Test::More::plan('skip_all' => "Can't find mogadm executable, necessary for testing.");
     }
 
@@ -47,6 +48,8 @@ sub temp_store {
     my $user = $ENV{MOGTEST_DBUSER} || '';
     my $pass = $ENV{MOGTEST_DBPASS} || '';
     my $name = $ENV{MOGTEST_DBNAME} || '';
+    my $rootuser = $ENV{MOGTEST_DBROOTUSER} || '';
+    my $rootpass = $ENV{MOGTEST_DBROOTPASS} || '';
 
     # default to mysql, but make sure DBD::MySQL is installed
     unless ($type) {
@@ -61,8 +64,12 @@ sub temp_store {
     if ($@) {
         die "Failed to load $store: $@\n";
     }
-    my $sto = $store->new_temp(dbhost => $host, dbport => $port,
-        dbuser => $user, dbpass => $pass, dbname => $name);
+    my %opts = ( dbhost => $host, dbport => $port, 
+                 dbuser => $user, dbpass => $pass, 
+                 dbname => $name);
+    $opts{dbrootuser} = $rootuser unless $rootuser eq '';
+    $opts{dbrootpass} = $rootpass unless $rootpass eq '';
+    my $sto = $store->new_temp(%opts);
     Mgd::set_store($sto);
     return $sto;
 }
@@ -117,6 +124,7 @@ sub create_mogstored {
     die "Failed:  tracker already running on port 7500?\n" if $conn;
     $ENV{PERL5LIB} .= ":$Bin/../lib";
     my @args = ("$Bin/../mogstored",
+                "--skipconfig",
                 "--httplisten=$ip:7500",
                 "--mgmtlisten=$ip:7501",
                 "--maxconns=1000",  # because we're not root, put it below 1024
@@ -143,6 +151,43 @@ sub create_mogstored {
         select undef, undef, undef, 0.25;
     }
     return undef;
+}
+
+sub try_for {
+    my ($tries, $code) = @_;
+    for (1..$tries) {
+        return 1 if $code->();
+        sleep 1;
+    }
+    return 0;
+}
+
+sub want {
+    my ($admin, $count, $jobclass) = @_;
+    my $req = "!want $count $jobclass\r\n";
+
+    syswrite($admin, $req) or die "syswrite: $!\n";
+
+    my $r = <$admin>;
+    if ($r =~ /Now desiring $count children doing '$jobclass'/ && <$admin> eq ".\r\n") {
+	    my $rcount;
+	    try_for(30, sub {
+            $rcount = -1;
+            syswrite($admin, "!jobs\r\n");
+            MogileFS::Util::wait_for_readability(fileno($admin), 10);
+            while (1) {
+                my $line = <$admin>;
+                if ($line =~ /\A$jobclass count (\d+)/) {
+                    $rcount = $1;
+                }
+                last if $line eq ".\r\n";
+            }
+            $rcount == $count;
+        });
+        return 1 if $rcount == $count;
+        die "got $jobclass count $rcount (expected=$count)\n";
+    }
+    die "got bad response for $req: $r\n";
 }
 
 ############################################################################
@@ -174,13 +219,15 @@ sub ipport {
 my $_mogadm_exe_cache;
 sub _mogadm_exe {
     return $_mogadm_exe_cache if $_mogadm_exe_cache;
-    foreach my $exe ("$FindBin::Bin/../../utils/mogadm",
-                     "$FindBin::Bin/../../../utils/mogadm",
-                     "/usr/bin/mogadm",
-                     "/usr/sbin/mogadm",
-                     "/usr/local/bin/mogadm",
-                     "/usr/local/sbin/mogadm",
+    for my $dir ("$FindBin::Bin/../../utils",
+                     "$FindBin::Bin/../../../utils",
+                     split(/:/, $ENV{PATH}),
+                     "/usr/bin",
+                     "/usr/sbin",
+                     "/usr/local/bin",
+                     "/usr/local/sbin",
                      ) {
+        my $exe = $dir . '/mogadm';
         return $_mogadm_exe_cache = $exe if -x $exe;
     }
     die "mogadm executable not found.\n";

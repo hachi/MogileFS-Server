@@ -7,6 +7,7 @@ sub new {
     $self->{listen}   = delete $opts{listen};
     $self->{maxconns} = delete $opts{maxconns};
     $self->{bin}      = delete $opts{bin};
+    $self->{include}  = delete $opts{include};
     die "unknown opts" if %opts;
     return $self;
 }

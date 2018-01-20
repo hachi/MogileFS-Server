@@ -41,6 +41,9 @@ sub start {
 
     my $portnum = $self->listen_port;
     my $bind_ip = $self->bind_ip;
+    
+    my $include_line = sprintf('include "%s"', $self->{include})
+        if $self->{include};
 
     print $fh qq{
 server.document-root = "$self->{docroot}"
@@ -49,6 +52,7 @@ server.bind = "$bind_ip"
 server.modules = ( "mod_webdav", "mod_status" )
 webdav.activate = "enable"
 status.status-url  = "/"
+$include_line
 };
 
     exec $exe, "-D", "-f", $filename;

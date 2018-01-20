@@ -3,7 +3,13 @@ use strict;
 use warnings;
 use Carp qw(croak);
 use MogileFS::ReplicationRequest qw(rr_upgrade);
+use MogileFS::Server;
 use overload '""' => \&as_string;
+
+BEGIN {
+    my $testing = $ENV{TESTING} ? 1 : 0;
+    eval "sub TESTING () { $testing }";
+}
 
 sub new {
     my ($class, $fidid) = @_;
@@ -112,6 +118,8 @@ sub update_devcount {
     my $no_lock = delete $opts{no_lock};
     croak "Bogus options" if %opts;
 
+    return 1 if MogileFS::Config->server_setting_cached('skip_devcount');
+
     my $fidid = $self->{fidid};
 
     my $sto = Mgd::get_store();
@@ -138,19 +146,22 @@ sub enqueue_for_replication {
     my $from_dev = delete $opts{from_device};  # devid or Device object
     croak("Unknown options to enqueue_for_replication") if %opts;
     my $from_devid = (ref $from_dev ? $from_dev->id : $from_dev) || undef;
+    # Still schedule for the future, but don't delay long
+    $in = 1 if (TESTING && $in);
     Mgd::get_store()->enqueue_for_replication($self->id, $from_devid, $in);
-}
-
-sub mark_unreachable {
-    my $self = shift;
-    # update database table
-    Mgd::get_store()->mark_fidid_unreachable($self->id);
 }
 
 sub delete {
     my $fid = shift;
     my $sto = Mgd::get_store();
+    my $memc = MogileFS::Config->memcache_client;
+    if ($memc) {
+        $fid->_tryload;
+    }
     $sto->delete_fidid($fid->id);
+    if ($memc && $fid->{_loaded}) {
+        $memc->delete("mogfid:$fid->{dmid}:$fid->{dkey}");
+    }
 }
 
 # returns 1 on success, 0 on duplicate key error, dies on exception
@@ -177,7 +188,7 @@ sub devids {
 
 sub devs {
     my $self = shift;
-    return map { MogileFS::Device->of_devid($_) } $self->devids;
+    return map { Mgd::device_factory()->get_by_id($_) } $self->devids;
 }
 
 sub devfids {
@@ -189,7 +200,7 @@ sub devfids {
 # return FID's class
 sub class {
     my $self = shift;
-    return MogileFS::Class->of_fid($self);
+    return Mgd::class_factory()->get_by_id($self->dmid, $self->classid);
 }
 
 # Get reloaded the next time we're bothered.
@@ -207,15 +218,10 @@ sub devids_meet_policy {
 
     my $polobj = $cls->repl_policy_obj;
 
-    my $alldev = MogileFS::Device->map
+    my $alldev = Mgd::device_factory()->map_by_id
         or die "No global device map";
 
     my @devs = $self->devs;
-    # This is a little heavy handed just to fix the 'devcount' cache, but
-    # doing it here ensures we get the error logged.
-    if (@devs != $self->devcount) {
-        return 0;
-    }
 
     my %rep_args = (
                     fid       => $self->id,
@@ -258,6 +264,14 @@ sub forget_about_device {
     $dev->forget_about($fid);
     $fid->forget_cached_devids;
     return 1;
+}
+
+# return an FID's checksum object, undef if it's missing
+sub checksum {
+    my $self = shift;
+    my $row = Mgd::get_store()->get_checksum($self->{fidid}) or return undef;
+
+    MogileFS::Checksum->new($row);
 }
 
 1;

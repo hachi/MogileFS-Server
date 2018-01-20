@@ -12,8 +12,9 @@ use fields (
             'dele_queue_limit',
             'rebl_queue_limit',
             );
-use MogileFS::Util qw(every error debug eurl);
+use MogileFS::Util qw(every error debug encode_url_args);
 use MogileFS::Config;
+use MogileFS::Server;
 
 use constant DEF_FSCK_QUEUE_MAX => 20_000;
 use constant DEF_FSCK_QUEUE_INJECT => 1000;
@@ -45,16 +46,30 @@ sub work {
     $self->{dele_queue_limit} = 100;
     $self->{rebl_queue_limit} = 100;
 
-    every(1, sub {
-        # 'pings' parent and populates all queues.
+    Danga::Socket->AddOtherFds($self->psock_fd, sub{ $self->read_from_parent });
+
+    # kick off the initial run
+    $self->check_queues;
+    Danga::Socket->EventLoop;
+}
+
+# 'pings' parent and populates all queues.
+sub check_queues {
+    my $self = shift;
+
+    my $active = 0;
+    if ($self->validate_dbh) {
         $self->send_to_parent("queue_depth all");
         my $sto = Mgd::get_store();
-        $self->read_from_parent(1);
-        $self->_check_replicate_queues($sto);
-        $self->_check_delete_queues($sto);
-        $self->_check_fsck_queues($sto);
-        $self->_check_rebal_queues($sto);
-    });
+        $self->parent_ping;
+        $active += $self->_check_replicate_queues($sto);
+        $active += $self->_check_delete_queues($sto);
+        $active += $self->_check_fsck_queues($sto);
+        $active += $self->_check_rebal_queues($sto);
+    }
+
+    # don't sleep if active (just avoid recursion)
+    Danga::Socket->AddTimer($active ? 0 : 1, sub { $self->check_queues });
 }
 
 sub _check_delete_queues {
@@ -69,8 +84,9 @@ sub _check_delete_queues {
     return unless @to_del;
     for my $todo (@to_del) {
         $self->send_to_parent("queue_todo delete " .
-            _eurl_encode_args($todo));
+            encode_url_args($todo));
     }
+    return 1;
 }
 
 # NOTE: we only maintain one queue per worker, but we can easily
@@ -97,8 +113,9 @@ sub _check_replicate_queues {
     for my $todo (@to_repl) {
         $todo->{_type} = 'replicate'; # could be 'drain', etc.
         $self->send_to_parent("queue_todo replicate " .
-            _eurl_encode_args($todo));
+            encode_url_args($todo));
     }
+    return 1;
 }
 
 # FSCK is going to be a little odd... We still need a single "global"
@@ -106,7 +123,7 @@ sub _check_replicate_queues {
 sub _check_fsck_queues {
     my $self = shift;
     my $sto  = shift;
-    my $fhost = MogileFS::Config->server_setting('fsck_host');
+    my $fhost = MogileFS::Config->server_setting_cached('fsck_host');
     if ($fhost && $fhost eq MogileFS::Config->hostname) {
         $self->_inject_fsck_queues($sto);
     }
@@ -125,8 +142,9 @@ sub _check_fsck_queues {
     $self->{fsck_queue_limit} = @to_fsck ? $new_limit : 100;
     return unless @to_fsck;
     for my $todo (@to_fsck) {
-        $self->send_to_parent("queue_todo fsck " . _eurl_encode_args($todo));
+        $self->send_to_parent("queue_todo fsck " . encode_url_args($todo));
     }
+    return 1;
 }
 
 sub _inject_fsck_queues {
@@ -136,20 +154,24 @@ sub _inject_fsck_queues {
     $sto->fsck_log_summarize;
     my $queue_size = $sto->file_queue_length(FSCK_QUEUE);
     my $max_queue  =
-        MogileFS::Config->server_setting_cached('queue_size_for_fsck', 60) ||
+        MogileFS::Config->server_setting_cached('queue_size_for_fsck') ||
             DEF_FSCK_QUEUE_MAX;
     return if ($queue_size >= $max_queue);
 
     my $max_checked = MogileFS::Config->server_setting('fsck_highest_fid_checked') || 0;
+    my $fid_at_end = MogileFS::Config->server_setting('fsck_fid_at_end');
     my $to_inject   =
-        MogileFS::Config->server_setting_cached('queue_rate_for_fsck', 60) ||
+        MogileFS::Config->server_setting_cached('queue_rate_for_fsck') ||
             DEF_FSCK_QUEUE_INJECT;
-    my $fids        = $sto->get_fidids_above_id($max_checked, $to_inject);
+    my $fids = $sto->get_fidids_between($max_checked, $fid_at_end, $to_inject);
     unless (@$fids) {
-        $sto->set_server_setting("fsck_host", undef);
-        $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
         MogileFS::Config->set_server_setting('fsck_highest_fid_checked',
             $max_checked);
+
+        # set these last since tests/scripts may rely on these to
+        # determine when fsck (injection) is complete
+        $sto->set_server_setting("fsck_host", undef);
+        $sto->set_server_setting("fsck_stop_time", $sto->get_db_unixtime);
         return;
     }
 
@@ -162,7 +184,7 @@ sub _inject_fsck_queues {
 sub _check_rebal_queues {
     my $self = shift;
     my $sto  = shift;
-    my $rhost = MogileFS::Config->server_setting('rebal_host');
+    my $rhost = MogileFS::Config->server_setting_cached('rebal_host');
     if ($rhost && $rhost eq MogileFS::Config->hostname) {
         $self->_inject_rebalance_queues($sto);
     }
@@ -177,8 +199,9 @@ sub _check_rebal_queues {
     return unless @to_rebal;
     for my $todo (@to_rebal) {
         $todo->{_type} = 'rebalance';
-        $self->send_to_parent("queue_todo rebalance " . _eurl_encode_args($todo));
+        $self->send_to_parent("queue_todo rebalance " . encode_url_args($todo));
     }
+    return 1;
 }
 
 sub _inject_rebalance_queues {
@@ -187,27 +210,39 @@ sub _inject_rebalance_queues {
 
     my $queue_size  = $sto->file_queue_length(REBAL_QUEUE);
     my $max_queue   =
-        MogileFS::Config->server_setting_cached('queue_size_for_rebal', 60) ||
+        MogileFS::Config->server_setting_cached('queue_size_for_rebal') ||
             DEF_REBAL_QUEUE_MAX;
     return if ($queue_size >= $max_queue);
 
     my $to_inject   =
-        MogileFS::Config->server_setting_cached('queue_rate_for_rebal', 60) ||
+        MogileFS::Config->server_setting_cached('queue_rate_for_rebal') ||
             DEF_REBAL_QUEUE_INJECT;
 
     # TODO: Cache the rebal object. Requires explicitly blowing it up at the
     # end of a run or ... I guess whenever the host sees it's not the rebal
     # host.
     my $rebal       = MogileFS::Rebalance->new;
+    my $signal      = MogileFS::Config->server_setting('rebal_signal');
     my $rebal_pol   = MogileFS::Config->server_setting('rebal_policy');
     my $rebal_state = MogileFS::Config->server_setting('rebal_state');
     $rebal->policy($rebal_pol);
 
-    my @devs = MogileFS::Device->devices;
+    my @devs = Mgd::device_factory()->get_all;
     if ($rebal_state) {
         $rebal->load_state($rebal_state);
     } else {
         $rebal->init(\@devs);
+    }
+
+    # Stopping is done via signal so we can note stop time in the state,
+    # and un-drain any devices that should be un-drained.
+    if ($signal && $signal eq 'stop') {
+        $rebal->stop;
+        $rebal_state = $rebal->save_state;
+        $sto->set_server_setting('rebal_signal', undef);
+        $sto->set_server_setting("rebal_host", undef);
+        $sto->set_server_setting('rebal_state', $rebal_state);
+        return;
     }
 
     my $devfids = $rebal->next_fids_to_rebalance(\@devs, $sto, $to_inject);
@@ -217,6 +252,9 @@ sub _inject_rebalance_queues {
         # Append some info to a rebalance log table?
         # Leave state in the system for inspection post-run.
         # TODO: Emit some sort of syslog/status line.
+        $rebal->finish;
+        $rebal_state = $rebal->save_state;
+        $sto->set_server_setting('rebal_state', $rebal_state);
         $sto->set_server_setting("rebal_host", undef);
         return;
     }
@@ -239,7 +277,7 @@ sub _inject_rebalance_queues {
 # fast trying to keep the queue full.
 sub queue_depth_check {
     my $max_limit =
-        MogileFS::Config->server_setting_cached('internal_queue_limit', 120)
+        MogileFS::Config->server_setting_cached('internal_queue_limit')
             || 500;
 
     my ($depth, $limit) = @_;
@@ -250,12 +288,6 @@ sub queue_depth_check {
         return (1, $limit);
     }
     return (0, $limit);
-}
-
-# TODO: Move this into Util.pm?
-sub _eurl_encode_args {
-    my $args = shift;
-    return join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
 }
 
 1;

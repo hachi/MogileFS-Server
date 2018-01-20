@@ -2,15 +2,11 @@ package MogileFS::HTTPFile;
 use strict;
 use warnings;
 use Carp qw(croak);
-use Socket qw(PF_INET IPPROTO_TCP SOCK_STREAM);
+use Digest;
+use MogileFS::Server;
 use MogileFS::Util qw(error undeferr wait_for_readability wait_for_writeability);
 
-# (caching the connection used for HEAD requests)
-my %http_socket;                # host:port => [$pid, $time, $socket]
-
-# get size of file, return 0 on error.
-# tries to finish in 2.5 seconds, under the client's default 3 second timeout.  (configurable)
-my %last_stream_connect_error;  # host => $hirestime.
+my %sidechannel_nexterr;    # host => next error log time
 
 # create a new MogileFS::HTTPFile instance from a URL.  not called
 # "new" because I don't want to imply that it's creating anything.
@@ -45,7 +41,7 @@ sub host_id {
 # return MogileFS::Device object
 sub device {
     my $self = shift;
-    return MogileFS::Device->of_devid($self->device_id);
+    return Mgd::device_factory()->get_by_id($self->device_id);
 }
 
 # return MogileFS::Host object
@@ -59,238 +55,203 @@ sub delete {
     my $self = shift;
     my %opts = @_;
     my ($host, $port) = ($self->{host}, $self->{port});
+    my %http_opts = ( port => $port );
+    my $res;
 
-    my $httpsock = IO::Socket::INET->new(PeerAddr => $host, PeerPort => $port, Timeout => 2)
-        or die "can't connect to $host:$port in 2 seconds";
+    $self->host->http("DELETE", $self->{uri}, \%http_opts, sub { ($res) = @_ });
 
-    $httpsock->write("DELETE $self->{uri} HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
+    Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+    Danga::Socket->EventLoop;
 
-    my $keep_alive = 0;
-    my $did_del    = 0;
-
-    while (defined (my $line = <$httpsock>)) {
-        $line =~ s/[\s\r\n]+$//;
-        last unless length $line;
-        if ($line =~ m!^HTTP/\d+\.\d+\s+(\d+)!) {
-            my $rescode = $1;
-            # make sure we get a good response
-            if ($rescode == 404 && $opts{ignore_missing}) {
-                $did_del = 1;
-                next;
-            }
-            unless ($rescode == 204) {
-                delete $http_socket{"$host:$port"};
-                die "Bad response from $host:$port: [$line]";
-            }
-            $did_del = 1;
-            next;
-        }
-        die "Unexpected HTTP response line during DELETE from $host:$port: [$line]" unless $did_del;
+    if ($res->code == 204 || ($res->code == 404 && $opts{ignore_missing})) {
+        return 1;
     }
-    die "Didn't get valid HTTP response during DELETE from $host:port" unless $did_del;
-
-    return 1;
+    my $line = $res->status_line;
+    die "Bad response on DELETE $self->{url}: [$line]";
 }
 
-# returns size of file, (doing a HEAD request and looking at content-length, or side-channel to mogstored)
-# returns 0 on file missing (404 or -1 from sidechannel),
+# returns size of file, (doing a HEAD request and looking at content-length)
+# returns -1 on file missing (404),
 # returns undef on connectivity error
+#
+# If an optional callback is supplied, the return value is given to the
+# callback.
+#
+# workers running Danga::Socket->EventLoop must supply a callback
+# workers NOT running Danga::Socket->EventLoop msut not supply a callback
 use constant FILE_MISSING => -1;
 sub size {
-    my $self = shift;
-    my ($host, $port, $uri, $path) = map { $self->{$_} } qw(host port uri url);
+    my ($self, $cb) = @_;
+    my %opts = ( port => $self->{port} );
 
-    # don't SIGPIPE us
-    my $flag_nosignal = MogileFS::Sys->flag_nosignal;
-    local $SIG{'PIPE'} = "IGNORE" unless $flag_nosignal;
-
-    # setup for sending size request to cached host
-    my $req = "size $uri\r\n";
-    my $reqlen = length $req;
-    my $rv = 0;
-
-    my $mogconn = $self->host->mogstored_conn;
-    my $sock    = $mogconn->sock_if_connected;
-
-    my $start_time = Time::HiRes::time();
-
-    my $httpsock;
-    my $start_connecting_to_http = sub {
-        return if $httpsock;  # don't allow starting connecting twice
-
-        # try to reuse cached socket
-        if (my $cached = $http_socket{"$host:$port"}) {
-            my ($pid, $conntime, $cachesock) = @{ $cached };
-            # see if it's still connected
-            if ($pid == $$ && getpeername($cachesock) &&
-                $conntime > $start_time - 15 &&
-                # readability would indicated conn closed, or garbage:
-                ! wait_for_readability(fileno($cachesock), 0.00))
-            {
-                $httpsock = $cachesock;
-                return;
-            }
-        }
-
-        socket $httpsock, PF_INET, SOCK_STREAM, IPPROTO_TCP;
-        IO::Handle::blocking($httpsock, 0);
-        connect $httpsock, Socket::sockaddr_in($port, Socket::inet_aton($host));
-    };
-
-    # sub to parse the response from $sock.  returns undef on error,
-    # or otherwise the size of the $path in bytes.
-    my $node_timeout = MogileFS->config("node_timeout");
-    my $stream_response_timeout = 1.0;
-    my $read_timed_out = 0;
-
-    # returns defined on a real answer (0 = file missing, >0 = file length),
-    # returns undef on connectivity problems.
-    my $parse_response = sub {
-        # give the socket 1 second to become readable until we get
-        # scared of no reply and start connecting to HTTP to do a HEAD
-        # request.  if both timeout, we know the machine is gone, but
-        # we don't want to wait 2 seconds + 2 seconds... prefer to do
-        # connects in parallel to reduce overall latency.
-        unless (wait_for_readability(fileno($sock), $stream_response_timeout)) {
-            $start_connecting_to_http->();
-            # give the socket its final time to get to 2 seconds
-            # before we really give up on it
-            unless (wait_for_readability(fileno($sock), $node_timeout - $stream_response_timeout)) {
-                $read_timed_out = 1;
-                close($sock);
-                return undef;
-            }
-        }
-
-        # now we know there's readable data (pseudo-gross: we assume
-        # if we were readable, the whole line is ready.  this is a
-        # poor mix of low-level IO and buffered, blocking stdio but in
-        # practice it works...)
-        my $line = <$sock>;
-        return undef unless defined $line;
-        return undef unless $line =~ /^(\S+)\s+(-?\d+)/; # expected format: "uri size"
-        return undeferr("get_file_size() requested size of $path, got back size of $1 ($2 bytes)")
-            if $1 ne $uri;
-        # backchannel sends back -1 on non-existent file, which we map to the defined value '0'
-        return FILE_MISSING if $2 < 0;
-        # otherwise, return byte size of file
-        return $2+0;
-    };
-
-    my $conn_timeout = MogileFS->config("conn_timeout") || 2;
-
-    # try using the cached socket
-    if ($sock) {
-        $rv = send($sock, $req, $flag_nosignal);
-        if ($!) {
-            $mogconn->mark_dead;
-        } elsif ($rv != $reqlen) {
-            # FIXME: perhaps we shouldn't error here, but instead
-            # treat the cached socket as bogus and reconnect?  never
-            # seen that happen, though.
-            return undeferr("send() didn't return expected length ($rv, not $reqlen) for $path");
+    if ($cb) { # run asynchronously
+        if (defined $self->{_size}) {
+            Danga::Socket->AddTimer(0, sub { $cb->($self->{_size}) });
         } else {
-            # success
-            my $size = $parse_response->();
-            return $size if defined $size;
-            $mogconn->mark_dead;
+            $self->host->http("HEAD", $self->{uri}, \%opts, sub {
+                $cb->($self->on_size_response(@_));
+            });
         }
+        return undef;
+    } else { # run synchronously
+        return $self->{_size} if defined $self->{_size};
+
+        my $res;
+        $self->host->http("HEAD", $self->{uri}, \%opts, sub { ($res) = @_ });
+
+        Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+        Danga::Socket->EventLoop;
+
+        return $self->on_size_response($res);
     }
-    # try creating a connection to the stream
-    elsif (($last_stream_connect_error{$host} ||= 0) < $start_time - 15.0)
-    {
-        $sock = $mogconn->sock($conn_timeout);
-
-        if ($sock) {
-            $rv = send($sock, $req, $flag_nosignal);
-            if ($!) {
-                return undeferr("error talking to mogstored stream ($path): $!");
-            } elsif ($rv != $reqlen) {
-                return undeferr("send() didn't return expected length ($rv, not $reqlen) for $path");
-            } else {
-                # success
-                my $size = $parse_response->();
-                return $size if defined $size;
-                $mogconn->mark_dead;
-            }
-        } else {
-            # see if we timed out connecting.
-            my $elapsed = Time::HiRes::time() - $start_time;
-            if ($elapsed > $conn_timeout - 0.2) {
-                return undeferr("node $host seems to be down in get_file_size");
-            } else {
-                # cache that we can't connect to the mogstored stream
-                # port for people using only apache/lighttpd (dav) on
-                # the storage nodes
-                $last_stream_connect_error{$host} = Time::HiRes::time();
-            }
-
-        }
-    }
-
-    # failure case: use a HEAD request to get the size of the file:
-    # give them 2 seconds to connect to server, unless we'd already timed out earlier
-    my $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
-    return undeferr("timed out on stream size check of $path, not doing HEAD")
-        if $time_remain <= 0;
-
-    # try HTTP (this will only work once anyway, if we already started above)
-    $start_connecting_to_http->();
-
-    # did we timeout?
-    unless (wait_for_writeability(fileno($httpsock), $time_remain)) {
-        if (my $worker = MogileFS::ProcManager->is_child) {
-            $worker->broadcast_host_unreachable($self->host_id);
-        }
-        return undeferr("get_file_size() connect timeout for HTTP HEAD for size of $path");
-    }
-
-    # did we fail to connect?  (got a RST, etc)
-    unless (getpeername($httpsock)) {
-        if (my $worker = MogileFS::ProcManager->is_child) {
-            $worker->broadcast_device_unreachable($self->device_id);
-        }
-        return undeferr("get_file_size() connect failure for HTTP HEAD for size of $path");
-    }
-
-    $time_remain = 2.5 - (Time::HiRes::time() - $start_time);
-    return undeferr("no time remaining to write HEAD request to $path") if $time_remain <= 0;
-
-    $rv = syswrite($httpsock, "HEAD $uri HTTP/1.0\r\nConnection: keep-alive\r\n\r\n");
-    # FIXME: we don't even look at $rv ?
-    return undeferr("get_file_size() read timeout ($time_remain) for HTTP HEAD for size of $path")
-        unless wait_for_readability(fileno($httpsock), $time_remain);
-
-    my $first = <$httpsock>;
-    return undeferr("get_file_size()'s HEAD request hung up on us")
-        unless $first;
-    my ($code) = $first =~ m!^HTTP/1\.\d (\d\d\d)! or
-        return undeferr("HEAD response to get_file_size looks bogus");
-    return FILE_MISSING if $code == 404;
-    return undeferr("get_file_size()'s HEAD request wasn't a 200 OK, got: $code")
-        unless $code == 200;
-
-    # FIXME: this could block too probably, if we don't get a whole
-    # line.  in practice, all headers will come at once, though in same packet/read.
-    my $cl = undef;
-    my $keep_alive = 0;
-    while (defined (my $line = <$httpsock>)) {
-        if ($line eq "\r\n") {
-            if ($keep_alive) {
-                $http_socket{"$host:$port"} = [ $$, Time::HiRes::time(), $httpsock ];
-            } else {
-                delete $http_socket{"$host:$port"};
-            }
-            return $cl;
-        }
-        $cl = $1        if $line =~ /^Content-length: (\d+)/i;
-        $keep_alive = 1 if $line =~ /^Connection:.+\bkeep-alive\b/i;
-    }
-    delete $http_socket{"$host:$port"};
-
-    # no content length found?
-    return undeferr("get_file_size() found no content-length header in response for $path");
 }
 
+sub on_size_response {
+    my ($self, $res) = @_;
+
+    if ($res->is_success) {
+        my $size = $res->header('content-length');
+        if (! defined $size &&
+            $res->header('server') =~ m/^lighttpd/) {
+            # lighttpd 1.4.x (main release) does not return content-length for
+            # 0 byte files.
+            $self->{_size} = 0;
+            return 0;
+        }
+        $self->{_size} = $size;
+        return $size;
+    } else {
+        if ($res->code == 404) {
+            return FILE_MISSING;
+        }
+        return undeferr("Failed HEAD check for $self->{url} (" . $res->code . "): "
+            . $res->message); 
+    }
+}
+
+sub digest_mgmt {
+    my ($self, $alg, $ping_cb, $reason) = @_;
+    my $mogconn = $self->host->mogstored_conn;
+    my $node_timeout = MogileFS->config("node_timeout");
+    my $sock;
+    my $rv;
+    my $expiry;
+
+    # assuming the storage node can checksum at >=2MB/s, low expectations here
+    my $response_timeout = $self->size / (2 * 1024 * 1024);
+    if ($reason && $reason eq "fsck") {
+        # fsck has low priority in mogstored and is concurrency-limited,
+        # so this may be queued indefinitely behind digest requests for
+        # large files
+        $response_timeout += 3600;
+    } else {
+        # account for disk/network latency:
+        $response_timeout += $node_timeout;
+    }
+
+    $reason = defined($reason) ? " $reason" : "";
+    my $uri = $self->{uri};
+    my $req = "$alg $uri$reason\r\n";
+    my $reqlen = length $req;
+
+    # a dead/stale socket may not be detected until we try to recv on it
+    # after sending a request
+    my $retries = 2;
+
+    my $host = $self->{host};
+
+retry:
+    $sock = eval { $mogconn->sock($node_timeout) };
+    if (defined $sock) {
+        delete $sidechannel_nexterr{$host};
+    } else {
+        # avoid flooding logs with identical messages
+        my $err = $@;
+        my $next = $sidechannel_nexterr{$host} || 0;
+        my $now = time();
+        return if $now < $next;
+        $sidechannel_nexterr{$host} = $now + 300;
+        return undeferr("sidechannel failure on $alg $uri: $err");
+    }
+
+    $rv = send($sock, $req, 0);
+    if ($! || $rv != $reqlen) {
+        my $err = $!;
+        $mogconn->mark_dead;
+        if ($retries-- <= 0) {
+            $req =~ tr/\r\n//d;
+            $err = $err ? "send() error ($req): $err" :
+                          "short send() ($req): $rv != $reqlen";
+            $err = $mogconn->{ip} . ":" . $mogconn->{port} . " $err";
+            return undeferr($err);
+        }
+        goto retry;
+    }
+
+    $expiry = Time::HiRes::time() + $response_timeout;
+    while (!wait_for_readability(fileno($sock), 1.0) &&
+           (Time::HiRes::time() < $expiry)) {
+        $ping_cb->();
+    }
+
+    $rv = <$sock>;
+    if (! $rv) {
+        $mogconn->mark_dead;
+        return undeferr("EOF from mogstored") if ($retries-- <= 0);
+        goto retry;
+    } elsif ($rv =~ /^\Q$uri\E \Q$alg\E=([a-f0-9]{32,128})\r\n/) {
+        my $hexdigest = $1;
+
+        my $checksum = eval {
+            MogileFS::Checksum->from_string(0, "$alg:$hexdigest")
+        };
+        return undeferr("$alg failed for $uri: $@") if $@;
+        return $checksum->{checksum};
+    } elsif ($rv =~ /^\Q$uri\E \Q$alg\E=-1\r\n/) {
+        # FIXME, this could be another error like EMFILE/ENFILE
+        return FILE_MISSING;
+    } elsif ($rv =~ /^ERROR /) {
+        return; # old server, fallback to HTTP
+    }
+
+    chomp($rv);
+    return undeferr("mogstored failed to handle ($alg $uri): $rv");
+}
+
+sub digest_http {
+    my ($self, $alg, $ping_cb) = @_;
+
+    my $digest = Digest->new($alg);
+    my %opts = (
+        port => $self->{port},
+        # default (4K) is tiny, use 1M like replicate
+        read_size_hint => 0x100000,
+        content_cb => sub {
+            $digest->add($_[0]);
+            $ping_cb->();
+        },
+    );
+
+    my $res;
+    $self->host->http("GET", $self->{uri}, \%opts, sub { ($res) = @_ });
+
+    # TODO: async interface for workers already running Danga::Socket->EventLoop
+    Danga::Socket->SetPostLoopCallback(sub { !defined $res });
+    Danga::Socket->EventLoop;
+
+    return $digest->digest if $res->is_success;
+    return FILE_MISSING if $res->code == 404;
+    return undeferr("Failed $alg (GET) check for $self->{url} (" . $res->code . "): "
+                    . $res->message);
+}
+
+sub digest {
+    my ($self, $alg, $ping_cb, $reason) = @_;
+    my $digest = $self->digest_mgmt($alg, $ping_cb, $reason);
+
+    return $digest if ($digest && $digest ne FILE_MISSING);
+
+    $self->digest_http($alg, $ping_cb);
+}
 
 1;

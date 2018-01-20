@@ -1,0 +1,101 @@
+database
+--------
+
+checksum hashes are represented as binary (VARBINARY for MySQL/SQLite,
+bytea for Postgres) columns in the database.  They can be up to 64 bytes
+large for SHA512 or WHIRLPOOL.
+
+tracker protocol
+----------------
+
+Hex is used instead of binary over the wire, hex is already immune to
+URL encoding in the tracker protocol.
+
+Hashes are represented with in the $HASHTYPE:$HEXDIGEST format:
+
+	MD5:68b329da9893e34099c7d8ad5cb9c940
+
+verifying checksums (on disk)
+-----------------------------
+
+Ideally, mogstored checksum calculation is done by mogstored and only
+the checksum (in $HASHTYPE=$HEXDIGEST format) is sent over the wire.
+
+If mogstored is not available, the checksum is calculated on the tracker
+by streaming the file with HTTP GET.
+
+create_close (query worker)
+---------------------------
+
+New optional parameters:
+
+- checksumverify=(0|1) default: 0 (false)
+- checksum=$HASHTYPE:$HEXDIGEST
+
+If "checksumverify" is "1" and "checksum" is present, "create_close"
+will not return until it has verified the checksum.
+
+If the storage class of a file specifies a valid "hashtype",
+the checksum is saved to the "checksum" table in the database.
+
+The client is _never_ required to supply a checksum.
+
+The client may always supply a checksum (including checksumverify)
+even if the storage class of the file does not required.
+
+monitor
+-------
+
+Will also attempt to check if the storage server can reject PUTs
+with mismatched Content-MD5 headers.  Replication will use this
+info to avoid calling HTTPFile->digest post-replication to verify
+the upload completed successfully.
+
+replication
+-----------
+
+The replication worker can calculate the checksum of the file while it
+streams the source file (via GET) to the destination via PUT.
+
+If the client did not supply a checksum for create_close but the file
+storage class requires a checksum, the replication worker will save the
+calculated checksum after initial replication.
+
+If the checksum row for a file already exists before replication,
+replication will verify the checksum it got (via GET) against the
+checksum row.  Replication fails if checksum verification fails
+against the database row.
+
+Replication will also put a "Content-MD5" header in the PUT request if
+using MD5 and the checksum is known before replication starts.  The
+storage server may (but is not required to) verify this and return an
+HTTP error response if verification fails.  The monitor change will
+allow us to know if a destination device is capable of rejecting
+a request based on a Content-MD5 mismatch.
+
+If the file storage class requires a checksum:
+
+	If the destination device can NOT reject based on (bad) MD5:
+
+		Replication worker also verifies the checksum
+		on the destination after replication is complete
+		(either via mogstored or GET).
+
+fsck
+----
+
+If checksum row exists:
+	verifies all copies match
+	same behavior as size mismatches in existing code:
+		if good copies exist
+			delete bad ones and rereplicate
+		else if only bad copies exist
+			log error
+
+If checksum row is missing but class requires checksum:
+	if all copies of the file have the same checksum:
+		create the checksum row
+	if any device containing a copy down:
+		wait and revisit this FID later
+	if any of the copies differ:
+		log failure and all (hex) checksums + devids

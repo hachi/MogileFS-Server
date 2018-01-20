@@ -1,10 +1,10 @@
 package MogileFS::Store;
 use strict;
 use warnings;
-use Carp qw(croak);
+use Carp qw(croak confess);
 use MogileFS::Util qw(throw max error);
 use DBI;  # no reason a Store has to be DBI-based, but for now they all are.
-use List::Util ();
+use List::Util qw(shuffle);
 
 # this is incremented whenever the schema changes.  server will refuse
 # to start-up with an old schema version
@@ -18,7 +18,11 @@ use List::Util ();
 # 12: adds 'file_to_delete2' table
 # 13: modifies 'server_settings.value' to TEXT for wider values
 #     also adds a TEXT 'arg' column to file_to_queue for passing arguments
-use constant SCHEMA_VERSION => 13;
+# 14: modifies 'device' mb_total, mb_used to INT for devs > 16TB
+# 15: adds checksum table, adds 'hashtype' column to 'class' table
+# 16: no-op, see 17
+# 17: adds 'readonly' state to enum in host table
+use constant SCHEMA_VERSION => 17;
 
 sub new {
     my ($class) = @_;
@@ -48,12 +52,15 @@ sub new_from_dsn_user_pass {
         pass   => $pass,
         max_handles => $max_handles, # Max number of handles to allow
         raise_errors => $subclass->want_raise_errors,
-        slave_list_cachetime => 0,
+        slave_list_version => 0,
         slave_list_cache     => [],
         recheck_req_gen  => 0,  # incremented generation, of recheck of dbh being requested
         recheck_done_gen => 0,  # once recheck is done, copy of what the request generation was
         handles_left     => 0,  # amount of times this handle can still be verified
-        server_setting_cache => {}, # value-agnostic db setting cache.
+        connected_slaves => {},
+        dead_slaves      => {},
+        dead_backoff     => {}, # how many times in a row a slave has died
+        connect_timeout  => 10, # High default.
     }, $subclass;
     $self->init;
     return $self;
@@ -124,6 +131,7 @@ sub grant_privileges {
 sub can_replace      { 0 }
 sub can_insertignore { 0 }
 sub can_insert_multi { 0 }
+sub can_for_update   { 1 }
 
 sub unix_timestamp { die "No function in $_[0] to return DB's unixtime." }
 
@@ -149,9 +157,13 @@ sub raise_errors {
     $self->dbh->{RaiseError} = 1;
 }
 
+sub set_connect_timeout { $_[0]{connect_timeout} = $_[1]; }
+
 sub dsn  { $_[0]{dsn}  }
 sub user { $_[0]{user} }
 sub pass { $_[0]{pass} }
+
+sub connect_timeout { $_[0]{connect_timeout} }
 
 sub init { 1 }
 sub post_dbi_connect { 1 }
@@ -162,12 +174,24 @@ sub mark_as_slave {
     my $self = shift;
     die "Incapable of becoming slave." unless $self->can_do_slaves;
 
-    $self->{slave} = 1;
+    $self->{is_slave} = 1;
 }
 
 sub is_slave {
     my $self = shift;
-    return $self->{slave};
+    return $self->{is_slave};
+}
+
+sub _slaves_list_changed {
+    my $self = shift;
+    my $ver = MogileFS::Config->server_setting_cached('slave_version') || 0;
+    if ($ver <= $self->{slave_list_version}) {
+        return 0;
+    }
+    $self->{slave_list_version} = $ver;
+    # Restart connections from scratch if the configuration changed.
+    $self->{connected_slaves} = {};
+    return 1;
 }
 
 # Returns a list of arrayrefs, each being [$dsn, $username, $password] for connecting to a slave DB.
@@ -175,19 +199,12 @@ sub _slaves_list {
     my $self = shift;
     my $now = time();
 
-    # only reload every 15 seconds.
-    if ($self->{slave_list_cachetime} > $now - 15) {
-        return @{$self->{slave_list_cache}};
-    }
-    $self->{slave_list_cachetime} = $now;
-    $self->{slave_list_cache}     = [];
-
-    my $sk = MogileFS::Config->server_setting('slave_keys')
+    my $sk = MogileFS::Config->server_setting_cached('slave_keys')
         or return ();
 
     my @ret;
     foreach my $key (split /\s*,\s*/, $sk) {
-        my $slave = MogileFS::Config->server_setting("slave_$key");
+        my $slave = MogileFS::Config->server_setting_cached("slave_$key");
 
         if (!$slave) {
             error("key for slave DB config: slave_$key not found in configuration");
@@ -202,8 +219,44 @@ sub _slaves_list {
         push @ret, [$dsn, $user, $pass]
     }
 
-    $self->{slave_list_cache}     = \@ret;
     return @ret;
+}
+
+sub _pick_slave {
+    my $self = shift;
+    my @temp = shuffle keys %{$self->{connected_slaves}};
+    return unless @temp;
+    return $self->{connected_slaves}->{$temp[0]};
+}
+
+sub _connect_slave {
+    my $self = shift;
+    my $slave_fulldsn = shift;
+    my $now = time();
+
+    my $dead_retry =
+        MogileFS::Config->server_setting_cached('slave_dead_retry_timeout') || 15;
+
+    my $dead_backoff = $self->{dead_backoff}->{$slave_fulldsn->[0]} || 0;
+    my $dead_timeout = $self->{dead_slaves}->{$slave_fulldsn->[0]};
+    return if (defined $dead_timeout
+        && $dead_timeout + ($dead_retry * $dead_backoff) > $now);
+    return if ($self->{connected_slaves}->{$slave_fulldsn->[0]});
+
+    my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
+    $newslave->set_connect_timeout(
+        MogileFS::Config->server_setting_cached('slave_connect_timeout') || 1);
+    $self->{slave}->{next_check} = 0;
+    $newslave->mark_as_slave;
+    if ($self->check_slave) {
+        $self->{connected_slaves}->{$slave_fulldsn->[0]} = $newslave;
+        $self->{dead_backoff}->{$slave_fulldsn->[0]} = 0;
+    } else {
+        # Magic numbers are saddening...
+        $dead_backoff++ unless $dead_backoff > 20;
+        $self->{dead_slaves}->{$slave_fulldsn->[0]} = $now;
+        $self->{dead_backoff}->{$slave_fulldsn->[0]} = $dead_backoff;
+    }
 }
 
 sub get_slave {
@@ -211,21 +264,50 @@ sub get_slave {
 
     die "Incapable of having slaves." unless $self->can_do_slaves;
 
-    return $self->{slave} if $self->check_slave;
+    $self->{slave} = undef;
+    foreach my $slave (keys %{$self->{dead_slaves}}) {
+        my ($full_dsn) = grep { $slave eq $_->[0] } @{$self->{slave_list_cache}};
+        unless ($full_dsn) {
+            delete $self->{dead_slaves}->{$slave};
+            next;
+        }
+        $self->_connect_slave($full_dsn);
+    }
 
+    unless ($self->_slaves_list_changed) {
+        if ($self->{slave} = $self->_pick_slave) {
+            $self->{slave}->{recheck_req_gen} = $self->{recheck_req_gen};
+            return $self->{slave} if $self->check_slave;
+        }
+    }
+
+    if ($self->{slave}) {
+        my $dsn = $self->{slave}->{dsn};
+        $self->{dead_slaves}->{$dsn} = time();
+        $self->{dead_backoff}->{$dsn} = 0;
+        delete $self->{connected_slaves}->{$dsn};
+        error("Error talking to slave: $dsn");
+    }
     my @slaves_list = $self->_slaves_list;
 
     # If we have no slaves, then return silently.
     return unless @slaves_list;
 
-    foreach my $slave_fulldsn (@slaves_list) {
-        my $newslave = $self->{slave} = $self->new_from_dsn_user_pass(@$slave_fulldsn);
-        $self->{slave_next_check} = 0;
-        $newslave->mark_as_slave;
-        return $newslave
-            if $self->check_slave;
+    my $slave_skip_filtering = MogileFS::Config->server_setting_cached('slave_skip_filtering');
+
+    unless (defined $slave_skip_filtering && $slave_skip_filtering eq 'on') {
+        MogileFS::run_global_hook('slave_list_filter', \@slaves_list);
     }
 
+    $self->{slave_list_cache} = \@slaves_list;
+
+    foreach my $slave_fulldsn (@slaves_list) {
+        $self->_connect_slave($slave_fulldsn);
+    }
+
+    if ($self->{slave} = $self->_pick_slave) {
+        return $self->{slave};
+    }
     warn "Slave list exhausted, failing back to master.";
     return;
 }
@@ -237,7 +319,6 @@ sub read_store {
 
     if ($self->{slave_ok}) {
         if (my $slave = $self->get_slave) {
-            $slave->{recheck_req_gen} = $self->{recheck_req_gen};
             return $slave;
         }
     }
@@ -268,24 +349,51 @@ sub dbh {
         if ($self->{recheck_done_gen} != $self->{recheck_req_gen}) {
             $self->{dbh} = undef unless $self->{dbh}->ping;
             # Handles a memory leak under Solaris/Postgres.
+            # We may leak a little extra memory if we're holding a lock,
+            # since dropping a connection mid-lock is fatal
             $self->{dbh} = undef if ($self->{max_handles} &&
-                $self->{handles_left}-- < 0);
+                $self->{handles_left}-- < 0 && !$self->{lock_depth});
             $self->{recheck_done_gen} = $self->{recheck_req_gen};
         }
         return $self->{dbh} if $self->{dbh};
     }
 
-    $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
-        PrintError => 0,
-        AutoCommit => 1,
-        # FUTURE: will default to on (have to validate all callers first):
-        RaiseError => ($self->{raise_errors} || 0),
-    }) or
+    # Shortcut flag: if monitor thinks the master is down, avoid attempting to
+    # connect to it for now. If we already have a connection to the master,
+    # keep using it as above.
+    if (!$self->is_slave) {
+        my $flag = MogileFS::Config->server_setting_cached('_master_db_alive', 0);
+        return if (defined $flag && $flag == 0);;
+    }
+
+    # auto-reconnect is unsafe if we're holding a lock
+    if ($self->{lock_depth}) {
+        die "DB connection recovery unsafe, lock held: $self->{last_lock}";
+    }
+
+    eval {
+        local $SIG{ALRM} = sub { die "timeout\n" };
+        alarm($self->connect_timeout);
+        $self->{dbh} = DBI->connect($self->{dsn}, $self->{user}, $self->{pass}, {
+            PrintError => 0,
+            AutoCommit => 1,
+            # FUTURE: will default to on (have to validate all callers first):
+            RaiseError => ($self->{raise_errors} || 0),
+            sqlite_use_immediate_transaction => 1,
+        });
+    };
+    alarm(0);
+    if ($@ eq "timeout\n") {
+        die "Failed to connect to database: timeout";
+    } elsif ($@) {
         die "Failed to connect to database: " . DBI->errstr;
+    }
     $self->post_dbi_connect;
     $self->{handles_left} = $self->{max_handles} if $self->{max_handles};
     return $self->{dbh};
 }
+
+sub have_dbh { return 1 if $_[0]->{dbh}; } 
 
 sub ping {
     my $self = shift;
@@ -295,7 +403,7 @@ sub ping {
 sub condthrow {
     my ($self, $optmsg) = @_;
     my $dbh = $self->dbh;
-    return unless $dbh->err;
+    return 1 unless $dbh->err;
     my ($pkg, $fn, $line) = caller;
     my $msg = "Database error from $pkg/$fn/$line: " . $dbh->errstr;
     $msg .= ": $optmsg" if $optmsg;
@@ -340,6 +448,7 @@ sub conddup {
     my ($self, $code) = @_;
     my $rv = eval { $code->(); };
     throw("dup") if $self->was_duplicate_error;
+    croak($@) if $@;
     return $rv;
 }
 
@@ -380,9 +489,7 @@ sub retry_on_deadlock {
     while ($tries-- > 0) {
         $rv = eval { $code->(); };
         next if ($self->was_deadlock_error);
-        if ($@) {
-            croak($@) unless $self->dbh->err;
-        }
+        croak($@) if $@;
         last;
     }
     return $rv;
@@ -401,7 +508,7 @@ use constant TABLES => qw( domain class file tempfile file_to_delete
                             unreachable_fids file_on file_on_corrupt host
                             device server_settings file_to_replicate
                             file_to_delete_later fsck_log file_to_queue
-                            file_to_delete2 );
+                            file_to_delete2 checksum);
 
 sub setup_database {
     my $sto = shift;
@@ -435,6 +542,9 @@ sub setup_database {
     $sto->upgrade_add_class_replpolicy;
     $sto->upgrade_modify_server_settings_value;
     $sto->upgrade_add_file_to_queue_arg;
+    $sto->upgrade_modify_device_size;
+    $sto->upgrade_add_class_hashtype;
+    $sto->upgrade_add_host_readonly;
 
     return 1;
 }
@@ -501,7 +611,8 @@ sub TABLE_class {
     PRIMARY KEY (dmid,classid),
     classname     VARCHAR(50),
     UNIQUE      (dmid,classname),
-    mindevcount   TINYINT UNSIGNED NOT NULL
+    mindevcount   TINYINT UNSIGNED NOT NULL,
+    hashtype  TINYINT UNSIGNED
     )"
 }
 
@@ -625,8 +736,8 @@ sub TABLE_device {
     status  ENUM('alive','dead','down'),
     weight  MEDIUMINT DEFAULT 100,
 
-    mb_total   MEDIUMINT UNSIGNED,
-    mb_used    MEDIUMINT UNSIGNED,
+    mb_total   INT UNSIGNED,
+    mb_used    INT UNSIGNED,
     mb_asof    INT UNSIGNED,
     PRIMARY KEY (devid),
     INDEX   (status)
@@ -707,6 +818,14 @@ sub TABLE_file_to_delete2 {
     )"
 }
 
+sub TABLE_checksum {
+    "CREATE TABLE checksum (
+    fid INT UNSIGNED NOT NULL PRIMARY KEY,
+    hashtype TINYINT UNSIGNED NOT NULL,
+    checksum VARBINARY(64) NOT NULL
+    )"
+}
+
 # these five only necessary for MySQL, since no other database existed
 # before, so they can just create the tables correctly to begin with.
 # in the future, there might be new alters that non-MySQL databases
@@ -719,11 +838,19 @@ sub upgrade_add_device_readonly { 1 }
 sub upgrade_add_device_drain { die "Not implemented in $_[0]" }
 sub upgrade_modify_server_settings_value { die "Not implemented in $_[0]" }
 sub upgrade_add_file_to_queue_arg { die "Not implemented in $_[0]" }
+sub upgrade_modify_device_size { die "Not implemented in $_[0]" }
 
 sub upgrade_add_class_replpolicy {
     my ($self) = @_;
     unless ($self->column_type("class", "replpolicy")) {
         $self->dowell("ALTER TABLE class ADD COLUMN replpolicy VARCHAR(255)");
+    }
+}
+
+sub upgrade_add_class_hashtype {
+    my ($self) = @_;
+    unless ($self->column_type("class", "hashtype")) {
+        $self->dowell("ALTER TABLE class ADD COLUMN hashtype TINYINT UNSIGNED");
     }
 }
 
@@ -736,7 +863,27 @@ sub delete_host {
 # return true if deleted, 0 if didn't exist, exception if error
 sub delete_domain {
     my ($self, $dmid) = @_;
-    return $self->dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
+    my ($err, $rv);
+    my $dbh = $self->dbh;
+    eval {
+        $dbh->begin_work;
+        if ($self->domain_has_files($dmid)) {
+            $err = "has_files";
+        } elsif ($self->domain_has_classes($dmid)) {
+            $err = "has_classes";
+        } else {
+            $rv = $dbh->do("DELETE FROM domain WHERE dmid = ?", undef, $dmid);
+
+            # remove the "default" class if one was created (for mindevcount)
+            # this is currently the only way to delete the "default" class
+            $dbh->do("DELETE FROM class WHERE dmid = ? AND classid = 0", undef, $dmid);
+            $dbh->commit;
+        }
+	$dbh->rollback if $err;
+    };
+    $self->condthrow; # will rollback on errors
+    throw($err) if $err;
+    return $rv;
 }
 
 sub domain_has_files {
@@ -744,6 +891,15 @@ sub domain_has_files {
     my $has_a_fid = $self->dbh->selectrow_array('SELECT fid FROM file WHERE dmid = ? LIMIT 1',
                                                 undef, $dmid);
     return $has_a_fid ? 1 : 0;
+}
+
+sub domain_has_classes {
+    my ($self, $dmid) = @_;
+    # queryworker does not permit removing default class, so domain_has_classes
+    # should not register the default class
+    my $has_a_class = $self->dbh->selectrow_array('SELECT classid FROM class WHERE dmid = ? AND classid != 0 LIMIT 1',
+        undef, $dmid);
+    return defined($has_a_class);
 }
 
 sub class_has_files {
@@ -755,27 +911,36 @@ sub class_has_files {
 
 # return new classid on success (non-zero integer), die on failure
 # throw 'dup' on duplicate name
-# override this if you want a less racy version.
 sub create_class {
     my ($self, $dmid, $classname) = @_;
     my $dbh = $self->dbh;
 
-    # get the max class id in this domain
-    my $maxid = $dbh->selectrow_array
-        ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
+    my ($clsid, $rv);
 
-    # now insert the new class
-    my $rv = eval {
-        $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
-                 undef, $dmid, $maxid + 1, $classname, 2);
+    eval {
+        $dbh->begin_work;
+        if ($classname eq 'default') {
+            $clsid = 0;
+        } else {
+            # get the max class id in this domain
+            my $maxid = $dbh->selectrow_array
+                ('SELECT MAX(classid) FROM class WHERE dmid = ?', undef, $dmid) || 0;
+            $clsid = $maxid + 1;
+        }
+        # now insert the new class
+        $rv = $dbh->do("INSERT INTO class (dmid, classid, classname, mindevcount) VALUES (?, ?, ?, ?)",
+                       undef, $dmid, $clsid, $classname, 2);
+        $dbh->commit if $rv;
     };
     if ($@ || $dbh->err) {
         if ($self->was_duplicate_error) {
+            # ensure we're not inside a transaction
+            if ($dbh->{AutoCommit} == 0) { eval { $dbh->rollback }; }
             throw("dup");
         }
     }
-    return $maxid + 1 if $rv;
-    $self->condthrow;
+    $self->condthrow; # this will rollback on errors
+    return $clsid if $rv;
     die;
 }
 
@@ -814,6 +979,17 @@ sub update_class_replpolicy {
     };
     $self->condthrow;
     return 1;
+}
+
+# return 1 on success, die otherwise
+sub update_class_hashtype {
+    my $self = shift;
+    my %arg  = $self->_valid_params([qw(dmid classid hashtype)], @_);
+    eval {
+    $self->dbh->do("UPDATE class SET hashtype=? WHERE dmid=? AND classid=?",
+                   undef, $arg{hashtype}, $arg{dmid}, $arg{classid});
+    };
+    $self->condthrow;
 }
 
 sub nfiles_with_dmid_classid_devcount {
@@ -856,21 +1032,6 @@ sub server_setting {
     my ($self, $key) = @_;
     return $self->dbh->selectrow_array("SELECT value FROM server_settings WHERE field=?",
                                        undef, $key);
-}
-
-# generic server setting cache.
-# note that you can call the same server setting with different timeouts, but
-# the timeout specified at the time of ... timeout, wins.
-sub server_setting_cached {
-    my ($self, $key, $timeout) = @_;
-    $self->{server_setting_cache}->{$key} ||= {val => '', refresh => 0};
-    my $cache = $self->{server_setting_cache}->{$key};
-    my $now = time();
-    if ($now > $cache->{refresh}) {
-        $cache->{val}     = $self->server_setting($key);
-        $cache->{refresh} = $now + $timeout;
-    }
-    return $cache->{val};
 }
 
 sub server_settings {
@@ -952,8 +1113,11 @@ sub register_tempfile {
         return $exists ? 1 : 0;
     };
 
+    # See notes in MogileFS::Config->check_database
+    my $min_fidid = MogileFS::Config->config('min_fidid');
+
     # if the fid is in use, do something
-    while ($fid_in_use->($fid)) {
+    while ($fid_in_use->($fid) || $fid <= $min_fidid) {
         throw("dup") if $explicit_fid_used;
 
         # be careful of databases which reset their
@@ -996,10 +1160,10 @@ sub file_row_from_fidid {
 # return an arrayref of rows containing columns "fid, dmid, dkey, length,
 # classid, devcount" provided a pair of $fidid or undef if no rows.
 sub file_row_from_fidid_range {
-    my ($self, $fromfid, $tofid) = @_;
+    my ($self, $fromfid, $count) = @_;
     my $sth = $self->dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
-                                  "FROM file WHERE fid BETWEEN ? AND ?");
-    $sth->execute($fromfid,$tofid);
+                                  "FROM file WHERE fid > ? LIMIT ?");
+    $sth->execute($fromfid,$count);
     return $sth->fetchall_arrayref({});
 }
 
@@ -1026,7 +1190,7 @@ sub fid_devids_multiple {
 # return hashref of columns classid, dmid, dkey, given a $fidid, or return undef
 sub tempfile_row_from_fid {
     my ($self, $fidid) = @_;
-    return $self->dbh->selectrow_hashref("SELECT classid, dmid, dkey ".
+    return $self->dbh->selectrow_hashref("SELECT classid, dmid, dkey, devids ".
                                          "FROM tempfile WHERE fid=?",
                                          undef, $fidid);
 }
@@ -1043,21 +1207,51 @@ sub create_device {
     return 1;
 }
 
+sub update_device {
+    my ($self, $devid, $to_update) = @_;
+    my @keys = sort keys %$to_update;
+    return unless @keys;
+    $self->conddup(sub {
+        $self->dbh->do("UPDATE device SET " . join('=?, ', @keys)
+            . "=? WHERE devid=?", undef, (map { $to_update->{$_} } @keys),
+            $devid);
+    });
+    return 1;
+}
+
 sub update_device_usage {
     my $self = shift;
-    my %arg  = $self->_valid_params([qw(mb_total mb_used devid)], @_);
+    my %arg = $self->_valid_params([qw(mb_total mb_used devid mb_asof)], @_);
     eval {
-        $self->dbh->do("UPDATE device SET mb_total = ?, mb_used = ?, mb_asof = " . $self->unix_timestamp .
-                       " WHERE devid = ?", undef, $arg{mb_total}, $arg{mb_used}, $arg{devid});
+        $self->dbh->do("UPDATE device SET ".
+                       "mb_total = ?, mb_used = ?, mb_asof = ?" .
+                       " WHERE devid = ?",
+                       undef, $arg{mb_total}, $arg{mb_used}, $arg{mb_asof},
+                       $arg{devid});
     };
     $self->condthrow;
 }
 
-sub mark_fidid_unreachable {
-    my ($self, $fidid) = @_;
-    die "Your database does not support REPLACE! Reimplement mark_fidid_unreachable!" unless $self->can_replace;
-    $self->dbh->do("REPLACE INTO unreachable_fids VALUES (?, " . $self->unix_timestamp . ")",
-                   undef, $fidid);
+# MySQL has an optimized version
+sub update_device_usages {
+    my ($self, $updates, $cb) = @_;
+    foreach my $upd (@$updates) {
+        $self->update_device_usage(%$upd);
+        $cb->();
+    }
+}
+
+# This is unimplemented at the moment as we must verify:
+# - no file_on rows exist
+# - nothing in file_to_queue is going to attempt to use it
+# - nothing in file_to_replicate is going to attempt to use it
+# - it's already been marked dead
+# - that all trackers are likely to know this :/
+# - ensure the devid can't be reused
+# IE; the user can't mark it dead then remove it all at once and cause their
+# cluster to implode.
+sub delete_device {
+    die "Unimplemented; needs further testing";
 }
 
 sub set_device_weight {
@@ -1078,19 +1272,30 @@ sub set_device_state {
 
 sub delete_class {
     my ($self, $dmid, $cid) = @_;
+    throw("has_files") if $self->class_has_files($dmid, $cid);
     eval {
         $self->dbh->do("DELETE FROM class WHERE dmid = ? AND classid = ?", undef, $dmid, $cid);
     };
     $self->condthrow;
 }
 
+# called from a queryworker process, will trigger delete_fidid_enqueued
+# in the delete worker
 sub delete_fidid {
     my ($self, $fidid) = @_;
     eval { $self->dbh->do("DELETE FROM file WHERE fid=?", undef, $fidid); };
     $self->condthrow;
-    eval { $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid); };
-    $self->condthrow;
     $self->enqueue_for_delete2($fidid, 0);
+    $self->condthrow;
+}
+
+# Only called from delete workers (after delete_fidid),
+# this reduces client-visible latency from the queryworker
+sub delete_fidid_enqueued {
+    my ($self, $fidid) = @_;
+    eval { $self->delete_checksum($fidid); };
+    $self->condthrow;
+    eval { $self->dbh->do("DELETE FROM tempfile WHERE fid=?", undef, $fidid); };
     $self->condthrow;
 }
 
@@ -1112,12 +1317,12 @@ sub delete_and_return_tempfile_row {
 
 sub replace_into_file {
     my $self = shift;
-    my %arg  = $self->_valid_params([qw(fidid dmid key length classid)], @_);
+    my %arg  = $self->_valid_params([qw(fidid dmid key length classid devcount)], @_);
     die "Your database does not support REPLACE! Reimplement replace_into_file!" unless $self->can_replace;
     eval {
         $self->dbh->do("REPLACE INTO file (fid, dmid, dkey, length, classid, devcount) ".
-                       "VALUES (?,?,?,?,?,0) ", undef,
-                       @arg{'fidid', 'dmid', 'key', 'length', 'classid'});
+                       "VALUES (?,?,?,?,?,?) ", undef,
+                       @arg{'fidid', 'dmid', 'key', 'length', 'classid', 'devcount'});
     };
     $self->condthrow;
 }
@@ -1144,6 +1349,13 @@ sub rename_file {
     return 1;
 }
 
+sub get_domainid_by_name {
+    my $self = shift;
+    my ($dmid) = $self->dbh->selectrow_array('SELECT dmid FROM domain WHERE namespace = ?',
+        undef, $_[0]);
+    return $dmid;
+}
+
 # returns a hash of domains. Key is namespace, value is dmid.
 sub get_all_domains {
     my ($self) = @_;
@@ -1151,17 +1363,27 @@ sub get_all_domains {
     return map { ($_->[0], $_->[1]) } @{$domains || []};
 }
 
+sub get_classid_by_name {
+    my $self = shift;
+    my ($classid) = $self->dbh->selectrow_array('SELECT classid FROM class WHERE dmid = ? AND classname = ?',
+        undef, $_[0], $_[1]);
+    return $classid;
+}
+
 # returns an array of hashrefs, one hashref per row in the 'class' table
 sub get_all_classes {
     my ($self) = @_;
     my (@ret, $row);
 
-    my $repl_col = "";
+    my @cols = qw/dmid classid classname mindevcount/;
     if ($self->cached_schema_version >= 10) {
-        $repl_col = ", replpolicy";
+        push @cols, 'replpolicy';
+        if ($self->cached_schema_version >= 15) {
+            push @cols, 'hashtype';
+        }
     }
-
-    my $sth = $self->dbh->prepare("SELECT dmid, classid, classname, mindevcount $repl_col FROM class");
+    my $cols = join(', ', @cols);
+    my $sth = $self->dbh->prepare("SELECT $cols FROM class");
     $sth->execute;
     push @ret, $row while $row = $sth->fetchrow_hashref;
     return @ret;
@@ -1191,6 +1413,21 @@ sub remove_fidid_from_devid {
                             undef, $fidid, $devid); };
     $self->condthrow;
     return $rv;
+}
+
+# Test if host exists.
+sub get_hostid_by_id {
+    my $self = shift;
+    my ($hostid) = $self->dbh->selectrow_array('SELECT hostid FROM host WHERE hostid = ?',
+        undef, $_[0]);
+    return $hostid;
+}
+
+sub get_hostid_by_name {
+    my $self = shift;
+    my ($hostid) = $self->dbh->selectrow_array('SELECT hostid FROM host WHERE hostname = ?',
+        undef, $_[0]);
+    return $hostid;
 }
 
 # get all hosts from database, returns them as list of hashrefs, hashrefs being the row contents.
@@ -1250,8 +1487,10 @@ sub update_classid {
 sub enqueue_for_replication {
     my ($self, $fidid, $from_devid, $in) = @_;
 
-    $in = 0 unless $in;
-    my $nexttry = $self->unix_timestamp . " + " . int($in);
+    my $nexttry = 0;
+    if ($in) {
+        $nexttry = $self->unix_timestamp . " + " . int($in);
+    }
 
     $self->retry_on_deadlock(sub {
         $self->insert_ignore("INTO file_to_replicate (fid, fromdevid, nexttry) ".
@@ -1297,7 +1536,7 @@ sub enqueue_for_todo {
 # return 1 on success.  die otherwise.
 sub enqueue_many_for_todo {
     my ($self, $fidids, $type, $in) = @_;
-    if (@$fidids > 1 && ! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
+    if (! ($self->can_insert_multi && ($self->can_replace || $self->can_insertignore))) {
         $self->enqueue_for_todo($_, $type, $in) foreach @$fidids;
         return 1;
     }
@@ -1315,7 +1554,7 @@ sub enqueue_many_for_todo {
         } else {
             $self->dbh->do($self->ignore_replace . " INTO file_to_queue (fid, type,
             nexttry) VALUES " .
-            join(",", map { "(" . int($_->{fid}) . ", $type, $nexttry)" } @$fidids));
+            join(",", map { "(" . int($_) . ", $type, $nexttry)" } @$fidids));
         }
     });
     $self->condthrow;
@@ -1389,36 +1628,16 @@ sub get_fidid_chunks_by_device {
     return $fidids;
 }
 
-# takes two arguments, fidid to be above, and optional limit (default
-# 1,000).  returns up to that that many fidids above the provided
-# fidid.  returns array of MogileFS::FID objects, sorted by fid ids.
-sub get_fids_above_id {
-    my ($self, $fidid, $limit) = @_;
-    $limit ||= 1000;
-    $limit = int($limit);
-
-    my @ret;
-    my $dbh = $self->dbh;
-    my $sth = $dbh->prepare("SELECT fid, dmid, dkey, length, classid, devcount ".
-                            "FROM   file ".
-                            "WHERE  fid > ? ".
-                            "ORDER BY fid LIMIT $limit");
-    $sth->execute($fidid);
-    while (my $row = $sth->fetchrow_hashref) {
-        push @ret, MogileFS::FID->new_from_db_row($row);
-    }
-    return @ret;
-}
-
-# Same as above, but returns unblessed hashref.
-sub get_fidids_above_id {
-    my ($self, $fidid, $limit) = @_;
+# gets fidids above fidid_low up to (and including) fidid_high
+sub get_fidids_between {
+    my ($self, $fidid_low, $fidid_high, $limit) = @_;
     $limit ||= 1000;
     $limit = int($limit);
 
     my $dbh = $self->dbh;
-    my $fidids = $dbh->selectcol_arrayref(qq{SELECT fid FROM file WHERE fid > ?
-                     ORDER BY fid LIMIT $limit});
+    my $fidids = $dbh->selectcol_arrayref(qq{SELECT fid FROM file
+        WHERE fid > ? and fid <= ?
+        ORDER BY fid LIMIT $limit}, undef, $fidid_low, $fidid_high);
     return $fidids;
 }
 
@@ -1442,10 +1661,14 @@ sub create_domain {
     die "failed to make domain";  # FIXME: the above is racy.
 }
 
-sub update_host_property {
-    my ($self, $hostid, $col, $val) = @_;
+sub update_host {
+    my ($self, $hid, $to_update) = @_;
+    my @keys = sort keys %$to_update;
+    return unless @keys;
     $self->conddup(sub {
-        $self->dbh->do("UPDATE host SET $col=? WHERE hostid=?", undef, $val, $hostid);
+        $self->dbh->do("UPDATE host SET " . join('=?, ', @keys)
+            . "=? WHERE hostid=?", undef, (map { $to_update->{$_} } @keys),
+            $hid);
     });
     return 1;
 }
@@ -1500,21 +1723,24 @@ sub grab_queue_chunk {
     my $tries = 3;
     my $work;
 
+    return 0 unless $self->lock_queue($queue);
+
     my $extwhere = shift || '';
     my $fields = 'fid, nexttry, failcount';
     $fields .= ', ' . $extfields if $extfields;
     eval {
         $dbh->begin_work;
         my $ut  = $self->unix_timestamp;
-        my $sth = $dbh->prepare(qq{
+        my $query = qq{
             SELECT $fields
             FROM $queue
             WHERE nexttry <= $ut
             $extwhere
             ORDER BY nexttry
             LIMIT $limit
-            FOR UPDATE
-        });
+        };
+        $query .= "FOR UPDATE\n" if $self->can_for_update;
+        my $sth = $dbh->prepare($query);
         $sth->execute;
         $work = $sth->fetchall_hashref('fid');
         # Nothing to work on.
@@ -1527,9 +1753,16 @@ sub grab_queue_chunk {
     };
     if ($self->was_deadlock_error) {
         eval { $dbh->rollback };
-        return ();
+        $work = undef;
+    } else {
+        $self->condthrow;
     }
-    $self->condthrow;
+    # FIXME: Super extra paranoia to prevent deadlocking.
+    # Need to handle or die on all errors above, but $@ can get reset. For now
+    # we'll just always ensure there's no transaction running at the end here.
+    # A (near) release should figure the error detection correctly.
+    if ($dbh->{AutoCommit} == 0) { eval { $dbh->rollback }; }
+    $self->unlock_queue($queue);
 
     return defined $work ? values %$work : ();
 }
@@ -1561,8 +1794,9 @@ sub grab_files_to_queued {
 # and tell it not to.
 sub should_begin_replicating_fidid {
     my ($self, $fidid) = @_;
-    warn("Inefficient implementation of should_begin_replicating_fidid() in $self!\n");
-    1;
+    my $lockname = "mgfs:fid:$fidid:replicate";
+    return 1 if $self->get_lock($lockname, 1);
+    return 0;
 }
 
 # called when replicator is done replicating a fid, so you can cleanup
@@ -1576,6 +1810,26 @@ sub should_begin_replicating_fidid {
 # locking in this pair of functions.
 sub note_done_replicating {
     my ($self, $fidid) = @_;
+    my $lockname = "mgfs:fid:$fidid:replicate";
+    $self->release_lock($lockname);
+}
+
+sub find_fid_from_file_to_replicate {
+    my ($self, $fidid) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, nexttry, fromdevid, failcount, flags FROM file_to_replicate WHERE fid = ?",
+        undef, $fidid); 
+}
+
+sub find_fid_from_file_to_delete2 {
+    my ($self, $fidid) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, nexttry, failcount FROM file_to_delete2 WHERE fid = ?",
+        undef, $fidid);
+}
+
+sub find_fid_from_file_to_queue {
+    my ($self, $fidid, $type) = @_;
+    return $self->dbh->selectrow_hashref("SELECT fid, devid, type, nexttry, failcount, flags, arg FROM file_to_queue WHERE fid = ? AND type = ?",
+        undef, $fidid, $type);
 }
 
 sub delete_fid_from_file_to_replicate {
@@ -1641,14 +1895,22 @@ sub get_keys_like {
     # fix the input... prefix always ends with a % so that it works
     # in a LIKE call, and after is either blank or something
     $prefix = '' unless defined $prefix;
+
+    # escape underscores, % and \
+    $prefix =~ s/([%\\_])/\\$1/g;
+
     $prefix .= '%';
     $after  = '' unless defined $after;
 
+    my $like = $self->get_keys_like_operator;
+
     # now select out our keys
     return $self->dbh->selectcol_arrayref
-        ('SELECT dkey FROM file WHERE dmid = ? AND dkey LIKE ? AND dkey > ? ' .
-         "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, $after);
+        ("SELECT dkey FROM file WHERE dmid = ? AND dkey $like ? ESCAPE ? AND dkey > ? " .
+         "ORDER BY dkey LIMIT $limit", undef, $dmid, $prefix, "\\", $after);
 }
+
+sub get_keys_like_operator { return "LIKE"; }
 
 # return arrayref of all tempfile rows (themselves also arrayrefs, of [$fidid, $devids])
 # that were created $secs_ago seconds ago or older.
@@ -1856,7 +2118,37 @@ sub fsck_evcode_counts {
 
 # run before daemonizing.  you can die from here if you see something's amiss.  or emit
 # warnings.
-sub pre_daemonize_checks { }
+sub pre_daemonize_checks {
+    my $self = shift;
+
+    $self->pre_daemonize_check_slaves;
+}
+
+sub pre_daemonize_check_slaves {
+    my $sk = MogileFS::Config->server_setting('slave_keys')
+        or return;
+
+    my @slaves;
+    foreach my $key (split /\s*,\s*/, $sk) {
+        my $slave = MogileFS::Config->server_setting("slave_$key");
+
+        if (!$slave) {
+            error("key for slave DB config: slave_$key not found in configuration");
+            next;
+        }
+
+        my ($dsn, $user, $pass) = split /\|/, $slave;
+        if (!defined($dsn) or !defined($user) or !defined($pass)) {
+            error("key slave_$key contains $slave, which doesn't split in | into DSN|user|pass - ignoring");
+            next;
+        }
+        push @slaves, [$dsn, $user, $pass]
+    }
+
+    return unless @slaves; # Escape this block if we don't have a set of slaves anyways
+
+    MogileFS::run_global_hook('slave_list_check', \@slaves);
+}
 
 
 # attempt to grab a lock of lockname, and timeout after timeout seconds.
@@ -1874,23 +2166,57 @@ sub release_lock {
     die "release_lock not implemented for $self";
 }
 
-# returns up to $limit @fidids which are on provided $devid
-sub random_fids_on_device {
-    my ($self, $devid, $limit) = @_;
-    $limit = int($limit) || 100;
+# MySQL has an issue where you either get excessive deadlocks, or INSERT's
+# hang forever around some transactions. Use ghetto locking to cope.
+sub lock_queue { 1 }
+sub unlock_queue { 1 }
 
+sub BLOB_BIND_TYPE { undef; }
+
+sub set_checksum {
+    my ($self, $fidid, $hashtype, $checksum) = @_;
     my $dbh = $self->dbh;
+    die "Your database does not support REPLACE! Reimplement set_checksum!" unless $self->can_replace;
 
-    # FIXME: this blows. not random.  and good chances these will
-    # eventually get to point where they're un-rebalance-able, and we
-    # never move on past the first 5000
-    my @some_fids = List::Util::shuffle(@{
-        $dbh->selectcol_arrayref("SELECT fid FROM file_on WHERE devid=? LIMIT 5000",
-                                 undef, $devid) || []
-                                 });
+    eval {
+        my $sth = $dbh->prepare("REPLACE INTO checksum " .
+                                "(fid, hashtype, checksum) " .
+                                "VALUES (?, ?, ?)");
+        $sth->bind_param(1, $fidid);
+        $sth->bind_param(2, $hashtype);
+        $sth->bind_param(3, $checksum, BLOB_BIND_TYPE);
+        $sth->execute;
+    };
+    $self->condthrow;
+}
 
-    @some_fids = @some_fids[0..$limit-1] if $limit < @some_fids;
-    return @some_fids;
+sub get_checksum {
+    my ($self, $fidid) = @_;
+
+    $self->dbh->selectrow_hashref("SELECT fid, hashtype, checksum " .
+                                  "FROM checksum WHERE fid = ?",
+                                  undef, $fidid);
+}
+
+sub delete_checksum {
+    my ($self, $fidid) = @_;
+
+    $self->dbh->do("DELETE FROM checksum WHERE fid = ?", undef, $fidid);
+}
+
+# setup the value used in a 'nexttry' field to indicate that this item will
+# never actually be tried again and require some sort of manual intervention.
+use constant ENDOFTIME => 2147483647;
+
+sub end_of_time { ENDOFTIME; }
+
+# returns the size of the non-urgent replication queue
+# nexttry == 0                        - the file is urgent
+# nexttry != 0 && nexttry < ENDOFTIME - the file is deferred
+sub deferred_repl_queue_length {
+    my ($self) = @_;
+
+    return $self->dbh->selectrow_array('SELECT COUNT(*) FROM file_to_replicate WHERE nexttry != 0 AND nexttry < ?', undef, $self->end_of_time);
 }
 
 1;

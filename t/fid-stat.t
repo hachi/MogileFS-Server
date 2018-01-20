@@ -8,8 +8,6 @@ use FindBin qw($Bin);
 use Mogstored::FIDStatter;
 use File::Temp qw(tempdir);
 
-plan tests => 11;
-
 my $td = tempdir(CLEANUP => 1);
 ok($td, "got tempdir");
 ok(-d $td, "tempdir is writable");
@@ -119,5 +117,4 @@ sub make_file {
     close($fh) or die;
 }
 
-
-
+done_testing();

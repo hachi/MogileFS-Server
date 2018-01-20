@@ -27,9 +27,7 @@ plan skip_all => "Filepaths plugin has been separated from the server, a bit of 
 exit 0;
 
 my $sto = eval { temp_store(); };
-if ($sto) {
-    plan tests => 19;
-} else {
+if (!$sto) {
     plan skip_all => "Can't create temporary test database: $@";
     exit 0;
 }
@@ -70,7 +68,7 @@ ok($mogc->filepaths_enable, "Filepaths enabled successfully");
 {
     my $was = $be->{timeout};  # can't use local on phash :(
     $be->{timeout} = 10;
-    ok($be->do_request("do_monitor_round", {}), "waited for monitor")
+    ok($be->do_request("clear_cache", {}), "waited for monitor")
         or die "Failed to wait for monitor";
     $be->{timeout} = $was;
 }
@@ -137,5 +135,7 @@ my $data = "My test file.\n" x 1024;
 }
 
 ok($mogc->filepaths_disable, "Filepaths disabled successfully");
+
+done_testing();
 
 # vim: filetype=perl

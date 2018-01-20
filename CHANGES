@@ -1,6 +1,504 @@
+2018-01-18: Release version 2.73
+
+   * fsck: avoid infinite wait on dead devices (Eric Wong <e@80x24.org>)
+
+   * client: always disable watch_read after a command (Eric Wong <e@80x24.org>)
+
+   * client: use single write for admin commands (Eric Wong <e@80x24.org>)
+
+   * tracker: client fairness, backpressure, and expiry (Eric Wong <e@80x24.org>)
+
+   * client connection should always be nonblocking (Eric Wong <e@80x24.org>)
+
+   * ConnectionPool: avoid undefined behavior for hash iteration (Eric Wong <e@80x24.org>)
+
+   * replicate: avoid buffered IO on reads (Eric Wong <e@80x24.org>)
+
+   * enable DB upgrade for host readonly state (Eric Wong <e@80x24.org>)
+
+   * replicate: reduce backoff for too_happy FIDs (Eric Wong <e@80x24.org>)
+
+   * fsck: this avoid redundant fsck log entries (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: do not log FOND if note_on_device croaks (Eric Wong <normalperson@yhbt.net>)
+
+   * reaper: detect resurrection of "dead" devices (Eric Wong <normalperson@yhbt.net>)
+
+2014-12-15: Release version 2.72
+
+   * Work with DBD::SQLite's latest lock errors (dormando <dormando@rydia.net>)
+
+   * remove update_host_property (Eric Wong <e@80x24.org>)
+
+   * remove users of unreachable_fids table (Eric Wong <e@80x24.org>)
+
+   * monitor: batch MySQL device table updates (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor: defer DB updates until all HTTP requests are done (Eric Wong <normalperson@yhbt.net>)
+
+   * connection/poolable: defer expiry of timed out connections (Eric Wong <e@80x24.org>)
+
+   * connection/poolable: disable watch_write before retrying write (Eric Wong <normalperson@yhbt.net>)
+
+   * connection/poolable: do not write before event_write (Eric Wong <normalperson@yhbt.net>)
+
+   * add conn_pool_size configuration option (Eric Wong <normalperson@yhbt.net>)
+
+   * enable TCP keepalives for iostat watcher sockets (Eric Wong <normalperson@yhbt.net>)
+
+   * host: add "readonly" state to override device "alive" state (Eric Wong <normalperson@yhbt.net>)
+
+   * add LICENSE file to distro (dormando <dormando@rydia.net>)
+
+2013-08-18: Release version 2.70
+
+   * This release features a very large rewrite to the Monitor worker to run
+     checks in parallel. There are no DB schema changes.
+
+   * replicate: use persistent connection from pool if possible (Eric Wong <normalperson@yhbt.net>)
+
+   * replicate: enforce expected Content-Length in http_copy (Eric Wong <normalperson@yhbt.net>)
+
+   * create_open: parallelize directory vivification (Eric Wong <normalperson@yhbt.net>)
+
+   * device: reuse HTTP connections for MKCOL (Eric Wong <normalperson@yhbt.net>)
+
+   * delete worker uses persistent HTTP connections (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: use HTTP connection pool for DELETE (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: use Net::HTTP::NB, remove LWP::UserAgent (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: parallelize size checks for any given FID (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor: refactor/rewrite to use new async API (Eric Wong <normalperson@yhbt.net>)
+
+2013-08-07: Release version 2.68
+
+   * optimize monitor worker for large installs (Eric Wong <normalperson@yhbt.net>)
+
+   * allow startup without job_master (and dependent workers) (Eric Wong <normalperson@yhbt.net>)
+
+   * store: do not disconnect for max_handles while locked (Eric Wong <normalperson@yhbt.net>)
+
+   * store: do not auto-reconnect while holding a lock (Eric Wong <normalperson@yhbt.net>)
+
+   * add naive MultipleDevice replication policy (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: log mogstored I/O errors when checksumming (Eric Wong <normalperson@yhbt.net>)
+
+   * ProcManager: log socketpair errors correctly (Eric Wong <normalperson@yhbt.net>)
+
+   * fix "drain" handling used by MultipleHosts replpolicy (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: correct timeouts for sidechannel digest (Eric Wong <normalperson@yhbt.net>)
+
+   * httpfile: correct FILE_MISSING check in digest_mgmt (Eric Wong <normalperson@yhbt.net>)
+
+   * mogstored: avoid bareword on IO::AIO w/o fadvise (Eric Wong <normalperson@yhbt.net>)
+
+   * ProcManager: only log times_out_of_qworkers for new queries (Eric Wong <normalperson@yhbt.net>)
+
+   * Don't emit warnings if we're lacking the space free of a device.  If we don't find space on devices with known space free, try the unknowns. (Dave Lambley <davel@state51.co.uk>)
+
+   * list_keys: escape in Store, allow [%\\] as prefix (Eric Wong <normalperson@yhbt.net>)
+
+   * list_keys: consistent ESCAPE usage across DB types (Eric Wong <normalperson@yhbt.net>)
+
+2013-02-02: Release version 2.67
+
+   * Serialize tempfile reaping (dormando <dormando@rydia.net>)
+
+   * reaper: ensure worker can be stopped via "!want" (Eric Wong <normalperson@yhbt.net>)
+
+   * domain removal also removes its default class (Eric Wong <normalperson@yhbt.net>)
+
+   * store: wrap create_class in a transaction to avoid races (Eric Wong <normalperson@yhbt.net>)
+
+   * mogstored: fix kqueue usage with daemonization (Eric Wong <normalperson@yhbt.net>)
+
+   * Filter the devices before we do an expensive sort. (Dave Lambley <davel@state51.co.uk>)
+
+   * httpfile: avoid killing worker on down sidechannel (Eric Wong <normalperson@yhbt.net>)
+
+   * move checksum and tempfile delete to delete worker (Eric Wong <normalperson@yhbt.net>)
+
+   * sqlite: use immediate transactions to prevent busy errors (Eric Wong <normalperson@yhbt.net>)
+
+   * disable Nagle's algorithm for accepted clients (Eric Wong <normalperson@yhbt.net>)
+
+   * ProcManager: favor using recently-used queryworkers (Eric Wong <normalperson@yhbt.net>)
+
+   * Do both sorts in one method, to save on shared initialisation. (Dave Lambley <davel@state51.co.uk>)
+
+   * Pull out device sorting into it's own method for overriding. (Dave Lambley <davel@state51.co.uk>)
+
+   * Reseed the random number generator after forking. (Dave Lambley <davel@state51.co.uk>)
+
+   * support nginx server type in mogstored command line options (Daniel Frett <daniel.frett@ccci.org>)
+     (also Gernot Vormayr <notti@gbcc.at>, others)
+
+2013-01-06: Release version 2.66
+
+   * add a hook to cmd_updateclass (Daniel Frett <daniel.frett@ccci.org>)
+
+   * support updating the class to the default class which has an id of 0 (Daniel Frett <daniel.frett@ccci.org>)
+
+   * reaper: validate DB connection before reaping (Eric Wong <normalperson@yhbt.net>)
+     Fixes occasional crash in reaper process.
+
+   * improve handling of classes which change hash algorithm (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: skip non-existent FIDs properly (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: use replicate lock when fixing FID (Eric Wong <normalperson@yhbt.net>)
+
+   * query: allow "0" key on all commands which take keys (Eric Wong <normalperson@yhbt.net>)
+
+   * prevent reqid mismatches (and queryworker death) (Eric Wong <normalperson@yhbt.net>)
+     Fixes crash case with specific error types.
+
+   * fix use_dest_devs for rebalance (Pyry Hakulinen <pyry@automattic.com>)
+     Fixes "use_dest_devs" argument during rebalance.
+
+   * Fix "skip_devcount" during rebalance (Pyry Hakulinen <pyry@automattic.com>)
+     Now actually skips updating devcount column during rebalance.
+
+2012-08-13: Release version 2.65
+
+   * Postgres advisory lock instead of table-based lock (Robin H. Johnson <robbat2@gentoo.org>)
+     Now requires minimum Postgres version of pg8.4.
+
+   * reaper: switch to Danga::Socket for scheduling (Eric Wong <normalperson@yhbt.net>)
+
+   * reaper: add queue_size_for_reaper server setting (Eric Wong <normalperson@yhbt.net>)
+
+   * reaper: add "queue_rate_for_reaper" server setting (Eric Wong <normalperson@yhbt.net>)
+     defaults to 1000, same as previously.
+
+   * reaper: global lock around DB interaction (Eric Wong <normalperson@yhbt.net>)
+     prevents reapers clobbering each other, causing a reduction in DB writes.
+
+   * tests: add basic test for reaper (Eric Wong <normalperson@yhbt.net>)
+
+   * fix tests when /etc/mogilefs/mogstored.conf exists (Eric Wong <normalperson@yhbt.net>)
+
+   * iostat: increase flexibility of iostat parser (Eric Wong <normalperson@yhbt.net>)
+
+   * iostat: allow MOG_IOSTAT_CMD env override (Eric Wong <normalperson@yhbt.net>)
+
+   * When a mogstored is down, die with a more informative message. (Dave Lambley <davel@state51.co.uk>)
+
+2012-06-21: Release version 2.64
+
+   * Delete memcache data when we replicate fids (Pyry Hakulinen <pyry@automattic.com>)
+
+   * implement "case_sensitive_list_keys" server setting (Eric Wong <normalperson@yhbt.net>)
+
+   * get_paths: deprioritize devs in "drain" state (Eric Wong <normalperson@yhbt.net>)
+
+   * make marking a host down cause devices to act as down (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor skips hosts marked dead or down (Eric Wong <normalperson@yhbt.net>)
+
+2012-05-29: Release version 2.63
+
+   * Critical bugfix for Postgres users introduced by 2.61. New file uploads
+     would fail. (noticed by robin H. Johnson, fixed by Eric Wong)
+
+2012-05-19: Release version 2.62
+
+   * Critical bugfix for a compilation error (dormando, reported by Robin)
+
+   * Fix for upgrading a Postgres install for checksums (Robin * H. Johnson <robbat2@gentoo.org>)
+
+2012-05-18: Release version 2.61
+
+   * fix issue #57 by Pyry and Eric (dormando <dormando@rydia.net>)
+     (mogadm host status sometimes allowed typos)
+
+   * avoid unnecessary devcount update in create_close (Eric Wong <normalperson@yhbt.net>)
+
+   * size arg check from tomas doran (dormando <dormando@rydia.net>)
+     (pass in a "size" argument (in bytes) to create_open and mogilefs will
+      ensure there's enough free space for it)
+
+   * sqlite: implement locking via tables (Eric Wong <normalperson@yhbt.net>)
+
+   * worker/query: Add optional callid parameter (Gernot Vormayr <notti@bgcc.at>)
+     (allows command pipelining)
+
+   * delete: prevent orphan files from replicator race (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: prevent running over 100% completion (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: cleanup and reduce unnecessary devcount updates (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: update devcount, forget devs on unfixable FIDs (Eric Wong <normalperson@yhbt.net>)
+
+   * fsck: log bad count correctly instead of policy violation (Eric Wong <normalperson@yhbt.net>)
+
+   * tests: add tests for fsck functionality (Eric Wong <normalperson@yhbt.net>)
+
+   * monitor: only broadcast reject_bad_md5 on change (Eric Wong <normalperson@yhbt.net>)
+
+   * worker: delete_domain returns has_classes error (Eric Wong <normalperson@yhbt.net>)
+
+   * log: enable autoflush for stdout logging (Eric Wong <normalperson@yhbt.net>)
+
+2012-03-30: Release version 2.60
+
+   * Fix fsck status when running for the first time (dormando <dormando@rydia.net>)
+
+   * Checksum support (Major update!) (Eric Wong <normalperson@yhbt.net>)
+     See doc/checksums.txt for an overview of how the new checksum system
+     works. Also keep an eye on the wiki (http://www.mogilefs.org) for more
+     complete documentation in the coming weeks.
+
+2012-02-29: Release version 2.59
+
+   * don't make SQLite error out on lock calls (dormando <dormando@rydia.net>)
+
+   * Postgres wasn't honoring a no-wait timeout (dormando <dormando@rydia.net>)
+
+2012-02-28: Release version 2.58
+
+   * reduce UPDATE's to device table (dormando <dormando@rydia.net>)
+
+   * replicate: retry on short writes to destination (Eric Wong <normalperson@yhbt.net>)
+
+   * enable TCP keepalives for accepted sockets (Eric Wong <normalperson@yhbt.net>)
+
+   * Populate memcache even when noverify is missing (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Remove FID from memcache when it is deleted (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Unset memc when memcache servers have been removed (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Filter out illegal memcache servers from memcache_servers (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Add skip_mkcol setting for servers which do not need it (Pyry Hakulinen <pyry@automattic.com>)
+
+   * skip_devcount variable that disables devcount updates (Pyry Hakulinen <pyry@automattic.com>)
+
+   * Back off if master DB is down (dormando <dormando@rydia.net>)
+
+   * use cached setting for slave list (dormando <dormando@rydia.net>)
+
+   * fix "fsck never stops" issue (dormando <dormando@rydia.net>)
+
+2012-01-31: Release version 2.57
+
+   * Silence a warning about undefined value introduced by the slave database ordering work (hachi@kuiki.net)
+
+   * Need a hook to be able to check the slave list during startup (hachi@kuiki.net)
+
+2012-01-27: Release version 2.56
+
+   * Add database connect timeouts (dormando <dormando@rydia.net>)
+
+   * fix potential hang in JobMaster added in 2.55 (dormando <dormando@rydia.net>)
+
+   * fix "set_weight" command (Eric Wong <normalperson@yhbt.net>)
+
+   * sqlite: consider SQLITE_BUSY and SQLITE_LOCKED deadlocks (Eric Wong <normalperson@yhbt.net>)
+
+   * kill a little more dead fsck/Checker code (dormando <dormando@rydia.net>)
+
+   * Destroy mogdeps (dormando <dormando@rydia.net>)
+
+   * improve slave handling code (dormando <dormando@rydia.net>)
+
+   * don't spew errors if the master goes down (dormando <dormando@rydia.net>)
+
+   * provide an async server setting cache via monitor worker (dormando <dormando@rydia.net>)
+
+   * fix return value of commands that clear_cache (Eric Wong <normalperson@yhbt.net>)
+
+   * make reaper wait less time in test mode (dormando <dormando@rydia.net>)
+
+   * queryworker: reimplement "clear_caches" command (Eric Wong <normalperson@yhbt.net>)
+
+   * worker: use timeout with read_from_parent() instead of sleep (Eric Wong <normalperson@yhbt.net>)
+
+   * Fixed issue where too many devices being active could cause the monitor job
+     to be timed out by the watchdog. (Tomas Doran)
+
+2011-11-14: Release version 2.55
+
+   * fixed sources in replication are now a suggestion (dormando <dormando@rydia.net>)
+
+   * More stats to help troubleshoot rebalance (dormando <dormando@rydia.net>)
+
+   * return 1 from condthrow if all is well (dormando <dormando@rydia.net>)
+
+   * schedule fsck replications for the future. (dormando <dormando@rydia.net>)
+
+   * stop enforcing a source id on new file upload (dormando <dormando@rydia.net>)
+
+   * restore new file upload replication priority (dormando <dormando@rydia.net>)
+
+   * Prevent queue related MySQL query hangs (dormando <dormando@rydia.net>)
+
+2011-10-29: Release version 2.54
+
+   * Issue 36: Further insulate from mysql restarts resetting the fid counter (dormando <dormando@rydia.net>)
+
+   * Allow default class to be overridden again. (dormando <dormando@rydia.net>)
+
+   * Fix crash in old delete worker code (Daniel Frett <daniel.frett@ccci.org>)
+
+   * Fix mb_free() counting empty device as missing (git.user <git.user@gmail.com>)
+
+   * sqlite: fix mogdbsetup failure on new setups (Eric Wong <normalperson@yhbt.net>)
+
+   * fid size workaround for lighttpd 1.4.x (dormando <dormando@rydia.net>)
+
+   * Fix various issues in the new mogilefs server query worker. (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * Allow chunked PUT's of unlimited size (dormando <dormando@rydia.net>)
+
+   * Fix listing FIDs.
+   * Fix fsck fixing a file from logging a message which appears to be
+     two commands (due to spurious \n). Also fix debug function to
+     not be able to log messages like this.
+
+2011-08-12: Release version 2.53
+
+   * Fix host status not updating for trackers (important)
+
+2011-07-30: Release version 2.52
+
+   * Plugins (such as FilePaths) might want to be run in info/debug commands (Michael Baehr <mbaehr@plos.org>)
+
+   * schema version 14; support devices > 16TB (dormando <dormando@rydia.net>)
+
+   * Make FSCK worker handle dead devices (dormando <dormando@rydia.net>)
+
+   * Throw out old HTTPFile->size code and use LWP (dormando <dormando@rydia.net>)
+
+   * Remove forced loading of DBD::mysql (dormando <dormando@rydia.net>)
+
+   * Don't test write on readonly devices (Akzhan Abdulin <akzhan.abdulin@gmail.com>)
+
+2011-06-27: Release version 2.51
+
+   * Add minor backcompat for ZoneLocal and friends (dormando <dormando@rydia.net>)
+
+   * Only monitor a device if we should monitor it. (dormando <dormando@rydia.net>)
+
+2011-06-15: Release version 2.50
+
+   * Completely rewire meta object caches. Device/Host/Class/Domain caches are
+     now asynchronously loaded via the Monitor worker. This should drastically
+     reduce the number of small queries issued against the master database.
+     (dormando <dormando@rydia.net>)
+
+   * Don't run workers until Monitor runs once (dormando <dormando@rydia.net>)
+
+   * s/TYPE/ENGINE/ for innodb initialization (dormando <dormando@rydia.net>)
+
+   * Create mogile database explicitly with UTF-8 encoding. (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Actually use the MOGTEST_* variables for Postgres testing... (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Add support for config file includes for Mogstored under lighttpd (Jason Mills <jmmills@cpan.org>)
+
+   * Make postgres use new delete worker code (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * New test env variables: MOGTEST_DBROOT{USER,PASS} for easier test usage. (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Document test variables. (Robin H. Johnson <robbat2@gentoo.org>)
+   
+   * Support inclusion of custom lighttpd config. (Jason Mills <jmmills@cpan.org>)
+
+2011-01-13: Release version 2.46
+
+   * Fix job_master crash under postgres (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Revert "only dbh->ping if not used in over a minute" (dormando <dormando@rydia.net>)
+      *IMPORTANT FIX* if you're using 2.45, you should upgrade to this.
+
+   * Example application. (dormando <dormando@rydia.net>)
+
+   * missing $fidid for source_down error message (dormando <dormando@rydia.net>)
+
+2011-01-08: Release version 2.45
+
+   * file_debug command (dormando <dormando@rydia.net>)
+
+   * add "file_info" command for fetching metadata. (dormando <dormando@rydia.net>)
+
+   * don't allow clients to upload to the wrong dev (dormando <dormando@rydia.net>)
+
+   * validate database handles in the right places (dormando <dormando@rydia.net>)
+
+   * only dbh->ping if not used in over a minute (dormando <dormando@rydia.net>)
+
+   * make list_fids work with gaps (dormando <dormando@rydia.net>)
+
+   * Postgres enqueue_fids_* cleanup (Robin H. Johnson <robbat2@gentoo.org>)
+
+   * Fixes MogileFS::Store::retry_on_deadlock to honor non-deadlock exceptions (Jason Mills <jmmills@cpan.org>)
+
+   * Implements tests for MogileFS::Store::retry_on_deadlock (Jason Mills <jmmills@cpan.org>)
+
+   * Implements tests for MogileFS::Store::ignore_replace (Jason Mills <jmmills@cpan.org>)
+
+   * job_master was never revalidating its dbh handle. (dormando <dormando@rydia.net>)
+
+   * add a couple useful stats (dormando <dormando@rydia.net>)
+
+   * Correct iostat command on darwin (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * Fix test db creation with SQLite (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * Fix SQLite so tracker at least starts (Tomas Doran <bobtfish@bobtfish.net>)
+
+   * additional debian packaging fixes (kad <kad@blegh.net>)
+
+   * debian packaging updates. (Andre Bohr <andrepascha@googlemail.com>)
+
+   * Documentation updates. (Pyry Hakulinen <pyh@iki.fi>)
+
+   * HTTPFile returns -1 if the file is missing from the device. Content-Length: 0 is valid and it should return BLEN not MISS. (Pyry Hakulinen <pyh@iki.fi>)
+
+   * some further editing of the info file. (dormando <dormando@rydia.net>)
+
+   * Changed repository metadata (Tomas Doran <bobtfish@bobtfish.net>)
+
+2010-11-25: Release version 2.44
+
+        * Fix issue with rebalance not filtering source devs from the
+          destination list.
+
+        * Make global rebalance limits work (Martijn Lina)
+
+2010-10-10: Release version 2.43
+
+        * Make over-replication fixable again. (sigh)
+
+        * Fix old bug in MultipleHosts() which would not let you drop from
+          mindev > 1 down to 1.
+
+2010-10-08: Release version 2.42
+
+        * Make FSCK run again (Andre Pascha)
+
+        * Fix Postgres schema upgrade issue (hopefully)
+
+2010-10-06: Release version 2.41
+
+        * One line change that to fix uprading to 2.40
+
+2010-09-28: Release version 2.40
+
+        * Optimize worker sleep patterns and worker/parent communications.
+
         * New rebalance/drain code. See the docs/wiki for how to use.
           ***NOTE*** Old drain/rebalance code is disabled. Setting a device
           into drain mode no longer does what you think it would.
+          http://code.google.com/p/mogilefs/wiki/Rebalance
 
 2010-08-13: Release version 2.37
 

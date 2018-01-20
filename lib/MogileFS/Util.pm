@@ -11,7 +11,53 @@ our @EXPORT_OK = qw(
                     error undeferr debug fatal daemonize weighted_list every
                     wait_for_readability wait_for_writeability throw error_code
                     max min first okay_args device_state eurl decode_url_args
+                    encode_url_args apply_state_events apply_state_events_list
                     );
+
+# Applies monitor-job-supplied state events against the factory singletons.
+# Sad this couldn't be an object method, but ProcManager doesn't base off
+# anything common.
+sub apply_state_events {
+    my @events = split(/\s/, ${$_[0]});
+    shift @events; # pop the :monitor_events part
+    apply_state_events_list(@events);
+}
+
+sub apply_state_events_list {
+    # This will needlessly fetch domain/class/host most of the time.
+    # Maybe replace with something that "caches" factories?
+    my %factories = ( 'domain' => MogileFS::Factory::Domain->get_factory,
+        'class'  => MogileFS::Factory::Class->get_factory,
+        'host'   => MogileFS::Factory::Host->get_factory,
+        'device' => MogileFS::Factory::Device->get_factory, );
+
+    for my $ev (@_) {
+        my $args = decode_url_args($ev);
+        my $mode = delete $args->{ev_mode};
+        my $type = delete $args->{ev_type};
+        my $id   = delete $args->{ev_id};
+
+        # This special case feels gross, but that's what it is.
+        if ($type eq 'srvset') {
+            my $val = $mode eq 'set' ? $args->{value} : undef;
+            MogileFS::Config->cache_server_setting($id, $val);
+            next;
+        }
+
+        my $old = $factories{$type}->get_by_id($id);
+        if ($mode eq 'setstate') {
+            # Host/Device only.
+            # FIXME: Make objects slightly mutable and directly set fields?
+            $factories{$type}->set({ %{$old->fields}, %$args });
+        } elsif ($mode eq 'set') {
+            # Re-add any observed data.
+            my $observed = $old ? $old->observed_fields : {};
+            $factories{$type}->set({ %$args, %$observed });
+        } elsif ($mode eq 'remove') {
+            $factories{$type}->remove($old) if $old;
+        }
+    }
+}
 
 sub every {
     my ($delay, $code) = @_;
@@ -34,7 +80,6 @@ sub every {
         my $now = Time::HiRes::time();
         my $took = $now - $start;
         my $sleep_for = defined $explicit_sleep ? $explicit_sleep : ($delay - $took);
-        next unless $sleep_for > 0;
 
         # simple case, not in a child process (this never happens currently)
         unless ($psock_fd) {
@@ -42,25 +87,18 @@ sub every {
             next;
         }
 
-        while ($sleep_for > 0) {
-            my $last_time_pre_sleep = $now;
-            $worker->forget_woken_up;
-            if (wait_for_readability($psock_fd, $sleep_for)) {
-                # TODO: uncomment this and watch an idle server and how many wakeups.  could optimize.
-                #local $Mgd::POST_SLEEP_DEBUG = 1;
-                #warn "WOKEN UP FROM SLEEP in $worker [$$]\n";
-                $worker->read_from_parent;
-                next CODERUN if $worker->was_woken_up;
-            }
-            $now = Time::HiRes::time();
-            $sleep_for -= ($now - $last_time_pre_sleep);
-        }
+        Time::HiRes::sleep($sleep_for) if $sleep_for > 0;
+        #local $Mgd::POST_SLEEP_DEBUG = 1;
+        # This calls read_from_parent. Workers used to needlessly call
+        # parent_ping constantly.
+        $worker->parent_ping;
     }
 }
 
 sub debug {
     my ($msg, $level) = @_;
     return unless $Mgd::DEBUG >= 1;
+    $msg =~ s/[\r\n]+//g;
     if (my $worker = MogileFS::ProcManager->is_child) {
         $worker->send_to_parent("debug $msg");
     } else {
@@ -214,16 +252,6 @@ sub wait_for_writeability {
     return $nfound ? 1 : 0;
 }
 
-# if given an HTTP URL, break it down into [ host, port, URI ], else
-# returns die, because we don't support non-http-mode anymore
-sub url_parts {
-    my $path = shift;
-    if ($path =~ m!^http://(.+?)(?::(\d+))?(/.+)$!) {
-        return [ $1, $2 || 80, $3 ];
-    }
-    Carp::croak("Bogus URL: $path");
-}
-
 sub max {
     my ($n1, $n2) = @_;
     return $n1 if $n1 > $n2;
@@ -262,6 +290,11 @@ sub eurl {
     $a =~ s/([^a-zA-Z0-9_\,\-.\/\\\: ])/uc sprintf("%%%02x",ord($1))/eg;
     $a =~ tr/ /+/;
     return $a;
+}
+
+sub encode_url_args {
+    my $args = shift;
+    return join('&', map { eurl($_) . "=" . eurl($args->{$_}) } keys %$args);
 }
 
 sub decode_url_args {

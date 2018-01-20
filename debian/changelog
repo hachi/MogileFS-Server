@@ -1,3 +1,65 @@
+mogilefs-server (2.44-1) stable; urgency=low
+
+  * pull from upstream
+
+ -- Dormando <dormando@rydia.net>  Thu, 23 Dec 2010 21:58:49 -0800
+
+mogilefs-server (2.43-1) stable; urgency=low
+
+  * pulled 2.43 from github which includes fixes from 2.42-1
+  * added pidfile entry to default mogilefsd.conf to fix pidfile creation bug
+  * added daemon = 1 to default mogilefsd.conf to make mogilefsd use syslog
+
+ -- Andre Pascha <bender@duese.org>  Mon, 11 Oct 2010 10:21:27 +0200
+
+mogilefs-server (2.42-1kwick2) stable; urgency=low
+
+  * added fixes for over replicated files of todays github pull
+  * include mindevcount=1 fixes
+
+ -- Andre Pascha <bender@duese.org>  Sun, 10 Oct 2010 14:34:25 +0200
+
+mogilefs-server (2.42-1kwick1) stable; urgency=low
+
+  * git pull of today
+  * includes fix from Andre Pascha to make FSCK work again
+
+ -- Andre Pascha <bender@duese.org>  Sat, 09 Oct 2010 18:12:18 +0200
+
+mogilefs-server (2.41-1kwick3) stable; urgency=low
+
+  * fixed problem with wrong permissions on mogilefsd pid file
+
+ -- Andre Pascha <bender@duese.org>  Fri, 08 Oct 2010 17:43:44 +0200
+
+mogilefs-server (2.41-1kwick2) stable; urgency=low
+
+  * added pid directory to mogstored/mogilefsd. fixes problem with stopping
+    the daemon via init skript when daemon is set to 1 in the config.  Daemon
+    needs to be set to 1 or syslogging won't be enabled.
+
+ -- Andre Pascha <bender@duese.org>  Fri, 08 Oct 2010 17:33:11 +0200
+
+mogilefs-server (2.41-1kwick1) stable; urgency=low
+
+  * moved to github version of MogileFS-Server
+  * package versioning now coresponds to mogilefs version
+
+ -- Andre Pascha <bender@duese.org>  Fri, 08 Oct 2010 16:59:33 +0200
+
+mogilefs-server (1.00-2kwick2) stable; urgency=low
+
+  * added dependency to Danga::Socket for mogostored
+
+ -- Andre Pascha <bender@duese.org>  Fri, 08 Oct 2010 15:29:46 +0200
+
+mogilefs-server (1.00-2kwick1) stable; urgency=low
+
+  * Non-maintainer upload.
+  * SVN snapshot of 06 Oct 2010
+
+ -- Andre Pascha <bender@duese.org>  Thu, 07 Oct 2010 17:26:01 +0200
+
 mogilefs-server (1.00-2) unstable; urgency=low
 
   * fix data loss bug when the 'tempfile' table is InnoDB and the

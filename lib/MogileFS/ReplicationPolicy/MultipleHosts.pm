@@ -44,7 +44,7 @@ sub replicate_to {
     my $already_on = @$on_devs;
 
     # a silly special case, bail out early.
-    return ALL_GOOD if $min == 1 && $already_on;
+    return ALL_GOOD if $min == 1 && $already_on == 1;
 
     # total disks available which are candidates for having files on them
     my $total_disks = scalar grep { $_->dstate->should_have_files } values %$all_devs;
@@ -97,12 +97,7 @@ sub replicate_to {
 
     return TEMP_NO_ANSWER if $already_on >= $min && @ideal == 0;
 
-    # Do this little dance to only weight-shuffle the top end of empty devices
-    # to save CPU.
-    @ideal = weighted_list(map { [$_, 100 * $_->percent_free] }
-        splice(@ideal, 0, 20));
-    @desp  = weighted_list(map { [$_, 100 * $_->percent_free] } 
-        splice(@desp, 0, 20));
+    $self->sort_devices(\@ideal, \@desp, $fid);
 
     return MogileFS::ReplicationRequest->new(
                                              ideal => \@ideal,
@@ -119,6 +114,21 @@ sub unique_hosts {
         $host{$dev->hostid}++;
     }
     return scalar keys %host;
+}
+
+sub sort_devices {
+    my ($self, $ideal, $desp, $fid) = @_;
+
+    # Do this little dance to only weight-shuffle the top end of empty devices
+    # to save CPU.
+
+    @{ $ideal } = weighted_list(map { [$_, 100 * $_->percent_free] }
+        splice(@{ $ideal }, 0, 20));
+
+    @{ $desp }  = weighted_list(map { [$_, 100 * $_->percent_free] }
+        splice(@{ $desp }, 0, 20));
+
+    return;
 }
 
 1;
